@@ -530,8 +530,8 @@ h4 {
 }
 
 .toggle3 button.active-dk {
-  background: var(--bg3);
-  color: var(--text2);
+  background: #334060;
+  color: #fff;
   font-weight: 600;
 }
 
@@ -592,7 +592,9 @@ h4 {
 }
 
 .sem-btn.s-unk.active {
-  background: var(--bg4);
+  background: var(--border2);
+  border-color: var(--text3);
+  color: #fff;
 }
 
 /* ═══════════════════════════════════════════════

@@ -145,7 +145,13 @@ const App: React.FC = () => {
     const { user, loading: authLoading, isAuthorized, logout } = useAuth();
     const [activeScreen, setActiveScreen] = useState<'s0' | 'sFichas' | 'sConfig' | 'sForm'>('s0');
     const [currentStep, setCurrentStep] = useState(1);
-    const [state, setState] = useState<AppState>(INITIAL_STATE);
+    const [state, setState] = useState<AppState>(() => {
+        const draft = localStorage.getItem('catastro_draft');
+        if (draft) {
+            try { return JSON.parse(draft); } catch (e) { }
+        }
+        return INITIAL_STATE;
+    });
     const [fichas, setFichas] = useState<Record<string, AppState>>({});
     const [isOnline, setIsOnline] = useState(navigator.onLine);
     const [toastMsg, setToastMsg] = useState('');
@@ -266,19 +272,22 @@ const App: React.FC = () => {
     const updateState = (updates: Partial<AppState>) => {
         setState(prev => {
             const next = { ...prev, ...updates };
+            localStorage.setItem('catastro_draft', JSON.stringify(next));
             return next;
         });
 
         // Auto-save logic
         if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
         autoSaveTimer.current = setTimeout(() => {
-            toast("✓ Auto-guardado temporal");
-        }, 2000);
+            toast("✓ Borrador guardado");
+        }, 1500);
     };
 
     const startNewFicha = () => {
         const id = `F_${Date.now()}`;
-        setState({ ...INITIAL_STATE, id, createdAt: new Date().toISOString() });
+        const newState = { ...INITIAL_STATE, id, createdAt: new Date().toISOString() };
+        setState(newState);
+        localStorage.setItem('catastro_draft', JSON.stringify(newState));
         setCurrentStep(1);
         setActiveScreen('sForm');
     };
@@ -297,6 +306,7 @@ const App: React.FC = () => {
         const updatedFichas = { ...fichas, [id]: finalData };
         setFichas(updatedFichas);
         localStorage.setItem('fichas_star', JSON.stringify(updatedFichas));
+        localStorage.removeItem('catastro_draft');
 
         // Save to Firestore if online
         if (isOnline) {
@@ -1033,18 +1043,27 @@ const ComponentEditor: React.FC<{
                 <div className="toggle3 w-32">
                     <button className={`t-si ${data.existe === 'SI' ? 'active-si' : ''}`} onClick={() => onChange({ existe: 'SI' })}>SI</button>
                     <button className={`t-no ${data.existe === 'NO' ? 'active-no' : ''}`} onClick={() => onChange({ existe: 'NO' })}>NO</button>
-                    <button className={`t-dk ${data.existe === 'DESCONOCIDO' ? 'active-dk' : ''}`} onClick={() => onChange({ existe: 'DESCONOCIDO' })}>?</button>
+                    <button className={`t-dk ${data.existe === 'DESCONOCIDO' ? 'active-dk' : ''}`} onClick={() => onChange({ existe: 'DESCONOCIDO' })}>DESC.</button>
                 </div>
             </div>
             <div>
                 <label className="comp-label">{isCono ? 'Tipo' : 'Material'}</label>
                 <div className="chips">
                     {materials.map(m => (
-                        <div key={m} className={`chip ${data.mat === m ? 'selected' : ''}`} onClick={() => onChange({ mat: m })}>
+                        <div key={m} className={`chip ${(data.mat === m && m !== 'OTRO') || (m === 'OTRO' && data.mat && !materials.includes(data.mat as string)) || (data.mat === 'OTRO' && m === 'OTRO') ? 'selected' : ''}`} onClick={() => onChange({ mat: m })}>
                             {m}
                         </div>
                     ))}
                 </div>
+                {((data.mat && !materials.includes(data.mat as string)) || data.mat === 'OTRO') && (
+                    <input
+                        type="text"
+                        value={data.mat === 'OTRO' ? '' : data.mat}
+                        onChange={e => onChange({ mat: e.target.value.toUpperCase() })}
+                        style={{ width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', padding: '10px', marginTop: '8px', color: 'var(--text)', borderRadius: '8px', fontSize: '12px' }}
+                        placeholder="ESPECIFIQUE..."
+                    />
+                )}
             </div>
             <div>
                 <label className="comp-label">Estado</label>
@@ -1055,7 +1074,7 @@ const ComponentEditor: React.FC<{
                             className={`sem-btn s-${e === 'bueno' ? 'good' : e === 'regular' ? 'reg' : e === 'malo' ? 'bad' : 'unk'} ${data.estado === e ? 'active' : ''}`}
                             onClick={() => onChange({ estado: e })}
                         >
-                            {e[0].toUpperCase() + e.slice(1)}
+                            {e === 'desconocido' ? 'Desconocido' : e[0].toUpperCase() + e.slice(1)}
                         </button>
                     ))}
                 </div>
