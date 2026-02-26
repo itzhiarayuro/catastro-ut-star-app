@@ -1,136 +1,203 @@
 import React, { useState } from 'react';
-import { Camera, Trash2, MapPin, Clock, CheckCircle2, CloudOff } from 'lucide-react';
+import { Camera, Trash2, MapPin, Clock, CloudOff, Info, CheckCircle2 } from 'lucide-react';
+import { procesarFoto, FotoRegistro } from '../utils/fotoProcessor';
 
-interface Photo {
-    id: string;
-    url: string;
-    timestamp: string;
-    gps: string;
-    zona: string;
+interface FotosZoneProps {
+    pozoId: string;
+    photos: FotoRegistro[];
+    onAddPhoto: (foto: FotoRegistro) => void;
+    onDeletePhoto: (id: string) => void;
 }
 
-const PhotoItem: React.FC<{ photo: Photo; onDelete: (id: string) => void }> = ({ photo, onDelete }) => (
-    <div className="relative group w-[72px] h-[72px] shrink-0">
-        <img
-            src={photo.url}
-            alt="Captura"
-            className="w-full h-full object-cover rounded-lg border border-[#30363d] group-hover:border-blue-500 transition-all"
-        />
+const PhotoThumb: React.FC<{ photo: FotoRegistro; onDelete: (id: string) => void }> = ({ photo, onDelete }) => (
+    <div className="relative group w-[80px] h-[80px] shrink-0">
+        <div className="w-full h-full rounded-lg overflow-hidden border border-[#30363d] group-hover:border-blue-500 transition-all bg-[#161b22]">
+            <img src={photo.blobId} alt={photo.filename} className="w-full h-full object-cover" />
+        </div>
         <button
             onClick={() => onDelete(photo.id)}
-            className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+            className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity shadow-lg z-10"
         >
-            <Trash2 className="w-3 h-3" />
+            <Trash2 size={10} />
         </button>
-        <div className="absolute bottom-0 inset-x-0 bg-black/60 backdrop-blur-[2px] rounded-b-lg py-0.5 px-1 flex items-center justify-between pointer-events-none">
-            <MapPin className="w-2 h-2 text-green-400" />
-            <Clock className="w-2 h-2 text-blue-400" />
+        <div className="absolute bottom-0 inset-x-0 bg-black/70 py-0.5 px-1 truncate text-[8px] font-mono text-white pointer-events-none">
+            {photo.filename}
         </div>
     </div>
 );
 
-const ZoneSection: React.FC<{
+const PhotoSection: React.FC<{
     title: string;
-    icon: React.ReactNode;
-    photos: Photo[];
-    onAdd: (zona: string) => void;
+    type: FotoRegistro["tipo"];
+    pozoId: string;
+    photos: FotoRegistro[];
+    onAdd: (foto: FotoRegistro) => void;
     onDelete: (id: string) => void;
-}> = ({ title, icon, photos, onAdd, onDelete }) => (
-    <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 space-y-3">
-        <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-                <div className="text-blue-400">{icon}</div>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-gray-300">{title}</h3>
-            </div>
-            <span className="text-[10px] font-mono text-gray-500 bg-[#0d1117] px-2 py-0.5 rounded-full border border-[#30363d]">
-                {photos.length} fotos
-            </span>
-        </div>
+    allowIndex?: boolean;
+    allowSumidero?: boolean;
+    isMedicion?: boolean;
+}> = ({ title, type, pozoId, photos, onAdd, onDelete, allowIndex, allowSumidero, isMedicion }) => {
+    const [index, setIndex] = useState("1");
+    const [subType, setSubType] = useState<"entrada" | "salida" | "sumidero" | "general">(type === "entrada" || type === "salida" || type === "sumidero" ? type : "general");
+    const [sumidero, setSumidero] = useState("");
+    const [medType, setMedType] = useState("AT");
+    const [extraType, setExtraType] = useState("T"); // for T or Z
 
-        <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide items-center min-h-[72px]">
-            {photos.map(p => (
-                <PhotoItem key={p.id} photo={p} onDelete={onDelete} />
-            ))}
-            <button
-                onClick={() => onAdd(title)}
-                className="w-[72px] h-[72px] border-2 border-dashed border-[#30363d] hover:border-blue-500/50 hover:bg-blue-500/5 rounded-lg flex flex-col items-center justify-center gap-1 transition-all text-gray-500 hover:text-blue-400 shrink-0"
-            >
-                <Camera className="w-5 h-5" />
-                <span className="text-[8px] font-bold uppercase">Captura</span>
-            </button>
-        </div>
-    </div>
-);
+    const handleCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
 
-const FotosZone: React.FC = () => {
-    const [photos, setPhotos] = useState<Photo[]>([]);
-    const zones = [
-        { id: 'general', title: 'General / Panorámica', icon: <Camera className="w-4 h-4" /> },
-        { id: 'interior', title: 'Interior Pozo', icon: <CheckCircle2 className="w-4 h-4" /> },
-        { id: 'danos', title: 'Daños / Patologías', icon: <Trash2 className="w-4 h-4 text-red-400" /> },
-        { id: 'tuberias', title: 'Tuberías / Empalmes', icon: <CheckCircle2 className="w-4 h-4 text-green-400" /> },
-    ];
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            const blob = ev.target?.result as string;
 
-    const handleAddPhoto = (zona: string) => {
-        // Mock photo capture logic
-        const newPhoto: Photo = {
-            id: Math.random().toString(36).substr(2, 9),
-            url: `https://picsum.photos/seed/${Math.random()}/200`, // Placeholder dynamic image
-            timestamp: new Date().toISOString(),
-            gps: '4.8152° N, 73.9231° W',
-            zona
+            let finalType = type;
+            let finalIndex = index;
+            let finalExtra: string | undefined = undefined;
+
+            if (isMedicion) {
+                finalIndex = medType;
+                finalType = "medicion";
+                finalExtra = medType;
+            } else if (type === "entrada" || type === "salida") {
+                finalExtra = extraType;
+            }
+
+            const metadata = procesarFoto(pozoId, finalType, finalIndex, sumidero, finalExtra);
+            const newFoto: FotoRegistro = {
+                ...metadata as FotoRegistro,
+                id: `foto_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                blobId: blob
+            };
+            onAdd(newFoto);
         };
-
-        setPhotos([...photos, newPhoto]);
-
-        // Offline Queue Simulation
-        const queue = JSON.parse(localStorage.getItem('photo_sync_queue') || '[]');
-        queue.push(newPhoto);
-        localStorage.setItem('photo_sync_queue', JSON.stringify(queue));
-    };
-
-    const handleDeletePhoto = (id: string) => {
-        setPhotos(photos.filter(p => p.id !== id));
-        // Also remove from local queue if not synced
-        const queue = JSON.parse(localStorage.getItem('photo_sync_queue') || '[]');
-        localStorage.setItem('photo_sync_queue', JSON.stringify(queue.filter((p: any) => p.id !== id)));
+        reader.readAsDataURL(file);
     };
 
     return (
-        <div className="bg-[#0d1117] text-[#E8EEFF] p-6 rounded-xl border border-[#30363d] shadow-2xl space-y-4">
-            <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-3">
-                    <div className="p-2 bg-blue-500/10 rounded-lg">
-                        <Camera className="w-6 h-6 text-blue-400" />
-                    </div>
-                    <div>
-                        <h2 className="text-xl font-bold font-syne" style={{ fontFamily: 'Syne, sans-serif' }}>Galería de Registro</h2>
-                        <p className="text-xs text-gray-500">Evidencia técnica con metadatos EXIF</p>
-                    </div>
+        <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+                <h3 className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{title}</h3>
+                <div className="flex gap-2">
+                    {allowIndex && (
+                        <div className="flex gap-1">
+                            <select
+                                className="bg-[#0d1117] border border-[#30363d] rounded text-[10px] px-1 py-0.5"
+                                value={index}
+                                onChange={(e) => setIndex(e.target.value)}
+                            >
+                                {[1, 2, 3, 4, 5, 6, 7].map(i => <option key={i} value={i}>{title === "Tubería" ? `Tub ${i}` : i}</option>)}
+                            </select>
+                            {(type === "entrada" || type === "salida") && (
+                                <select
+                                    className="bg-[#0d1117] border border-[#30363d] rounded text-[10px] px-1 py-0.5"
+                                    value={extraType}
+                                    onChange={(e) => setExtraType(e.target.value)}
+                                >
+                                    <option value="T">Tapa</option>
+                                    <option value="Z">Cota</option>
+                                </select>
+                            )}
+                        </div>
+                    )}
+                    {isMedicion && (
+                        <select
+                            className="bg-[#0d1117] border border-[#30363d] rounded text-[10px] px-1 py-0.5"
+                            value={medType}
+                            onChange={(e) => setMedType(e.target.value)}
+                        >
+                            <option value="AT">AT</option>
+                            <option value="Z">Z</option>
+                        </select>
+                    )}
+                    {allowSumidero && (
+                        <input
+                            type="text"
+                            placeholder="Sum1"
+                            className="bg-[#0d1117] border border-[#30363d] rounded text-[10px] px-2 py-0.5 w-16"
+                            value={sumidero}
+                            onChange={(e) => setSumidero(e.target.value)}
+                        />
+                    )}
                 </div>
+            </div>
 
-                <div className="flex items-center gap-2 bg-[#161b22] border border-[#30363d] px-3 py-1.5 rounded-full">
-                    <CloudOff className="w-4 h-4 text-orange-400" />
-                    <span className="text-[10px] font-bold text-orange-400 uppercase tracking-widest">Cola Offline Activa</span>
+            <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+                <div className="photo-zone relative shrink-0 !w-[80px] !h-[80px] border-2 border-dashed border-[#30363d] hover:border-blue-500 bg-[#0d1117]">
+                    <Camera size={20} className="text-gray-500 mb-1" />
+                    <span className="text-[8px] font-bold uppercase text-gray-600">Captura</span>
+                    <input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        onChange={handleCapture}
+                        className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                    />
+                </div>
+                {photos.map(p => (
+                    <PhotoThumb key={p.id} photo={p} onDelete={onDelete} />
+                ))}
+            </div>
+        </div>
+    );
+};
+
+const FotosZone: React.FC<FotosZoneProps> = ({ pozoId, photos, onAddPhoto, onDeletePhoto }) => {
+    return (
+        <div className="space-y-4">
+            <div className="flex items-center gap-3 mb-2">
+                <Camera className="text-blue-400" size={24} />
+                <div>
+                    <h2 className="text-lg font-bold">Registro Fotográfico</h2>
+                    <p className="text-[10px] text-gray-500 uppercase tracking-widest">Nomenclatura Automática: {pozoId}-...</p>
                 </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {zones.map(z => (
-                    <ZoneSection
-                        key={z.id}
-                        title={z.title}
-                        icon={z.icon}
-                        photos={photos.filter(p => p.zona === z.title)}
-                        onAdd={handleAddPhoto}
-                        onDelete={handleDeletePhoto}
-                    />
-                ))}
+                <PhotoSection
+                    title="General / Panorámica"
+                    type="general"
+                    pozoId={pozoId}
+                    photos={photos.filter(p => p.tipo === "general")}
+                    onAdd={onAddPhoto}
+                    onDelete={onDeletePhoto}
+                />
+                <PhotoSection
+                    title="Tapa / Interior"
+                    type="tapa"
+                    pozoId={pozoId}
+                    photos={photos.filter(p => p.tipo === "tapa" || p.tipo === "interior")}
+                    onAdd={onAddPhoto}
+                    onDelete={onDeletePhoto}
+                />
+                <PhotoSection
+                    title="Tubería"
+                    type="entrada"
+                    pozoId={pozoId}
+                    photos={photos.filter(p => p.tipo === "entrada" || p.tipo === "salida")}
+                    onAdd={onAddPhoto}
+                    onDelete={onDeletePhoto}
+                    allowIndex
+                    allowSumidero
+                />
+                <PhotoSection
+                    title="Mediciones (AT/Z)"
+                    type="medicion"
+                    pozoId={pozoId}
+                    photos={photos.filter(p => p.esMedicion)}
+                    onAdd={onAddPhoto}
+                    onDelete={onDeletePhoto}
+                    isMedicion
+                    allowSumidero
+                />
             </div>
 
-            <div className="pt-4 border-t border-[#30363d] flex justify-between items-center text-[10px] text-gray-600 uppercase font-bold tracking-widest">
-                <span>Sincronización automática vía EXIFR</span>
-                <span className="text-blue-500">Total: {photos.length} Archivos en cola</span>
+            <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <CheckCircle2 size={16} className="text-blue-400" />
+                    <span className="text-[10px] font-bold text-blue-300 uppercase">Cola Drive Activa</span>
+                </div>
+                <CloudOff size={16} className="text-gray-600" />
             </div>
         </div>
     );

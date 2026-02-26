@@ -128,14 +128,14 @@ const TuberiasForm: React.FC<TuberiasFormProps> = ({ pozoEstado, isOculto = fals
                             <div
                                 key={t.id}
                                 className={`flex flex-col md:flex-row items-start md:items-center gap-4 p-4 rounded-lg border transition-all ${t.tipo === 'Salida' ? 'bg-blue-500/5 border-blue-500/20' :
-                                        t.tipo === 'Sumidero' ? 'bg-cyan-500/5 border-cyan-500/20' :
-                                            'bg-[#161b22] border-[#30363d]'
+                                    t.tipo === 'Sumidero' ? 'bg-cyan-500/5 border-cyan-500/20' :
+                                        'bg-[#161b22] border-[#30363d]'
                                     } ${isLocked ? 'grayscale-[0.5]' : ''}`}
                             >
                                 {/* ID Tag */}
                                 <div className={`px-3 py-1 rounded-full font-bold text-xs min-w-[45px] text-center ${t.tipo === 'Salida' ? 'bg-blue-500 text-white' :
-                                        t.tipo === 'Sumidero' ? 'bg-cyan-500 text-white' :
-                                            'bg-gray-600 text-white'
+                                    t.tipo === 'Sumidero' ? 'bg-cyan-500 text-white' :
+                                        'bg-gray-600 text-white'
                                     }`}>
                                     {t.label}
                                 </div>
@@ -192,24 +192,21 @@ const TuberiasForm: React.FC<TuberiasFormProps> = ({ pozoEstado, isOculto = fals
                                     </select>
                                 </div>
 
-                                {/* Z (m) */}
+                                {/* Z (m) - Readonly as requested */}
                                 <div className="w-24">
-                                    <label className="text-[10px] uppercase text-gray-500 block mb-1">Z (m)</label>
+                                    <label className="text-[10px] uppercase text-gray-500 block mb-1">Z Invert (m)</label>
                                     <input
-                                        type="number"
-                                        step="0.001"
-                                        disabled={isLocked}
-                                        value={t.z || ''}
-                                        onChange={(e) => updateTuberia(t.id, 'z', e.target.value)}
-                                        className="w-full bg-[#0d1117] border border-[#30363d] rounded-md px-2 py-1 text-sm outline-none"
-                                        placeholder="0.000"
+                                        type="text"
+                                        readOnly
+                                        value={t.z || '0.000'}
+                                        className="w-full bg-[#0d1117] border border-[#30363d] rounded-md px-2 py-1 text-sm outline-none text-green-400 font-mono"
                                     />
                                 </div>
 
-                                {/* Computed Z + Ø */}
+                                {/* Z + Ø */}
                                 <div className="w-24">
-                                    <label className="text-[10px] uppercase text-gray-500 block mb-1">Z + Ø</label>
-                                    <div className="w-full bg-[#0d1117]/50 border border-[#30363d] rounded-md px-2 py-1 text-sm text-green-400 font-mono">
+                                    <label className="text-[10px] uppercase text-gray-500 block mb-1">Cota Lomo</label>
+                                    <div className="w-full bg-[#0d1117]/50 border border-[#30363d] rounded-md px-2 py-1 text-sm text-blue-400 font-mono">
                                         {calculateZPlusO(t)}
                                     </div>
                                 </div>

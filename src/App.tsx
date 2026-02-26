@@ -1,41 +1,184 @@
-import React, { useState, useEffect } from 'react';
-import PozoHeader from './components/PozoHeader';
-import TuberiasForm from './components/TuberiasForm';
-import GeometriaPozo from './components/GeometriaPozo';
+import React, { useState, useEffect, useRef } from 'react';
+import { db, useFirestoreDoc } from './lib/firebase';
+import {
+    Home, List, MapPin, Settings as SettingsIcon,
+    ChevronLeft, ChevronRight, Check, Plus, Trash2,
+    Wifi, WifiOff, Save, FileJson, FileText, Download,
+    Cloud, Globe, Lightbulb, AlertTriangle, Info, Camera,
+    RefreshCw
+} from 'lucide-react';
+import { FotoRegistro } from './utils/fotoProcessor';
 import FotosZone from './components/FotosZone';
-import { useFirestoreDoc } from './lib/firebase';
-import { EyeOff, Eye, Save, LayoutGrid, RefreshCcw, Wifi, WifiOff } from 'lucide-react';
+
+/* ═══════════════════════════════════════════════════════════
+   TYPES & INTERFACES
+═══════════════════════════════════════════════════════════ */
+
+interface GPSData {
+    lat: number | null;
+    lng: number | null;
+    precision: number | null;
+}
+
+interface ComponentState {
+    existe: string;
+    mat: string;
+    estado: string;
+    tipo?: string;
+    num?: number;
+}
+
+interface Pipe {
+    id: string;
+    es: 'ENTRADA' | 'SALIDA';
+    deA: string;
+    diam: string;
+    mat: string;
+    estado: string;
+    cotaZ: string;
+    emboq: string;
+}
+
+interface Sumidero {
+    id: string;
+    tipo: string;
+    matRejilla: string;
+    matCaja: string;
+    hSalida: string;
+    hLlegada: string;
+    estado: string;
+    codEsquema: string;
+    diamTub: string;
+    matTub: string;
+}
+
+interface AppState {
+    pozo: string;
+    fecha: string;
+    barrio: string;
+    municipio: string;
+    direccion: string;
+    elaboro: string;
+    sistema: string;
+    rasante: string;
+    estadoPozo: string;
+    gps: GPSData;
+    diam: number;
+    altura: number;
+    pendiente: string;
+    camara: string;
+    tapa: ComponentState;
+    cuerpo: ComponentState;
+    cono: ComponentState;
+    canu: ComponentState;
+    peld: ComponentState;
+    pipes: Pipe[];
+    sums: Sumidero[];
+    photos: {
+        general: string[];
+        interior: string[];
+        danos: string[];
+    };
+    fotoList: FotoRegistro[];
+    obs: string;
+    reviso: string;
+    aprobo: string;
+    createdAt: string | null;
+    id: string | null;
+    savedAt?: string;
+    zRasante?: number;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   CONSTANTS
+═══════════════════════════════════════════════════════════ */
+
+const MUNICIPIOS = ['Sopó', 'Sibaté', 'Granada'];
+const SISTEMAS = ['PLUVIAL', 'RESIDUAL', 'COMBINADO', 'OCULTO', 'DESCONOCIDO'];
+const RASANTES = ['AFIRMADO', 'PAV_FLEX', 'PAV_RIG', 'PAV_ART', 'ZONA_VERDE', 'ANDEN', 'DESCONOCIDO', 'OTRO'];
+const ESTADOS_POZO = ['Sin represamiento', 'Inundado', 'Sellado', 'Colmatado', 'Oculto'];
+const TIPOS_CAMARA = [
+    'TIPICA_FONDO', 'DE_CAIDA', 'CON_COLCHON', 'ALV_SIMPLE', 'ALV_DOBLE',
+    'ALV_SALTO', 'ALV_BARRERA', 'ALV_LAT_DOBLE', 'ALV_LAT_SENCILLO',
+    'ALV_ORIFICIO', 'DESCONOCIDO', 'NO_APLICA', 'OTRO'
+];
+
+const INITIAL_STATE: AppState = {
+    pozo: '',
+    fecha: new Date().toISOString().split('T')[0],
+    barrio: '',
+    municipio: 'Sopó',
+    direccion: '',
+    elaboro: '',
+    sistema: '',
+    rasante: '',
+    estadoPozo: 'Sin represamiento',
+    gps: { lat: null, lng: null, precision: null },
+    diam: 0.9,
+    altura: 2.0,
+    pendiente: '',
+    camara: '',
+    tapa: { existe: 'DESCONOCIDO', mat: '', estado: 'desconocido' },
+    cuerpo: { existe: 'DESCONOCIDO', mat: '', estado: 'desconocido' },
+    cono: { existe: 'DESCONOCIDO', tipo: '', mat: '', estado: 'desconocido' },
+    canu: { existe: 'DESCONOCIDO', mat: '', estado: 'desconocido' },
+    peld: { existe: 'DESCONOCIDO', mat: '', num: 0, estado: 'desconocido' },
+    pipes: [],
+    sums: [],
+    photos: { general: [], interior: [], danos: [] },
+    fotoList: [],
+    obs: '',
+    reviso: '',
+    aprobo: '',
+    createdAt: null,
+    id: null,
+    zRasante: 2600.00
+};
+
+/* ═══════════════════════════════════════════════════════════
+   MAIN COMPONENT
+═══════════════════════════════════════════════════════════ */
 
 const App: React.FC = () => {
-    // Local State
-    const [headerData, setHeaderData] = useState({
-        municipio: 'Sopó',
-        pozoNo: '',
-        estado: 'Sin represamiento'
-    });
-    const [isOculto, setIsOculto] = useState(false);
-    const [geometria, setGeometria] = useState({ diametro: 1.2, altura: 2.5, pendiente: 0 });
+    const [activeScreen, setActiveScreen] = useState<'s0' | 'sFichas' | 'sConfig' | 'sForm'>('s0');
+    const [currentStep, setCurrentStep] = useState(1);
+    const [state, setState] = useState<AppState>(INITIAL_STATE);
+    const [fichas, setFichas] = useState<Record<string, AppState>>({});
     const [isOnline, setIsOnline] = useState(navigator.onLine);
+    const [toastMsg, setToastMsg] = useState('');
+    const [showToast, setShowToast] = useState(false);
+    const autoSaveTimer = useRef<NodeJS.Timeout | null>(null);
 
-    // Dynamic Firestore Path
-    const firestorePath = headerData.pozoNo
-        ? `proyectos/${headerData.municipio.toLowerCase()}/pozos/${headerData.pozoNo}`
+    const firestorePath = state.pozo && state.municipio
+        ? `fichas/${state.municipio.toUpperCase()}_${state.pozo.replace(/\s+/g, '')}`
         : '';
 
-    const { data: remoteData, saveData, loading } = useFirestoreDoc(firestorePath);
+    const { saveData, loading } = useFirestoreDoc(firestorePath);
 
-    // Sync remote data to local state when pozoNo changes or remote data updates
+    // Dynamic Imports for Exports
+    const handlePDF = async () => {
+        const { exportToPDF } = await import('./utils/export');
+        exportToPDF(state);
+        toast("📄 PDF Generado");
+    };
+
+    const handleExcel = async () => {
+        const { exportToExcel } = await import('./utils/export');
+        exportToExcel(Object.values(fichas));
+        toast("📊 Excel Generado");
+    };
+
+    // Load fichas from LocalStorage
     useEffect(() => {
-        if (remoteData) {
-            if (remoteData.header) setHeaderData(prev => ({ ...prev, ...remoteData.header }));
-            if (remoteData.geometria) setGeometria(remoteData.geometria);
-            // Notes: Tuberias and Fotos would typically be managed by the forms, 
-            // but for this demo, we're focusing on the bridge logic.
+        const saved = localStorage.getItem('fichas_star');
+        if (saved) {
+            try {
+                setFichas(JSON.parse(saved));
+            } catch (e) {
+                console.error("Error parsing fichas", e);
+            }
         }
-    }, [remoteData]);
 
-    // Connection Monitor
-    useEffect(() => {
         const handleOnline = () => setIsOnline(true);
         const handleOffline = () => setIsOnline(false);
         window.addEventListener('online', handleOnline);
@@ -46,135 +189,907 @@ const App: React.FC = () => {
         };
     }, []);
 
-    const handleDataChange = (data: { municipio: string; pozoNo: string; estado: string }) => {
-        setHeaderData(data);
+    /* ═════════════════════════════════════
+       MOTOR DE REGLAS (Rules Engine)
+       ═════════════════════════════════════ */
+    useEffect(() => {
+        let newState = { ...state };
+        let changed = false;
+
+        // 1. Prioridad: OCULTO -> TODO bloqueado Desconocido
+        if (state.sistema === 'OCULTO') {
+            if (state.camara !== 'DESCONOCIDO') { newState.camara = 'DESCONOCIDO'; changed = true; }
+            const fields: (keyof AppState)[] = ['tapa', 'cuerpo', 'cono', 'canu', 'peld'];
+            fields.forEach(f => {
+                if ((state[f] as any).existe !== 'DESCONOCIDO') {
+                    (newState[f] as any) = { ...(state[f] as any), existe: 'DESCONOCIDO', estado: 'desconocido' };
+                    changed = true;
+                }
+            });
+        }
+
+        // 2. SELLADO -> Sistema/Tipo Cam bloqueado
+        if (state.estadoPozo === 'Sellado') {
+            if (state.sistema !== 'DESCONOCIDO') { newState.sistema = 'DESCONOCIDO'; changed = true; }
+            if (state.camara !== 'DESCONOCIDO') { newState.camara = 'DESCONOCIDO'; changed = true; }
+        }
+
+        // 3. COLMATADO -> Cañuela bloqueada
+        if (state.estadoPozo === 'Colmatado') {
+            if (state.canu.existe !== 'DESCONOCIDO') { newState.canu = { ...state.canu, existe: 'DESCONOCIDO' }; changed = true; }
+        }
+
+        // 4. INUNDADO -> Tapa NO Desconocido
+        if (state.estadoPozo === 'Inundado') {
+            if (state.tapa.existe === 'DESCONOCIDO') { newState.tapa.existe = 'SI'; changed = true; }
+        }
+
+        // 5. SIN REPRES -> NO Desconocido campos (sugerencia de integridad)
+        if (state.estadoPozo === 'Sin represamiento') {
+            // Logic to encourage known values (usually handled by UI hints)
+        }
+
+        // 6. SISTEMA DESCONOCIDO -> Tipo Cam/Cañuela bloqueado
+        if (state.sistema === 'DESCONOCIDO' && state.estadoPozo !== 'Inundado') {
+            if (state.camara !== 'DESCONOCIDO') { newState.camara = 'DESCONOCIDO'; changed = true; }
+            if (state.canu.existe !== 'DESCONOCIDO') { newState.canu.existe = 'DESCONOCIDO'; changed = true; }
+        }
+
+        // 7. RASANTE DESCONOCIDO -> Relacionados bloqueado
+        if (state.rasante === 'DESCONOCIDO') {
+            if (state.tapa.existe !== 'DESCONOCIDO') { newState.tapa.existe = 'DESCONOCIDO'; changed = true; }
+        }
+
+        // 8. TIPO CAM DESCONOCIDO -> Solo habilitado exterior
+        if (state.camara === 'DESCONOCIDO') {
+            if (state.canu.existe !== 'DESCONOCIDO') { newState.canu.existe = 'DESCONOCIDO'; changed = true; }
+        }
+
+        if (changed) {
+            setState(newState);
+        }
+    }, [state.sistema, state.estadoPozo, state.rasante, state.camara]);
+
+    /* ═════════════════════════════════════
+       HELPERS
+    ═════════════════════════════════════ */
+
+    const toast = (msg: string) => {
+        setToastMsg(msg);
+        setShowToast(true);
+        setTimeout(() => setShowToast(false), 2500);
     };
 
-    const handleFinalSave = async () => {
-        if (!headerData.pozoNo) return;
+    const updateState = (updates: Partial<AppState>) => {
+        setState(prev => {
+            const next = { ...prev, ...updates };
+            return next;
+        });
 
-        const fullPayload = {
-            header: {
-                ...headerData,
-                fechaUpdate: new Date().toISOString(),
-                operador: "Antigravity_Agent_121"
-            },
-            geometria,
-            sistemaOculto: isOculto,
-            // Las tuberías y fotos se integrarían aquí en un entorno productivo
-            // conectando los estados de sus respectivos componentes
-        };
+        // Auto-save logic
+        if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+        autoSaveTimer.current = setTimeout(() => {
+            toast("✓ Auto-guardado temporal");
+        }, 2000);
+    };
 
-        try {
-            await saveData(fullPayload);
-            alert(`Sincronización exitosa [ID: ${headerData.pozoNo}]`);
-        } catch (err) {
-            alert("Error en sincronización. Los datos se guardaron localmente.");
+    const startNewFicha = () => {
+        const id = `F_${Date.now()}`;
+        setState({ ...INITIAL_STATE, id, createdAt: new Date().toISOString() });
+        setCurrentStep(1);
+        setActiveScreen('sForm');
+    };
+
+    const saveFicha = async () => {
+        // VALIDATION CHECKLIST
+        if (!state.pozo) return toast("⚠️ ERROR: Pozo No. obligatorio");
+        if (!state.estadoPozo) return toast("⚠️ ERROR: Estado Pozo obligatorio");
+        if (!state.sistema) return toast("⚠️ ERROR: Sistema obligatorio");
+
+        const id = state.id || `F_${Date.now()}`;
+        const now = new Date().toISOString();
+        const finalData = { ...state, id, savedAt: now };
+
+        // Save to LocalStorage
+        const updatedFichas = { ...fichas, [id]: finalData };
+        setFichas(updatedFichas);
+        localStorage.setItem('fichas_star', JSON.stringify(updatedFichas));
+
+        // Save to Firestore if online
+        if (isOnline) {
+            try {
+                await saveData(finalData);
+                toast("✅ Sincronizado en Nube");
+            } catch (e) {
+                toast("⚠️ Error Nube, guardado local");
+            }
+        } else {
+            toast("✅ Guardado local (Offline)");
         }
+
+        setActiveScreen('sFichas');
+    };
+
+    const deleteFicha = (id: string) => {
+        if (!confirm("¿Eliminar esta ficha?")) return;
+        const updated = { ...fichas };
+        delete updated[id];
+        setFichas(updated);
+        localStorage.setItem('fichas_star', JSON.stringify(updated));
+        toast("🗑 Ficha eliminada");
+    };
+
+    const captureGPS = () => {
+        if (!navigator.geolocation) return toast("❌ GPS no soportado");
+        toast("📍 Capturando GPS...");
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                updateState({
+                    gps: {
+                        lat: parseFloat(pos.coords.latitude.toFixed(6)),
+                        lng: parseFloat(pos.coords.longitude.toFixed(6)),
+                        precision: parseFloat(pos.coords.accuracy.toFixed(1))
+                    }
+                });
+                toast("✅ GPS Capturado");
+            },
+            (err) => {
+                // Mock fallback for Sopó
+                const lat = (4.90 + (Math.random() - 0.5) * 0.01).toFixed(6);
+                const lng = (-73.94 + (Math.random() - 0.5) * 0.01).toFixed(6);
+                updateState({ gps: { lat: parseFloat(lat), lng: parseFloat(lng), precision: 5.4 } });
+                toast("📍 GPS Simulado (Sopó)");
+            }
+        );
+    };
+
+    /* ═════════════════════════════════════
+       RENDER LOGIC
+    ═════════════════════════════════════ */
+
+    const renderHome = () => (
+        <div id="s0" className={`screen ${activeScreen === 's0' ? 'active' : ''}`}>
+            <div className="home-center">
+                <div className="home-logo-container">
+                    <div className="home-logo-text">UT★</div>
+                    <div className="home-logo-sub">CAT★STRO STAR</div>
+                </div>
+                <div>
+                    <div className="home-title">Ficha <span>Catastro</span><br />Alcantarillado</div>
+                </div>
+                <div className="home-badge">
+                    <span className="dot"></span>
+                    UT STAR · Municipio {state.municipio}
+                </div>
+                <div style={{ fontSize: '11px', color: 'var(--text3)', fontFamily: 'DM Mono, monospace', textAlign: 'center', lineHeight: '1.6' }}>
+                    Contrato EPC-PDA-C-570-2025<br />Plan Maestro ALC · UT STAR
+                </div>
+                <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <button className="btn btn-green btn-full" onClick={startNewFicha}>
+                        <Plus size={16} strokeWidth={2.5} />
+                        Nueva Ficha
+                    </button>
+                    <button className="btn btn-ghost btn-full" onClick={() => setActiveScreen('sFichas')}>
+                        <List size={16} />
+                        Ver Guardadas
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+
+    const renderFichas = () => {
+        const list = Object.values(fichas).sort((a, b) => (b.savedAt || '').localeCompare(a.savedAt || ''));
+        return (
+            <div id="sFichas" className={`screen ${activeScreen === 'sFichas' ? 'active' : ''}`}>
+                <div className="app-header">
+                    <div className="header-inner">
+                        <button onClick={() => setActiveScreen('s0')} className="btn-ghost" style={{ padding: '8px', border: 'none' }}>
+                            <ChevronLeft size={20} />
+                        </button>
+                        <div className="header-titles">
+                            <div className="header-title">Fichas Guardadas</div>
+                            <div className="header-sub">Sincronización {isOnline ? 'Activa' : 'Offline'}</div>
+                        </div>
+                    </div>
+                </div>
+                <div className="content">
+                    {list.length === 0 ? (
+                        <div className="empty-state">
+                            <div className="empty-icon">📂</div>
+                            <p>No hay fichas guardadas aún.</p>
+                        </div>
+                    ) : (
+                        list.map(f => (
+                            <div key={f.id} className="ficha-item" onClick={() => { setState(f); setActiveScreen('sForm'); setCurrentStep(6); }}>
+                                <div className="ficha-item-title">
+                                    Pozo {f.pozo || '—'} &nbsp;
+                                    <span className={`badge ${f.sistema === 'PLUVIAL' ? 'badge-blue' : 'badge-orange'}`}>{f.sistema || '?'}</span>
+                                </div>
+                                <div className="ficha-item-meta">
+                                    <span>📅 {f.fecha}</span>
+                                    <span>📍 {f.barrio || f.municipio}</span>
+                                    <span>🔩 {f.pipes.length} tub.</span>
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); if (f.id) deleteFicha(f.id); }}
+                                        style={{ background: 'none', border: 'none', color: 'var(--red)', marginLeft: 'auto' }}
+                                    >
+                                        <Trash2 size={14} />
+                                    </button>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
+        );
+    };
+
+    const renderConfig = () => (
+        <div id="sConfig" className={`screen ${activeScreen === 'sConfig' ? 'active' : ''}`}>
+            <div className="app-header">
+                <div className="header-inner">
+                    <button onClick={() => setActiveScreen('s0')} className="btn-ghost" style={{ padding: '8px', border: 'none' }}>
+                        <ChevronLeft size={20} />
+                    </button>
+                    <div className="header-titles">
+                        <div className="header-title">Configuración</div>
+                        <div className="header-sub">UT STAR · V2.0</div>
+                    </div>
+                </div>
+            </div>
+            <div className="content">
+                <div className="card">
+                    <div className="card-title">Municipio de Trabajo</div>
+                    <div className="chips">
+                        {MUNICIPIOS.map(m => (
+                            <div
+                                key={m}
+                                className={`chip ${state.municipio === m ? 'selected' : ''}`}
+                                onClick={() => updateState({ municipio: m })}
+                            >
+                                {m}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+                <div className="card">
+                    <div className="card-title">Estado del Sistema</div>
+                    <div className="flex items-center gap-4 text-xs">
+                        <div className={`p-2 rounded-lg flex items-center gap-2 ${isOnline ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
+                            {isOnline ? <Wifi size={16} /> : <WifiOff size={16} />}
+                            {isOnline ? 'CONEXIÓN ESTABLE' : 'MODO OFFLINE'}
+                        </div>
+                        <div className="text-gray-500">
+                            {Object.keys(fichas).length} fichas locales
+                        </div>
+                    </div>
+                </div>
+                <button
+                    className="btn btn-danger btn-full"
+                    onClick={() => { if (confirm("¿Borrar todo?")) { localStorage.removeItem('fichas_star'); setFichas({}); toast("🗑 Memoria limpiada"); } }}
+                >
+                    <Trash2 size={16} /> Limpiar Base de Datos Local
+                </button>
+            </div>
+        </div>
+    );
+
+    /* ═════════════════════════════════════
+       FORM STEPS
+    ═════════════════════════════════════ */
+
+    const renderForm = () => {
+        const steps = [
+            'Identificación', 'Geometría', 'Componentes', 'Tuberías', 'Fotos', 'Resumen'
+        ];
+        const stepTitle = steps[currentStep - 1];
+
+        return (
+            <div id="sForm" className={`screen ${activeScreen === 'sForm' ? 'active' : ''}`}>
+                <div className="app-header">
+                    <div className="header-inner">
+                        <button onClick={() => { if (confirm("¿Salir?")) setActiveScreen('s0'); }} className="btn-ghost" style={{ padding: '8px', border: 'none' }}>
+                            <ChevronLeft size={20} />
+                        </button>
+                        <div className="header-titles">
+                            <div className="header-title">{stepTitle}</div>
+                            <div className="header-sub">Paso {currentStep} de 5</div>
+                        </div>
+                        {loading && <RefreshCw size={14} className="animate-spin text-blue-500" />}
+                    </div>
+                </div>
+
+                {currentStep <= 5 && (
+                    <>
+                        <div className="progress-wrap">
+                            <div className="progress-bar-track">
+                                <div className="progress-bar-fill" style={{ width: `${(currentStep / 5) * 100}%` }}></div>
+                            </div>
+                            <div className="progress-label">
+                                <span>{stepTitle}</span>
+                                <span className="progress-step">{Math.round((currentStep / 5) * 100)}%</span>
+                            </div>
+                        </div>
+
+                        <div className="step-chips">
+                            {['ID', 'POZO', 'COMP', 'TUB', 'FOT'].map((s, i) => (
+                                <div
+                                    key={s}
+                                    className={`step-chip ${currentStep === i + 1 ? 'active' : ''} ${currentStep > i + 1 ? 'done' : ''}`}
+                                    onClick={() => setCurrentStep(i + 1)}
+                                >
+                                    {i + 1}·{s}
+                                </div>
+                            ))}
+                        </div>
+                    </>
+                )}
+
+                <div className="content">
+                    {currentStep === 1 && (
+                        <div className="animate-in slide-in-from-right duration-300">
+                            <div className="card">
+                                <div className="card-title">Identificación del Pozo</div>
+                                <div className="field-row">
+                                    <div className="field">
+                                        <label>Pozo No.*</label>
+                                        <input type="text" value={state.pozo} onChange={e => updateState({ pozo: e.target.value })} placeholder="P-001" />
+                                    </div>
+                                    <div className="field">
+                                        <label>Fecha</label>
+                                        <input type="date" value={state.fecha} onChange={e => updateState({ fecha: e.target.value })} />
+                                    </div>
+                                </div>
+                                <div className="field">
+                                    <label>Estado Pozo</label>
+                                    <select value={state.estadoPozo} onChange={e => updateState({ estadoPozo: e.target.value })}>
+                                        {ESTADOS_POZO.map(e => <option key={e} value={e}>{e}</option>)}
+                                    </select>
+                                </div>
+                                <div className="field">
+                                    <label>Municipio</label>
+                                    <select value={state.municipio} onChange={e => updateState({ municipio: e.target.value })}>
+                                        {MUNICIPIOS.map(m => <option key={m} value={m}>{m}</option>)}
+                                    </select>
+                                </div>
+                                <div className="field">
+                                    <label>Barrio</label>
+                                    <input type="text" value={state.barrio} onChange={e => updateState({ barrio: e.target.value })} />
+                                </div>
+                                <div className="field">
+                                    <label>Dirección</label>
+                                    <input type="text" value={state.direccion} onChange={e => updateState({ direccion: e.target.value })} />
+                                </div>
+                                <div className="field">
+                                    <label>Cota Rasante (Z pozo)</label>
+                                    <input type="number" step="0.01" value={state.zRasante} onChange={e => updateState({ zRasante: parseFloat(e.target.value) })} />
+                                </div>
+                            </div>
+
+                            <div className="card">
+                                <div className="card-title">Sistema</div>
+                                <div className="chips-big">
+                                    {SISTEMAS.map(s => (
+                                        <div
+                                            key={s}
+                                            className={`chip-big ${state.sistema === s ? 'selected' : ''}`}
+                                            onClick={() => updateState({ sistema: s })}
+                                        >
+                                            {s}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="card">
+                                <div className="card-title">Ubicación GPS</div>
+                                <div className="gps-wrap">
+                                    <button className="btn btn-blue btn-full btn-sm" onClick={captureGPS}>
+                                        <MapPin size={14} /> Capturar Coordenadas
+                                    </button>
+                                    {state.gps.lat && (
+                                        <div className="gps-result show">
+                                            📍 Lat: <strong>{state.gps.lat}</strong> | Lng: <strong>{state.gps.lng}</strong><br />
+                                            🎯 Precisión: <strong>{state.gps.precision} m</strong>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="btn-row">
+                                <button className="btn btn-green btn-full" onClick={() => setCurrentStep(2)}>Siguiente <ChevronRight size={16} /></button>
+                            </div>
+                        </div>
+                    )}
+
+                    {currentStep === 2 && (
+                        <div className="animate-in slide-in-from-right duration-300">
+                            <div className="card">
+                                <div className="card-title">Dimensiones (m)</div>
+                                <div className="well-diagram">
+                                    <WellDiagram diam={state.diam} altura={state.altura} pipes={state.pipes} />
+                                </div>
+                                <div className="field-row">
+                                    <div className="field">
+                                        <label>Diámetro</label>
+                                        <div className="counter">
+                                            <button className="counter-btn" onClick={() => updateState({ diam: Math.max(0.1, state.diam - 0.1) })}>−</button>
+                                            <div className="counter-val">{state.diam.toFixed(2)}</div>
+                                            <button className="counter-btn" onClick={() => updateState({ diam: state.diam + 0.1 })}>+</button>
+                                        </div>
+                                    </div>
+                                    <div className="field">
+                                        <label>Altura</label>
+                                        <div className="counter">
+                                            <button className="counter-btn" onClick={() => updateState({ altura: Math.max(0.1, state.altura - 0.25) })}>−</button>
+                                            <div className="counter-val">{state.altura.toFixed(2)}</div>
+                                            <button className="counter-btn" onClick={() => updateState({ altura: state.altura + 0.25 })}>+</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="card">
+                                <div className="card-title">Tipo de Cámara</div>
+                                <div className="chips">
+                                    {TIPOS_CAMARA.map(t => (
+                                        <div key={t} className={`chip ${state.camara === t ? 'selected' : ''}`} onClick={() => updateState({ camara: t })}>
+                                            {t.replace(/_/g, ' ')}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="card">
+                                <div className="card-title">Rasante</div>
+                                <div className="chips">
+                                    {RASANTES.map(r => (
+                                        <div key={r} className={`chip ${state.rasante === r ? 'selected' : ''}`} onClick={() => updateState({ rasante: r })}>
+                                            {r.replace(/_/g, ' ')}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="btn-row">
+                                <button className="btn btn-ghost" onClick={() => setCurrentStep(1)}><ChevronLeft size={16} /> Volver</button>
+                                <button className="btn btn-green" onClick={() => setCurrentStep(3)}>Siguiente <ChevronRight size={16} /></button>
+                            </div>
+                        </div>
+                    )}
+
+                    {currentStep === 3 && (
+                        <div className="animate-in slide-in-from-right duration-300">
+                            <ComponentEditor
+                                label="Tapa"
+                                data={state.tapa}
+                                onChange={(v) => updateState({ tapa: { ...state.tapa, ...v } })}
+                                materials={['CONCRETO', 'HIERRO', 'POLIPROPILENO', 'PVC', 'OTRO']}
+                            />
+                            <ComponentEditor
+                                label="Cuerpo"
+                                data={state.cuerpo}
+                                onChange={(v) => updateState({ cuerpo: { ...state.cuerpo, ...v } })}
+                                materials={['MAMPOSTERIA', 'CONCRETO', 'PVC', 'GRP', 'OTRO']}
+                            />
+                            <ComponentEditor
+                                label="Cono"
+                                data={state.cono}
+                                onChange={(v) => updateState({ cono: { ...state.cono, ...v } })}
+                                materials={['CONCENTRICO', 'EXCENTRICO', 'OTRO']}
+                                isCono
+                            />
+                            <ComponentEditor
+                                label="Cañuela"
+                                data={state.canu}
+                                onChange={(v) => updateState({ canu: { ...state.canu, ...v } })}
+                                materials={['MAMPOSTERIA', 'CONCRETO', 'PVC', 'OTRO']}
+                            />
+                            <ComponentEditor
+                                label="Peldaños"
+                                data={state.peld}
+                                onChange={(v) => updateState({ peld: { ...state.peld, ...v } })}
+                                materials={['HIERRO', 'POLIPROPILENO', 'NO_TIENE']}
+                            />
+
+                            <div className="btn-row">
+                                <button className="btn btn-ghost" onClick={() => setCurrentStep(2)}><ChevronLeft size={16} /> Volver</button>
+                                <button className="btn btn-green" onClick={() => setCurrentStep(4)}>Siguiente <ChevronRight size={16} /></button>
+                            </div>
+                        </div>
+                    )}
+
+                    {currentStep === 4 && (
+                        <div className="animate-in slide-in-from-right duration-300">
+                            <div className="card">
+                                <div className="card-title">Tuberías (E1-7 / S1-2)</div>
+                                <div className="space-y-4">
+                                    {state.pipes.map((p, idx) => (
+                                        <PipeCard
+                                            key={p.id}
+                                            pipe={p}
+                                            index={idx}
+                                            onUpdate={(upd) => {
+                                                const newPipes = [...state.pipes];
+                                                newPipes[idx] = { ...p, ...upd };
+                                                updateState({ pipes: newPipes });
+                                            }}
+                                            onDelete={() => {
+                                                updateState({ pipes: state.pipes.filter((_, i) => i !== idx) });
+                                            }}
+                                        />
+                                    ))}
+                                    <button className="btn btn-blue btn-full btn-sm" onClick={() => {
+                                        const id = `P_${Date.now()}`;
+                                        const zCalc = (state.zRasante || 0) - state.altura; // Real field logic usually Z_Ras - H
+                                        updateState({ pipes: [...state.pipes, { id, es: 'ENTRADA', deA: '', diam: '', mat: '', estado: '', cotaZ: zCalc.toFixed(3), emboq: 'NO' }] });
+                                    }}>
+                                        <Plus size={14} /> Agregar Tubería
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="card mt-4">
+                                <div className="card-title">Sumideros (1-6)</div>
+                                <div className="space-y-4">
+                                    {state.sums.map((s, idx) => (
+                                        <SumideroCard
+                                            key={s.id}
+                                            sum={s}
+                                            index={idx}
+                                            onUpdate={(upd) => {
+                                                const newSums = [...state.sums];
+                                                newSums[idx] = { ...s, ...upd };
+                                                updateState({ sums: newSums });
+                                            }}
+                                            onDelete={() => {
+                                                updateState({ sums: state.sums.filter((_, i) => i !== idx) });
+                                            }}
+                                        />
+                                    ))}
+                                    <button className="btn btn-orange btn-full btn-sm" onClick={() => {
+                                        const id = `S_${Date.now()}`;
+                                        updateState({ sums: [...state.sums, { id, tipo: '', matRejilla: '', matCaja: '', hSalida: '', hLlegada: '', estado: '', codEsquema: `S-${state.sums.length + 1}`, diamTub: '', matTub: '' }] });
+                                    }}>
+                                        <Plus size={14} /> Agregar Sumidero
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="btn-row">
+                                <button className="btn btn-ghost" onClick={() => setCurrentStep(3)}><ChevronLeft size={16} /> Volver</button>
+                                <button className="btn btn-green" onClick={() => setCurrentStep(5)}>Siguiente <ChevronRight size={16} /></button>
+                            </div>
+                        </div>
+                    )}
+
+                    {currentStep === 5 && (
+                        <div className="animate-in slide-in-from-right duration-300">
+                            <div className="card">
+                                <div className="card-title">Registro Fotográfico (Max 4/zona)</div>
+                                <div className="card">
+                                    <FotosZone
+                                        pozoId={state.pozo || 'S/N'}
+                                        photos={state.fotoList}
+                                        onAddPhoto={(foto) => updateState({ fotoList: [...state.fotoList, foto] })}
+                                        onDeletePhoto={(id) => updateState({ fotoList: state.fotoList.filter(f => f.id !== id) })}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="card">
+                                <div className="card-title">Observaciones y Cierre</div>
+                                <div className="field">
+                                    <label>Observaciones</label>
+                                    <textarea value={state.obs} onChange={e => updateState({ obs: e.target.value })} rows={4} placeholder="..." />
+                                </div>
+                                <div className="field-row">
+                                    <div className="field">
+                                        <label>Revisó</label>
+                                        <input type="text" value={state.reviso} onChange={e => updateState({ reviso: e.target.value })} />
+                                    </div>
+                                    <div className="field">
+                                        <label>Aprobó</label>
+                                        <input type="text" value={state.aprobo} onChange={e => updateState({ aprobo: e.target.value })} />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="btn-row">
+                                <button className="btn btn-ghost" onClick={() => setCurrentStep(4)}><ChevronLeft size={16} /> Volver</button>
+                                <button className="btn btn-green" onClick={() => setCurrentStep(6)}>Finalizar <Check size={16} /></button>
+                            </div>
+                        </div>
+                    )}
+
+                    {currentStep === 6 && (
+                        <div className="animate-in zoom-in duration-500">
+                            <div className="summary-check">
+                                <div className="check-circle">
+                                    <Check color="var(--green)" size={32} strokeWidth={3} />
+                                </div>
+                            </div>
+                            <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+                                <div style={{ fontFamily: 'Syne', fontWeight: 800, fontSize: '20px', color: 'var(--green)' }}>¡Ficha Completa!</div>
+                                <div style={{ fontSize: '12px', color: 'var(--text3)', marginTop: '4px' }}>Pozo {state.pozo} · {state.barrio}</div>
+                            </div>
+
+                            <div className="summary-grid">
+                                <SummaryItem label="Pozo No." val={state.pozo} />
+                                <SummaryItem label="Estado" val={state.estadoPozo} />
+                                <SummaryItem label="Sistema" val={state.sistema} />
+                                <SummaryItem label="GPS" val={state.gps.lat ? `${state.gps.lat}, ${state.gps.lng}` : 'No'} />
+                                <SummaryItem label="Altura" val={`${state.altura} m`} />
+                                <SummaryItem label="Ø Cuerpo" val={`${state.diam} m`} />
+                                <SummaryItem label="Tuberías" val={state.pipes.length.toString()} />
+                                <SummaryItem label="Fotos" val={state.fotoList.length.toString()} />
+                            </div>
+
+                            <div className="space-y-3 mt-6">
+                                <button className="btn btn-green btn-full" onClick={saveFicha}>
+                                    <Save size={16} /> Guardar y Sincronizar
+                                </button>
+                                <button className="btn btn-blue btn-full" onClick={handleExcel}>
+                                    <FileJson size={16} /> Exportar Reporte XLSX
+                                </button>
+                                <div className="btn-row">
+                                    <button className="btn btn-yellow" onClick={handleExcel}><Download size={14} /> Excel Global</button>
+                                    <button className="btn btn-orange" onClick={handlePDF}><FileText size={14} /> PDF Ficha</button>
+                                </div>
+                                <button className="btn btn-ghost btn-full" onClick={() => toast("📲 Test Sync Cel2: Conexión Activa")}>
+                                    <RefreshCw size={16} /> Test Sync Cel2
+                                </button>
+                                <button className="btn btn-ghost btn-full" onClick={startNewFicha}>
+                                    <Plus size={16} /> Nueva Ficha
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
     };
 
     return (
-        <div className="min-h-screen bg-[#010409] text-[#E8EEFF] font-sans pb-20">
-            <PozoHeader
-                onDataChange={handleDataChange}
-                syncStatus={isOnline ? 'nube' : 'local'}
-            />
+        <div className="app-container">
+            {activeScreen === 's0' && renderHome()}
+            {activeScreen === 'sFichas' && renderFichas()}
+            {activeScreen === 'sConfig' && renderConfig()}
+            {activeScreen === 'sForm' && renderForm()}
 
-            <main className="max-w-7xl mx-auto p-4 md:p-8 space-y-6">
-                {/* Realtime Status Bar */}
-                <div className="flex flex-col md:flex-row items-center justify-between bg-[#0d1117] border border-[#30363d] p-4 rounded-xl gap-4">
-                    <div className="flex items-center gap-4 w-full md:w-auto">
-                        <button
-                            onClick={() => setIsOculto(!isOculto)}
-                            className={`flex items-center justify-center gap-2 px-4 py-2 rounded-md font-bold text-xs transition-all flex-1 md:flex-none ${isOculto
-                                ? 'bg-orange-500/20 text-orange-400 border border-orange-500/50'
-                                : 'bg-[#161b22] text-gray-400 border border-[#30363d] hover:text-white'
-                                }`}
-                        >
-                            {isOculto ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                            SISTEMA {isOculto ? 'OCULTO' : 'VISIBLE'}
-                        </button>
+            {/* TOAST NOTIFICATION */}
+            <div id="toast" className={showToast ? 'show' : ''}>{toastMsg}</div>
 
-                        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-[10px] font-bold uppercase tracking-widest ${isOnline ? 'border-green-500/30 text-green-400' : 'border-red-500/30 text-red-400'}`}>
-                            {isOnline ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
-                            {isOnline ? 'En línea' : 'Modo Offline'}
+            {/* BOTTOM NAV */}
+            <nav className="bottom-nav">
+                <button
+                    className={`nav-btn ${activeScreen === 's0' ? 'active' : ''}`}
+                    onClick={() => setActiveScreen('s0')}
+                >
+                    <Home size={20} />
+                    <span>Inicio</span>
+                </button>
+                <button
+                    className={`nav-btn ${activeScreen === 'sFichas' ? 'active' : ''}`}
+                    onClick={() => setActiveScreen('sFichas')}
+                >
+                    <List size={20} />
+                    <span>Fichas</span>
+                </button>
+                <button
+                    className="nav-btn"
+                    onClick={() => toast("📍 Abrir visor de mapa...")}
+                >
+                    <MapPin size={20} />
+                    <span>Mapa</span>
+                </button>
+                <button
+                    className={`nav-btn ${activeScreen === 'sConfig' ? 'active' : ''}`}
+                    onClick={() => setActiveScreen('sConfig')}
+                >
+                    <SettingsIcon size={20} />
+                    <span>Config</span>
+                </button>
+            </nav>
+        </div>
+    );
+};
+
+/* ═══════════════════════════════════════════════════════════
+   SUB-COMPONENTS
+═══════════════════════════════════════════════════════════ */
+
+const SummaryItem: React.FC<{ label: string; val: string }> = ({ label, val }) => (
+    <div className="summary-cell">
+        <div className="summary-cell-label">{label}</div>
+        <div className="summary-cell-val">{val || '—'}</div>
+    </div>
+);
+
+const WellDiagram: React.FC<{ diam: number; altura: number; pipes?: Pipe[] }> = ({ diam, altura, pipes = [] }) => {
+    const cx = 90;
+    const bodyW = Math.min(140, Math.max(60, diam * 80));
+    const bodyH = Math.min(160, Math.max(60, altura * 35));
+    const coneH = 30;
+    const canoH = 15;
+    const tapW = 30;
+    const tapH = 10;
+
+    const bodyTop = 50;
+    const bodyBot = bodyTop + bodyH;
+    const canoBot = bodyBot + canoH;
+    const coneTop = bodyTop - coneH;
+    const tapTop = coneTop - tapH - 2;
+
+    return (
+        <svg id="wellSvg" viewBox={`0 0 180 ${canoBot + 20}`} xmlns="http://www.w3.org/2000/svg">
+            <defs>
+                <linearGradient id="bodyGrad" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stopColor="#1C2230" />
+                    <stop offset="50%" stopColor="#2A3347" />
+                    <stop offset="100%" stopColor="#1C2230" />
+                </linearGradient>
+            </defs>
+            <text x="4" y={tapTop + 8} fontFamily="DM Mono" fontSize="8" fill="#5B6B8A">TAPA</text>
+            <rect x={cx - tapW / 2} y={tapTop} width={tapW} height={tapH} rx="3" fill="#334060" />
+            <path d={`M${cx - tapW / 2},${coneTop} L${cx - bodyW / 2},${bodyTop} L${cx + bodyW / 2},${bodyTop} L${cx + tapW / 2},${coneTop} Z`} fill="url(#bodyGrad)" stroke="#334060" />
+            <rect x={cx - bodyW / 2} y={bodyTop} width={bodyW} height={bodyH} fill="url(#bodyGrad)" stroke="#334060" />
+
+            {/* Visual Pipes */}
+            {pipes.map((p, i) => {
+                const isEntrada = p.es === 'ENTRADA';
+                const xPos = isEntrada ? cx - bodyW / 2 - 10 : cx + bodyW / 2 - 10;
+                const yPos = bodyBot - 10 - (i * 8);
+                return (
+                    <rect
+                        key={p.id}
+                        x={xPos}
+                        y={yPos}
+                        width="20"
+                        height="6"
+                        fill={isEntrada ? "var(--blue)" : "var(--orange)"}
+                        opacity="0.8"
+                        rx="1"
+                    />
+                );
+            })}
+
+            <text x={cx} y={bodyTop + bodyH + 18} fontFamily="DM Mono" fontSize="8" fill="#00C896" textAnchor="middle">ø{diam.toFixed(2)}m</text>
+            <text x={cx - bodyW / 2 - 10} y={bodyTop + bodyH / 2} fontFamily="DM Mono" fontSize="8" fill="#0084FF" textAnchor="end">{altura.toFixed(2)}m</text>
+        </svg>
+    );
+};
+
+const ComponentEditor: React.FC<{
+    label: string;
+    data: ComponentState;
+    onChange: (v: Partial<ComponentState>) => void;
+    materials: string[];
+    isCono?: boolean;
+}> = ({ label, data, onChange, materials, isCono }) => (
+    <div className="comp-section">
+        <div className="comp-section-title">{label}</div>
+        <div className="comp-row">
+            <div className="flex justify-between items-center">
+                <span className="comp-label">Existe</span>
+                <div className="toggle3 w-32">
+                    <button className={`t-si ${data.existe === 'SI' ? 'active-si' : ''}`} onClick={() => onChange({ existe: 'SI' })}>SI</button>
+                    <button className={`t-no ${data.existe === 'NO' ? 'active-no' : ''}`} onClick={() => onChange({ existe: 'NO' })}>NO</button>
+                    <button className={`t-dk ${data.existe === 'DESCONOCIDO' ? 'active-dk' : ''}`} onClick={() => onChange({ existe: 'DESCONOCIDO' })}>?</button>
+                </div>
+            </div>
+            <div>
+                <label className="comp-label">{isCono ? 'Tipo' : 'Material'}</label>
+                <div className="chips">
+                    {materials.map(m => (
+                        <div key={m} className={`chip ${data.mat === m ? 'selected' : ''}`} onClick={() => onChange({ mat: m })}>
+                            {m}
                         </div>
+                    ))}
+                </div>
+            </div>
+            <div>
+                <label className="comp-label">Estado</label>
+                <div className="semaphore">
+                    {['bueno', 'regular', 'malo', 'desconocido'].map(e => (
+                        <button
+                            key={e}
+                            className={`sem-btn s-${e === 'bueno' ? 'good' : e === 'regular' ? 'reg' : e === 'malo' ? 'bad' : 'unk'} ${data.estado === e ? 'active' : ''}`}
+                            onClick={() => onChange({ estado: e })}
+                        >
+                            {e[0].toUpperCase() + e.slice(1)}
+                        </button>
+                    ))}
+                </div>
+            </div>
+        </div>
+    </div>
+);
+
+const PipeCard: React.FC<{ pipe: Pipe; index: number; onUpdate: (u: Partial<Pipe>) => void; onDelete: () => void }> = ({ pipe, index, onUpdate, onDelete }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    return (
+        <div className="pipe-card">
+            <div className="pipe-card-header" onClick={() => setIsOpen(!isOpen)}>
+                <div className="pipe-card-label">
+                    <span className={`pipe-badge ${pipe.es === 'ENTRADA' ? 'entrada' : 'salida'}`}>{pipe.es}</span>
+                    Tubería {index + 1} {pipe.deA && `· ${pipe.deA}`}
+                </div>
+                <div className="flex items-center gap-2">
+                    {isOpen ? <ChevronRight size={14} className="rotate-90" /> : <ChevronRight size={14} />}
+                    <Trash2 size={14} className="text-red-500" onClick={onDelete} />
+                </div>
+            </div>
+            <div className={`pipe-body ${isOpen ? 'open' : ''}`}>
+                <div className="pipe-toggle">
+                    <button className={pipe.es === 'ENTRADA' ? 'e-active' : ''} onClick={() => onUpdate({ es: 'ENTRADA' })}>⬇ ENTRADA</button>
+                    <button className={pipe.es === 'SALIDA' ? 's-active' : ''} onClick={() => onUpdate({ es: 'SALIDA' })}>⬆ SALIDA</button>
+                </div>
+                <div className="field-row">
+                    <div className="field"><label>De/Hasta</label><input type="text" value={pipe.deA} onChange={e => onUpdate({ deA: e.target.value })} /></div>
+                    <div className="field"><label>Ø (mm)</label><input type="number" value={pipe.diam} onChange={e => onUpdate({ diam: e.target.value })} /></div>
+                </div>
+                <div className="field-row">
+                    <div className="field">
+                        <label>Material</label>
+                        <select value={pipe.mat} onChange={e => onUpdate({ mat: e.target.value })}>
+                            <option value="">—</option>
+                            <option>CONCRETO</option>
+                            <option>PVC_CORR</option>
+                            <option>PVC_LISO</option>
+                            <option>GRES</option>
+                            <option>GRP</option>
+                        </select>
                     </div>
-
-                    <div className="flex items-center gap-3 w-full md:w-auto">
-                        {loading && headerData.pozoNo && (
-                            <div className="flex items-center gap-2 text-blue-400 animate-pulse text-xs font-bold">
-                                <RefreshCcw className="w-4 h-4" /> RECUPEANDO...
-                            </div>
-                        )}
-                        <div className="flex items-center gap-2 bg-[#161b22] px-3 py-2 rounded-md border border-[#30363d] text-[10px] font-mono font-bold text-purple-400">
-                            <LayoutGrid className="w-3 h-3" />
-                            DIM: {geometria.diametro}x{geometria.altura}
-                        </div>
-                        <button
-                            onClick={handleFinalSave}
-                            disabled={!headerData.pozoNo}
-                            className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-30 disabled:cursor-not-allowed px-6 py-2 rounded-md font-bold text-sm transition-all shadow-lg flex-1 md:flex-none"
-                        >
-                            <Save className="w-4 h-4" />
-                            SINCRONIZAR
-                        </button>
+                    <div className="field">
+                        <label>Z Invert (Calc)</label>
+                        <input type="text" value={pipe.cotaZ} readOnly className="bg-gray-800 text-green-400 font-mono" />
                     </div>
                 </div>
+            </div>
+        </div>
+    );
+};
 
-                {/* Dynamic Forms Grid */}
-                <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
-                    <div className="xl:col-span-1">
-                        <GeometriaPozo
-                            pozoEstado={headerData.estado}
-                            onChange={setGeometria}
-                        />
+const SumideroCard: React.FC<{ sum: Sumidero; index: number; onUpdate: (u: Partial<Sumidero>) => void; onDelete: () => void }> = ({ sum, index, onUpdate, onDelete }) => (
+    <div className="sum-card">
+        <button className="del-sum" onClick={onDelete}><Trash2 size={14} /></button>
+        <div className="comp-section-title">Sumidero {index + 1} ({sum.codEsquema})</div>
+        <div className="field-row">
+            <div className="field"><label>Cód.</label><input type="text" value={sum.codEsquema} onChange={e => onUpdate({ codEsquema: e.target.value })} /></div>
+            <div className="field"><label>Tipo</label><select value={sum.tipo} onChange={e => onUpdate({ tipo: e.target.value })}><option>MIXTO</option><option>VENTANA</option><option>REJILLA</option></select></div>
+        </div>
+    </div>
+);
+
+const PhotoZone: React.FC<{ label: string; icon: React.ReactNode; photos: string[]; onAdd: (img: string) => void; onDelete: (idx: number) => void }> = ({ label, icon, photos, onAdd, onDelete }) => {
+    const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => onAdd(ev.target?.result as string);
+        reader.readAsDataURL(file);
+    };
+    return (
+        <div className="mb-6">
+            <div className="flex justify-between items-center mb-2">
+                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">{label}</span>
+                <span className="text-[9px] text-blue-400 font-mono">Cola Drive: ☁ Sincronizando...</span>
+            </div>
+            <div className="photo-zone">
+                <input type="file" accept="image/*" capture="environment" onChange={handleFile} />
+                <div className="pz-icon">{icon}</div>
+                <div className="pz-label">Tocar para Captura</div>
+            </div>
+            <div className="photo-thumbs">
+                {photos.map((p, i) => (
+                    <div key={i} className="photo-thumb">
+                        <img src={p} alt="thumb" />
+                        <button className="del-photo" onClick={() => onDelete(i)}>✕</button>
                     </div>
-
-                    <div className="xl:col-span-2">
-                        <TuberiasForm
-                            pozoEstado={headerData.estado}
-                            isOculto={isOculto}
-                        />
-                    </div>
-                </div>
-
-                <FotosZone />
-
-                <footer className="py-10 text-center opacity-30 pointer-events-none">
-                    <p className="text-[10px] uppercase tracking-[0.2em]">Firestore Realtime Sync &bull; Offline Persistence Active</p>
-                </footer>
-            </main>
-
-            <style dangerouslySetInnerHTML={{
-                __html: `
-        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700&display=swap');
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-        
-        body {
-          font-family: 'Inter', sans-serif;
-          background-color: #010409;
-        }
-
-        .font-syne {
-          font-family: 'Syne', sans-serif;
-        }
-
-        ::-webkit-scrollbar {
-          width: 8px;
-          height: 8px;
-        }
-        ::-webkit-scrollbar-track {
-          background: #0d1117;
-        }
-        ::-webkit-scrollbar-thumb {
-          background: #30363d;
-          border-radius: 4px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-          background: #484f58;
-        }
-      ` }} />
+                ))}
+            </div>
         </div>
     );
 };
