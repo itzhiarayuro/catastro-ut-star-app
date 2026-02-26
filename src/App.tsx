@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { db, useFirestoreDoc } from './lib/firebase';
+import { db, useFirestoreDoc, useAuth } from './lib/firebase';
+import LoginPage from './components/LoginPage';
 import {
     Home, List, MapPin, Settings as SettingsIcon,
     ChevronLeft, ChevronRight, Check, Plus, Trash2,
     Wifi, WifiOff, Save, FileJson, FileText, Download,
     Cloud, Globe, Lightbulb, AlertTriangle, Info, Camera,
-    RefreshCw
+    RefreshCw, LogOut
 } from 'lucide-react';
 import { FotoRegistro } from './utils/fotoProcessor';
 import FotosZone from './components/FotosZone';
@@ -36,6 +37,7 @@ interface Pipe {
     mat: string;
     estado: string;
     cotaZ: string;
+    pendiente: string;
     emboq: string;
 }
 
@@ -140,6 +142,7 @@ const INITIAL_STATE: AppState = {
 ═══════════════════════════════════════════════════════════ */
 
 const App: React.FC = () => {
+    const { user, loading: authLoading, isAuthorized, logout } = useAuth();
     const [activeScreen, setActiveScreen] = useState<'s0' | 'sFichas' | 'sConfig' | 'sForm'>('s0');
     const [currentStep, setCurrentStep] = useState(1);
     const [state, setState] = useState<AppState>(INITIAL_STATE);
@@ -468,10 +471,28 @@ const App: React.FC = () => {
                 <button
                     className="btn btn-danger btn-full"
                     onClick={() => { if (confirm("¿Borrar todo?")) { localStorage.removeItem('fichas_star'); setFichas({}); toast("🗑 Memoria limpiada"); } }}
+                    style={{ marginBottom: '12px' }}
                 >
                     <Trash2 size={16} /> Limpiar Base de Datos Local
                 </button>
+
+                <div className="card" style={{ marginTop: '20px', background: 'rgba(239, 68, 68, 0.05)', borderColor: 'rgba(239, 68, 68, 0.1)' }}>
+                    <div className="card-title" style={{ color: '#ef4444' }}>Sesión de Usuario</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+                        <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold' }}>
+                            {user?.name?.[0] || 'U'}
+                        </div>
+                        <div>
+                            <div style={{ fontSize: '14px', fontWeight: 'bold' }}>{user?.name}</div>
+                            <div style={{ fontSize: '11px', color: '#64748b' }}>{user?.email}</div>
+                        </div>
+                    </div>
+                    <button className="btn btn-ghost btn-full" onClick={logout}>
+                        <LogOut size={16} /> Cerrar Sesión
+                    </button>
+                </div>
             </div>
+
         </div>
     );
 
@@ -554,16 +575,16 @@ const App: React.FC = () => {
                                     </select>
                                 </div>
                                 <div className="field">
-                                    <label>Barrio</label>
-                                    <input type="text" value={state.barrio} onChange={e => updateState({ barrio: e.target.value })} />
+                                    <label>Barrio*</label>
+                                    <input type="text" value={state.barrio} onChange={e => updateState({ barrio: e.target.value })} placeholder="Ej: Centro" />
                                 </div>
                                 <div className="field">
-                                    <label>Dirección</label>
-                                    <input type="text" value={state.direccion} onChange={e => updateState({ direccion: e.target.value })} />
+                                    <label>Dirección*</label>
+                                    <input type="text" value={state.direccion} onChange={e => updateState({ direccion: e.target.value })} placeholder="Ej: Cl 10 # 5-20" />
                                 </div>
                                 <div className="field">
-                                    <label>Cota Rasante (Z pozo)</label>
-                                    <input type="number" step="0.01" value={state.zRasante} onChange={e => updateState({ zRasante: parseFloat(e.target.value) })} />
+                                    <label>Altura Total (H pozo)</label>
+                                    <input type="number" step="0.01" value={state.altura} onChange={e => updateState({ altura: parseFloat(e.target.value) || 0 })} placeholder="0.00" />
                                 </div>
                             </div>
 
@@ -598,7 +619,13 @@ const App: React.FC = () => {
                             </div>
 
                             <div className="btn-row">
-                                <button className="btn btn-green btn-full" onClick={() => setCurrentStep(2)}>Siguiente <ChevronRight size={16} /></button>
+                                <button className="btn btn-green btn-full" onClick={() => {
+                                    if (!state.pozo || !state.barrio || !state.direccion) {
+                                        toast("⚠️ Por favor completa Pozo, Barrio y Dirección.");
+                                        return;
+                                    }
+                                    setCurrentStep(2);
+                                }}>Siguiente <ChevronRight size={16} /></button>
                             </div>
                         </div>
                     )}
@@ -611,20 +638,26 @@ const App: React.FC = () => {
                                     <WellDiagram diam={state.diam} altura={state.altura} pipes={state.pipes} />
                                 </div>
                                 <div className="field-row">
-                                    <div className="field">
-                                        <label>Diámetro</label>
-                                        <div className="counter">
-                                            <button className="counter-btn" onClick={() => updateState({ diam: Math.max(0.1, state.diam - 0.1) })}>−</button>
-                                            <div className="counter-val">{state.diam.toFixed(2)}</div>
-                                            <button className="counter-btn" onClick={() => updateState({ diam: state.diam + 0.1 })}>+</button>
+                                    <div className="field-row">
+                                        <div className="field">
+                                            <label>Diámetro del Cuerpo (m)</label>
+                                            <input
+                                                type="number"
+                                                step="0.05"
+                                                value={state.diam}
+                                                onChange={e => updateState({ diam: parseFloat(e.target.value) || 0 })}
+                                                placeholder="0.00"
+                                            />
                                         </div>
-                                    </div>
-                                    <div className="field">
-                                        <label>Altura</label>
-                                        <div className="counter">
-                                            <button className="counter-btn" onClick={() => updateState({ altura: Math.max(0.1, state.altura - 0.25) })}>−</button>
-                                            <div className="counter-val">{state.altura.toFixed(2)}</div>
-                                            <button className="counter-btn" onClick={() => updateState({ altura: state.altura + 0.25 })}>+</button>
+                                        <div className="field">
+                                            <label>Altura Total (m)</label>
+                                            <input
+                                                type="number"
+                                                step="0.05"
+                                                value={state.altura}
+                                                onChange={e => updateState({ altura: parseFloat(e.target.value) || 0 })}
+                                                placeholder="0.00"
+                                            />
                                         </div>
                                     </div>
                                 </div>
@@ -722,8 +755,7 @@ const App: React.FC = () => {
                                     ))}
                                     <button className="btn btn-blue btn-full btn-sm" onClick={() => {
                                         const id = `P_${Date.now()}`;
-                                        const zCalc = (state.zRasante || 0) - state.altura; // Real field logic usually Z_Ras - H
-                                        updateState({ pipes: [...state.pipes, { id, es: 'ENTRADA', deA: '', diam: '', mat: '', estado: '', cotaZ: zCalc.toFixed(3), emboq: 'NO' }] });
+                                        updateState({ pipes: [...state.pipes, { id, es: 'ENTRADA', deA: '', diam: '', mat: '', estado: '', cotaZ: '', pendiente: '', emboq: 'NO' }] });
                                     }}>
                                         <Plus size={14} /> Agregar Tubería
                                     </button>
@@ -820,9 +852,10 @@ const App: React.FC = () => {
                                 <SummaryItem label="Estado" val={state.estadoPozo} />
                                 <SummaryItem label="Sistema" val={state.sistema} />
                                 <SummaryItem label="GPS" val={state.gps.lat ? `${state.gps.lat}, ${state.gps.lng}` : 'No'} />
-                                <SummaryItem label="Altura" val={`${state.altura} m`} />
+                                <SummaryItem label="Altura Total" val={`${state.altura} m`} />
                                 <SummaryItem label="Ø Cuerpo" val={`${state.diam} m`} />
                                 <SummaryItem label="Tuberías" val={state.pipes.length.toString()} />
+                                <SummaryItem label="Pendientes" val={state.pipes.some(p => p.pendiente) ? 'Registradas' : 'No'} />
                                 <SummaryItem label="Fotos" val={state.fotoList.length.toString()} />
                             </div>
 
@@ -850,6 +883,23 @@ const App: React.FC = () => {
             </div>
         );
     };
+
+    if (authLoading) return (
+        <div style={{ background: '#020617', color: 'white', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Inter' }}>
+            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+        </div>
+    );
+
+    if (!user) return <LoginPage />;
+
+    if (!isAuthorized) return (
+        <div style={{ background: '#020617', color: 'white', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontFamily: 'Inter', padding: '20px', textAlign: 'center' }}>
+            <AlertTriangle size={48} color="#ef4444" style={{ marginBottom: '20px' }} />
+            <h1 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '10px' }}>Acceso No Autorizado</h1>
+            <p style={{ color: '#94a3b8', maxWidth: '300px' }}>El correo <strong>{user.email}</strong> no tiene permisos para acceder a este sistema.</p>
+            <button className="btn btn-ghost mt-6" onClick={logout} style={{ marginTop: '30px' }}>Cerrar Sesión</button>
+        </div>
+    );
 
     return (
         <div className="app-container">
@@ -932,9 +982,16 @@ const WellDiagram: React.FC<{ diam: number; altura: number; pipes?: Pipe[] }> = 
                 </linearGradient>
             </defs>
             <text x="4" y={tapTop + 8} fontFamily="DM Mono" fontSize="8" fill="#5B6B8A">TAPA</text>
-            <rect x={cx - tapW / 2} y={tapTop} width={tapW} height={tapH} rx="3" fill="#334060" />
+
+            {/* Cone / Reducer matching body width */}
             <path d={`M${cx - tapW / 2},${coneTop} L${cx - bodyW / 2},${bodyTop} L${cx + bodyW / 2},${bodyTop} L${cx + tapW / 2},${coneTop} Z`} fill="url(#bodyGrad)" stroke="#334060" />
+
+            {/* Body */}
             <rect x={cx - bodyW / 2} y={bodyTop} width={bodyW} height={bodyH} fill="url(#bodyGrad)" stroke="#334060" />
+
+            {/* Highlighted Diameter Line */}
+            <line x1={cx - bodyW / 2} y1={bodyTop + 10} x2={cx + bodyW / 2} y2={bodyTop + 10} stroke="#3b82f6" strokeWidth="1" strokeDasharray="2,2" />
+            <text x={cx} y={bodyTop + 8} textAnchor="middle" fontSize="6" fill="#3b82f6" fontWeight="bold">Ø {diam}m</text>
 
             {/* Visual Pipes */}
             {pipes.map((p, i) => {
@@ -1042,9 +1099,15 @@ const PipeCard: React.FC<{ pipe: Pipe; index: number; onUpdate: (u: Partial<Pipe
                             <option>GRP</option>
                         </select>
                     </div>
+                </div>
+                <div className="field-row">
                     <div className="field">
-                        <label>Z Invert (Calc)</label>
-                        <input type="text" value={pipe.cotaZ} readOnly className="bg-gray-800 text-green-400 font-mono" />
+                        <label>Cota Rasante (Z)</label>
+                        <input type="number" step="0.01" value={pipe.cotaZ} onChange={e => onUpdate({ cotaZ: e.target.value })} placeholder="0.00" className="bg-gray-800 text-green-400 font-mono" />
+                    </div>
+                    <div className="field">
+                        <label>Pendiente (%)</label>
+                        <input type="text" value={pipe.pendiente} onChange={e => onUpdate({ pendiente: e.target.value })} placeholder="0.0%" className="bg-gray-800 text-yellow-400 font-mono" />
                     </div>
                 </div>
             </div>

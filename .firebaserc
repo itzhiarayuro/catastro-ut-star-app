@@ -1,5 +1,7 @@
 {
   "projects": {
     "default": "catastro-ut-star"
-  }
+  },
+  "targets": {},
+  "etags": {}
 }
