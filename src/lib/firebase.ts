@@ -1,27 +1,34 @@
 import { initializeApp, getApps } from 'firebase/app';
+import { getAnalytics } from "firebase/analytics";
 import {
     getFirestore,
     doc,
     onSnapshot,
     setDoc,
-    enableIndexedDbPersistence,
-    collection
+    enableIndexedDbPersistence
 } from 'firebase/firestore';
 import { useState, useEffect } from 'react';
 
-// For local development, using a generic config. 
-// USER: Replace with your actual Firebase project config
+// Your web app's Firebase configuration
 const firebaseConfig = {
-    apiKey: "AIzaSy...",
+    apiKey: "AIzaSyClaOKQqLG6-KBNcVaAD_QYlBjeKyP3i2c",
     authDomain: "catastro-ut-star.firebaseapp.com",
     projectId: "catastro-ut-star",
-    storageBucket: "catastro-ut-star.appspot.com",
-    messagingSenderId: "123456789",
-    appId: "1:123456789:web:abcdef"
+    storageBucket: "catastro-ut-star.firebasestorage.app",
+    messagingSenderId: "691178303694",
+    appId: "1:691178303694:web:778ae824c94020f990209f",
+    measurementId: "G-25VYWZRQ7Q"
 };
 
+// Initialize Firebase
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
 const db = getFirestore(app);
+
+// Initialize Analytics (SSR safe)
+let analytics;
+if (typeof window !== 'undefined') {
+    analytics = getAnalytics(app);
+}
 
 // Enable Offline Persistence
 if (typeof window !== 'undefined') {
@@ -34,7 +41,7 @@ if (typeof window !== 'undefined') {
     });
 }
 
-export { db };
+export { db, analytics };
 
 /**
  * Custom hook for Realtime Firestore Document Sync
