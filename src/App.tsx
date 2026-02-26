@@ -4,7 +4,7 @@ import TuberiasForm from './components/TuberiasForm';
 import GeometriaPozo from './components/GeometriaPozo';
 import FotosZone from './components/FotosZone';
 import { useFirestoreDoc } from './lib/firebase';
-import { EyeOff, Eye, Save, LayoutGrid, CloudSync, Wifi, WifiOff } from 'lucide-react';
+import { EyeOff, Eye, Save, LayoutGrid, RefreshCcw, Wifi, WifiOff } from 'lucide-react';
 
 const App: React.FC = () => {
     // Local State
@@ -104,7 +104,7 @@ const App: React.FC = () => {
                     <div className="flex items-center gap-3 w-full md:w-auto">
                         {loading && headerData.pozoNo && (
                             <div className="flex items-center gap-2 text-blue-400 animate-pulse text-xs font-bold">
-                                <CloudSync className="w-4 h-4" /> RECUPEANDO...
+                                <RefreshCcw className="w-4 h-4" /> RECUPEANDO...
                             </div>
                         )}
                         <div className="flex items-center gap-2 bg-[#161b22] px-3 py-2 rounded-md border border-[#30363d] text-[10px] font-mono font-bold text-purple-400">

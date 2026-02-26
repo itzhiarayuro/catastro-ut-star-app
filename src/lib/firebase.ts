@@ -1,5 +1,4 @@
 import { initializeApp, getApps } from 'firebase/app';
-import { getAnalytics } from "firebase/analytics";
 import {
     getFirestore,
     doc,
@@ -16,19 +15,12 @@ const firebaseConfig = {
     projectId: "catastro-ut-star",
     storageBucket: "catastro-ut-star.firebasestorage.app",
     messagingSenderId: "691178303694",
-    appId: "1:691178303694:web:778ae824c94020f990209f",
-    measurementId: "G-25VYWZRQ7Q"
+    appId: "1:691178303694:web:778ae824c94020f990209f"
 };
 
 // Initialize Firebase
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
 const db = getFirestore(app);
-
-// Initialize Analytics (SSR safe)
-let analytics;
-if (typeof window !== 'undefined') {
-    analytics = getAnalytics(app);
-}
 
 // Enable Offline Persistence
 if (typeof window !== 'undefined') {
@@ -41,7 +33,7 @@ if (typeof window !== 'undefined') {
     });
 }
 
-export { db, analytics };
+export { db };
 
 /**
  * Custom hook for Realtime Firestore Document Sync
