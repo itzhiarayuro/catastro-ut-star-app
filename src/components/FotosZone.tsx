@@ -51,25 +51,33 @@ const PhotoSection: React.FC<{
         reader.onload = (ev) => {
             const blob = ev.target?.result as string;
 
-            let finalType = type;
-            let finalIndex = index;
-            let finalExtra: string | undefined = undefined;
+            let parts = [pozoId];
 
             if (isMedicion) {
-                finalIndex = medType;
-                finalType = "medicion";
-                finalExtra = medType;
-            } else if (type === "entrada" || type === "salida") {
-                finalExtra = extraType;
+                parts.push(medType); // AT or Z
+            } else if (type === "general") {
+                parts.push("P");
+            } else if (type === "tapa" || type === "interior") {
+                parts.push(type === "tapa" ? "T" : "I");
+            } else if (type === "entrada") {
+                parts.push(`E${index}-${extraType}`);
+            } else if (type === "salida") {
+                parts.push(`S${index}-${extraType}`);
             }
 
-            const metadata = procesarFoto(pozoId, finalType, finalIndex, sumidero, finalExtra);
-            const newFoto: FotoRegistro = {
-                ...metadata as FotoRegistro,
-                id: `foto_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                blobId: blob
-            };
-            onAdd(newFoto);
+            if (sumidero) {
+                if (!sumidero.toUpperCase().startsWith('SUM')) {
+                    parts.push(`SUM${sumidero}`);
+                } else {
+                    parts.push(sumidero.toUpperCase());
+                }
+            }
+
+            const filename = `${parts.join('-').toUpperCase()}.JPG`;
+
+            const newFoto = procesarFoto(filename, pozoId, blob);
+
+            onAdd({ ...newFoto, blobId: blob });
         };
         reader.readAsDataURL(file);
     };

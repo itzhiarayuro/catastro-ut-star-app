@@ -4,80 +4,113 @@ export interface FotoRegistro {
     tipo: "general" | "tapa" | "interior" | "medicion" | "entrada" | "salida" | "sumidero";
     categoria: "PRINCIPAL" | "ENTRADA" | "SALIDA" | "SUMIDERO" | "OTRO";
     subcategoria: string;
-    blobId: string;
     filename: string;
-    descripcion?: string;
+    sumideroAsociado?: string;
     esMedicion: boolean;
     esExcluido: boolean;
-    motivoExclusion?: "AT medición" | "Z profundidad";
-    sumideroAsociado?: string;
+    motivoExclusion?: string;
+    blobId: string;
 }
 
-export const generateFilename = (pozo: string, subcat: string, sumidero?: string): string => {
-    let parts = [pozo, subcat];
-    if (sumidero) parts.push(sumidero);
-    return `${parts.join('-').toUpperCase()}.JPG`;
-};
-
-export const procesarFoto = (
-    pozo: string,
-    tipo: FotoRegistro["tipo"] | string,
-    index: string,
-    sumidero?: string,
-    extra?: "T" | "Z" | "AT" | string
-): Partial<FotoRegistro> => {
-    let subcat = "";
+/**
+ * Función estricta que lee el nombre del archivo y retorna el JSON mapeado
+ * basándose únicamente en las reglas enviadas.
+ */
+export const procesarFoto = (filename: string, idPozo: string, base64String: string): FotoRegistro => {
+    // 1. Limpieza y preparación
+    const cleanFilename = filename.toUpperCase().replace(/\s+/g, '');
+    let tipo: FotoRegistro["tipo"] = "sumidero"; // Default genérico por TS
     let categoria: FotoRegistro["categoria"] = "OTRO";
+    let subcategoria = "";
+    let sumideroAsociado: string | undefined = undefined;
 
-    const pozoClean = pozo.replace(/\s+/g, '').toUpperCase();
-    const sumClean = sumidero?.replace(/\s+/g, '').toUpperCase();
-
-    switch (tipo) {
-        case "general":
-            subcat = "P";
-            categoria = "PRINCIPAL";
-            break;
-        case "tapa":
-            subcat = "T";
-            categoria = "PRINCIPAL";
-            break;
-        case "interior":
-            subcat = "I";
-            categoria = "PRINCIPAL";
-            break;
-        case "entrada":
-            subcat = `E${index}${extra ? `-${extra}` : '-T'}`; // Default to T if none
-            categoria = "ENTRADA";
-            break;
-        case "salida":
-            subcat = `S${index}${extra ? `-${extra}` : '-T'}`;
-            categoria = "SALIDA";
-            break;
-        case "sumidero":
-            subcat = `SUM${index}`;
-            categoria = "SUMIDERO";
-            break;
-        case "medicion":
-            subcat = extra || index;
-            categoria = "OTRO";
-            break;
-        default:
-            subcat = tipo.toUpperCase();
+    // 2. Extracción de Sumidero (si aplica, ej: -SUM936.JPG)
+    const matchSum = cleanFilename.match(/-SUM(\d+)\.JPG$/);
+    if (matchSum) {
+        sumideroAsociado = `SUM${matchSum[1]}`;
     }
 
-    const filename = generateFilename(pozoClean, subcat, sumClean);
-    const esMedicion = filename.includes("-AT") || filename.includes("-Z") || filename.includes("-AT-") || filename.includes("-Z-");
-    const esExcluido = esMedicion;
+    // 3. Regla Externa/Universal (AT y Z)
+    let esMedicion = false;
+    let esExcluido = false;
+    let motivoExclusion: string | undefined = undefined;
+
+    if (cleanFilename.includes("-AT.") || cleanFilename.includes("-AT-")) {
+        esMedicion = true;
+        esExcluido = true;
+        motivoExclusion = "Contiene AT - Foto de medición con cinta";
+    } else if (cleanFilename.includes("-Z.") || cleanFilename.includes("-Z-")) {
+        esMedicion = true;
+        esExcluido = true;
+        motivoExclusion = "Contiene Z - Foto de profundidad";
+    }
+
+    // 4. Mapeo Lógico Principal
+
+    // REGLAS 1: FOTOS DEL ELEMENTO PRINCIPAL
+    if (cleanFilename.endsWith("-P.JPG")) {
+        categoria = "PRINCIPAL";
+        subcategoria = "P";
+        tipo = "general";
+    }
+    else if (/-T\.JPG$/.test(cleanFilename) && !/-(E|S)\d+-T\.JPG$/.test(cleanFilename)) {
+        // Es una tapa principal si termina en -T.JPG y el bloque anterior no es un E1, S2, etc.
+        categoria = "PRINCIPAL";
+        subcategoria = "T";
+        tipo = "tapa";
+    }
+    else if (cleanFilename.endsWith("-I.JPG")) {
+        categoria = "PRINCIPAL";
+        subcategoria = "I";
+        tipo = "interior";
+    }
+    else if (cleanFilename.endsWith("-AT.JPG")) {
+        categoria = "PRINCIPAL";
+        subcategoria = "AT";
+        tipo = "medicion"; // El motivo Excluido ya se asignó arriba
+    }
+    // REGLAS 2 Y 3: TUBERÍAS ENTRADA / SALIDA
+    else {
+        // Buscar el patrón fundamental -(E|S)#-(T|Z)
+        const matchTub = cleanFilename.match(/-(E|S)(\d+)-(T|Z)/);
+        if (matchTub) {
+            const letter = matchTub[1];
+            const num = matchTub[2];
+            const vista = matchTub[3];
+
+            if (letter === "E") {
+                categoria = "ENTRADA";
+                if (vista === "T") {
+                    subcategoria = `E${num}`;
+                    tipo = "entrada";
+                } else if (vista === "Z") {
+                    subcategoria = `E${num}-Z`;
+                    tipo = "medicion";
+                }
+            } else if (letter === "S") {
+                categoria = "SALIDA";
+                if (vista === "T") {
+                    subcategoria = `S${num}`;
+                    tipo = "salida";
+                } else if (vista === "Z") {
+                    subcategoria = `S${num}-Z`;
+                    tipo = "medicion";
+                }
+            }
+        }
+    }
 
     return {
-        idPozo: pozoClean,
-        tipo: tipo as any,
+        id: `foto_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+        idPozo: idPozo.toUpperCase(),
+        tipo,
         categoria,
-        subcategoria: subcat,
-        filename,
+        subcategoria,
+        filename: cleanFilename,
+        ...(sumideroAsociado && { sumideroAsociado }),
         esMedicion,
         esExcluido,
-        motivoExclusion: filename.includes("-AT") ? "AT medición" : (filename.includes("-Z") ? "Z profundidad" : undefined),
-        sumideroAsociado: sumClean
+        ...(motivoExclusion && { motivoExclusion }),
+        blobId: base64String
     };
 };
