@@ -37,9 +37,8 @@ const LoginPage: React.FC = () => {
         <div className="login-container">
             <div className="login-glass">
                 <div className="login-header">
-                    <div className="login-logo">
-                        <Shield className="logo-icon" size={48} />
-                        <div className="logo-text">UT<span>★</span></div>
+                    <div className="login-logo-container">
+                        <img src="/logo-ut-star.png" alt="UT STAR Logo" className="login-logo-img" />
                     </div>
                     <h1>Acceso Campo</h1>
                     <p>Soporte Catastral / Offline Mode</p>
@@ -147,26 +146,26 @@ const LoginPage: React.FC = () => {
                     margin-bottom: 24px;
                 }
 
-                .login-logo {
+                .login-logo-container {
+                    width: 100px;
+                    height: 100px;
+                    background: rgba(255, 255, 255, 0.03);
+                    border: 1px solid rgba(255, 255, 255, 0.05);
+                    border-radius: 24px;
                     display: flex;
-                    flex-direction: column;
                     align-items: center;
-                    margin-bottom: 12px;
+                    justify-content: center;
+                    padding: 12px;
+                    margin: 0 auto 16px;
+                    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
                 }
 
-                .logo-icon {
-                    color: #3b82f6;
-                    filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.5));
+                .login-logo-img {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: contain;
+                    filter: drop-shadow(0 5px 15px rgba(0, 0, 0, 0.3));
                 }
-
-                .logo-text {
-                    font-size: 24px;
-                    font-weight: 800;
-                    color: white;
-                    margin-top: 4px;
-                }
-
-                .logo-text span { color: #3b82f6; }
 
                 h1 { color: white; font-size: 20px; font-weight: 700; margin-bottom: 4px; }
                 .login-header p { color: #94a3b8; font-size: 12px; }

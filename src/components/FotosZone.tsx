@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Camera, Trash2, MapPin, Clock, CloudOff, Info, CheckCircle2, AlertTriangle } from 'lucide-react';
-import { procesarFoto, FotoRegistro } from '../utils/fotoProcessor';
+import { procesarFoto, FotoRegistro, resizeImage } from '../utils/fotoProcessor';
 import { savePhotoToStorage, getHybridModeStatus } from '../utils/storageManager';
 
 interface FotosZoneProps {
     pozoId: string;
     photos: FotoRegistro[];
+    pipes: any[];
+    sums: any[];
     onAddPhoto: (foto: FotoRegistro) => void;
     onDeletePhoto: (id: string) => void;
 }
@@ -35,16 +37,24 @@ const PhotoSection: React.FC<{
     photos: FotoRegistro[];
     onAdd: (foto: FotoRegistro) => void;
     onDelete: (id: string) => void;
-    allowIndex?: boolean;
+    indexOptions?: string[]; // New: List of available indices (e.g., ["E1", "S1"])
     allowSumidero?: boolean;
+    sumideroOptions?: string[]; // New: List of available sumideros
     isMedicion?: boolean;
     isLocked: boolean;
     onPreview: (photo: FotoRegistro) => void;
-}> = ({ title, description, type, pozoId, photos, onAdd, onDelete, allowIndex, allowSumidero, isMedicion, isLocked, onPreview }) => {
-    const [index, setIndex] = useState("1");
+}> = ({ title, description, type, pozoId, photos, onAdd, onDelete, indexOptions, allowSumidero, sumideroOptions, isMedicion, isLocked, onPreview }) => {
+    const [index, setIndex] = useState(indexOptions?.[0] || "1");
     const [sumidero, setSumidero] = useState("");
     const [medType, setMedType] = useState("AT");
     const [extraType, setExtraType] = useState("T");
+
+    // Reset index if options change
+    useEffect(() => {
+        if (indexOptions?.length && !indexOptions.includes(index)) {
+            setIndex(indexOptions[0]);
+        }
+    }, [indexOptions]);
 
     const lastPhoto = photos[photos.length - 1];
 
@@ -57,9 +67,10 @@ const PhotoSection: React.FC<{
         const file = e.target.files?.[0];
         if (!file) return;
 
-        const reader = new FileReader();
-        reader.onload = async (ev) => {
-            const blob = ev.target?.result as string;
+        try {
+            // REDIMENSIONADO CRÍTICO PARA MÓVILES (Optimizado según recomendaciones)
+            const blob = await resizeImage(file);
+
             let parts = [pozoId];
 
             if (isMedicion) {
@@ -68,10 +79,9 @@ const PhotoSection: React.FC<{
                 parts.push("P");
             } else if (type === "tapa" || type === "interior") {
                 parts.push(type === "tapa" ? "T" : "I");
-            } else if (type === "entrada") {
-                parts.push(`E${index}-${extraType}`);
-            } else if (type === "salida") {
-                parts.push(`S${index}-${extraType}`);
+            } else if (type === "entrada" || type === "salida") {
+                // index already contains "E1", "E2" or "S1", "S2"
+                parts.push(`${index}-${extraType}`);
             }
 
             if (sumidero) {
@@ -81,32 +91,29 @@ const PhotoSection: React.FC<{
             const filename = `${parts.join('-').toUpperCase()}.JPG`;
             const newFoto = procesarFoto(filename, pozoId, blob);
 
-            try {
-                const userStr = localStorage.getItem('ut_star_user');
-                const inspector = userStr ? JSON.parse(userStr).name : 'Desconocido';
-                const municipio = (window as any).CURRENT_MUNICIPIO || 'Sopó';
+            const userStr = localStorage.getItem('ut_star_user');
+            const inspector = userStr ? JSON.parse(userStr).name : 'Desconocido';
+            const municipio = (window as any).CURRENT_MUNICIPIO || 'Sopó';
 
-                await savePhotoToStorage({
-                    id: newFoto.id,
-                    pozoId: pozoId,
-                    municipio: municipio,
-                    barrio: '',
-                    filename: filename,
-                    blob: blob,
-                    categoria: newFoto.tipo === 'general' ? 'General' :
-                        newFoto.tipo === 'tapa' || newFoto.tipo === 'interior' ? 'Interior' : 'Tuberia',
-                    inspector: inspector,
-                    timestamp: Date.now(),
-                    synced: false
-                });
+            await savePhotoToStorage({
+                id: newFoto.id,
+                pozoId: pozoId,
+                municipio: municipio,
+                barrio: '',
+                filename: filename,
+                blob: blob,
+                categoria: newFoto.tipo === 'general' ? 'General' :
+                    newFoto.tipo === 'tapa' || newFoto.tipo === 'interior' ? 'Interior' : 'Tuberia',
+                inspector: inspector,
+                timestamp: Date.now(),
+                synced: false
+            });
 
-                onAdd({ ...newFoto, blobId: blob });
-            } catch (err) {
-                console.error("Error al guardar en IndexedDB", err);
-                alert("Error crítico de almacenamiento.");
-            }
-        };
-        reader.readAsDataURL(file);
+            onAdd({ ...newFoto, blobId: blob });
+        } catch (err) {
+            console.error("Error al procesar/guardar foto", err);
+            alert("No se pudo procesar la imagen. Cierre otras aplicaciones e intente de nuevo.");
+        }
     };
 
     return (
@@ -124,16 +131,16 @@ const PhotoSection: React.FC<{
             </div>
 
             <div className="flex gap-2">
-                {allowIndex && (
+                {indexOptions && indexOptions.length > 0 && (
                     <select
                         className="flex-1 bg-[#0d1117] border border-[#30363d] rounded text-[10px] px-1 py-1 text-blue-400 font-bold"
                         value={index}
                         onChange={(e) => setIndex(e.target.value)}
                     >
-                        {[1, 2, 3, 4, 5, 6, 7].map(i => <option key={i} value={i}>{title === "Tubería" ? `Tubería ${i}` : i}</option>)}
+                        {indexOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                     </select>
                 )}
-                {(type === "entrada" || type === "salida") && (
+                {(type === "entrada" || type === "salida" || (indexOptions && indexOptions.some(o => o.startsWith('E') || o.startsWith('S')))) && (
                     <select
                         className="flex-1 bg-[#0d1117] border border-[#30363d] rounded text-[10px] px-1 py-1 text-orange-400 font-bold"
                         value={extraType}
@@ -153,7 +160,17 @@ const PhotoSection: React.FC<{
                         <option value="Z">Z</option>
                     </select>
                 )}
-                {allowSumidero && (
+                {allowSumidero && sumideroOptions && sumideroOptions.length > 0 && (
+                    <select
+                        className="flex-1 bg-[#0d1117] border border-[#30363d] rounded text-[10px] px-1 py-1 text-white"
+                        value={sumidero}
+                        onChange={(e) => setSumidero(e.target.value)}
+                    >
+                        <option value="">Sin Sumidero</option>
+                        {sumideroOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                    </select>
+                )}
+                {allowSumidero && (!sumideroOptions || sumideroOptions.length === 0) && (
                     <input
                         type="text"
                         placeholder="ID Sum..."
@@ -209,9 +226,20 @@ const PhotoSection: React.FC<{
     );
 };
 
-const FotosZone: React.FC<FotosZoneProps> = ({ pozoId, photos, onAddPhoto, onDeletePhoto }) => {
+const FotosZone: React.FC<FotosZoneProps> = ({ pozoId, photos, pipes, sums, onAddPhoto, onDeletePhoto }) => {
     const [storageInfo, setStorageInfo] = useState<{ mode: string, info: string }>({ mode: 'FULL', info: '' });
     const [previewPhoto, setPreviewPhoto] = useState<FotoRegistro | null>(null);
+
+    // Generar opciones de tubería basadas en el registro real
+    const entradas = pipes.filter(p => p.es === 'ENTRADA');
+    const salidas = pipes.filter(p => p.es === 'SALIDA');
+
+    const pipeOptions = [
+        ...entradas.map((_, i) => `E${i + 1}`),
+        ...salidas.map((_, i) => `S${i + 1}`)
+    ];
+
+    const sumOptions = sums.map((s, i) => s.codEsquema || `SUM${i + 1}`);
 
     useEffect(() => {
         const check = async () => {
@@ -243,7 +271,7 @@ const FotosZone: React.FC<FotosZoneProps> = ({ pozoId, photos, onAddPhoto, onDel
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <PhotoSection
                     title="General / Panorámica"
-                    description="Referencia visual del entorno del pozo"
+                    description="Referencia visual del entorno"
                     type="general"
                     pozoId={pozoId}
                     photos={photos.filter(p => p.tipo === "general")}
@@ -253,32 +281,44 @@ const FotosZone: React.FC<FotosZoneProps> = ({ pozoId, photos, onAddPhoto, onDel
                     onPreview={setPreviewPhoto}
                 />
                 <PhotoSection
-                    title="Tapa / Interior"
-                    description="Estado de la tapa y vista interna del pozo"
+                    title="Tapa Principal"
+                    description="Vista superior de la tapa"
                     type="tapa"
                     pozoId={pozoId}
-                    photos={photos.filter(p => p.tipo === "tapa" || p.tipo === "interior")}
+                    photos={photos.filter(p => p.tipo === "tapa")}
                     onAdd={onAddPhoto}
                     onDelete={onDeletePhoto}
                     isLocked={isLocked}
                     onPreview={setPreviewPhoto}
                 />
                 <PhotoSection
-                    title="Tubería"
-                    description="Detalle de entradas y salidas de tubería"
+                    title="Vista Interior"
+                    description="Cuerpo e interior del pozo"
+                    type="interior"
+                    pozoId={pozoId}
+                    photos={photos.filter(p => p.tipo === "interior")}
+                    onAdd={onAddPhoto}
+                    onDelete={onDeletePhoto}
+                    isLocked={isLocked}
+                    onPreview={setPreviewPhoto}
+                />
+                <PhotoSection
+                    title="Tuberías (E/S)"
+                    description="Detalle de entradas y salidas"
                     type="entrada"
                     pozoId={pozoId}
                     photos={photos.filter(p => p.tipo === "entrada" || p.tipo === "salida")}
                     onAdd={onAddPhoto}
                     onDelete={onDeletePhoto}
-                    allowIndex
+                    indexOptions={pipeOptions}
                     allowSumidero
+                    sumideroOptions={sumOptions}
                     isLocked={isLocked}
                     onPreview={setPreviewPhoto}
                 />
                 <PhotoSection
                     title="Mediciones (AT/Z)"
-                    description="Registro de profundidad y batea"
+                    description="Registro de profundidad"
                     type="medicion"
                     pozoId={pozoId}
                     photos={photos.filter(p => p.esMedicion)}
@@ -286,6 +326,7 @@ const FotosZone: React.FC<FotosZoneProps> = ({ pozoId, photos, onAddPhoto, onDel
                     onDelete={onDeletePhoto}
                     isMedicion
                     allowSumidero
+                    sumideroOptions={sumOptions}
                     isLocked={isLocked}
                     onPreview={setPreviewPhoto}
                 />

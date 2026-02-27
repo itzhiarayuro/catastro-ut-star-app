@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Cloud, Wifi, Battery, Moon, Sun, ArrowLeft, RefreshCw, CheckCircle, AlertTriangle, Info } from 'lucide-react';
 import { syncPhotosToDrive } from '../utils/driveSync';
+import { syncFichasToFirestore } from '../utils/syncRegistry';
 
 interface SyncScreenProps {
+    fichas: Record<string, any>;
+    onFichasUpdated: (fichas: Record<string, any>) => void;
     onClose: () => void;
 }
 
-const SyncScreen: React.FC<SyncScreenProps> = ({ onClose }) => {
+const SyncScreen: React.FC<SyncScreenProps> = ({ fichas, onFichasUpdated, onClose }) => {
     const [status, setStatus] = useState<'IDLE' | 'SYNCING' | 'COMPLETED' | 'ERROR'>('IDLE');
     const [progress, setProgress] = useState({ total: 0, synced: 0, currentFile: '', error: null as string | null });
     const [wakeLock, setWakeLock] = useState<any>(null);
@@ -39,10 +42,32 @@ const SyncScreen: React.FC<SyncScreenProps> = ({ onClose }) => {
     const handleStartSync = async () => {
         setStatus('SYNCING');
         try {
-            await syncPhotosToDrive(setProgress);
+            // 1. Sincronizar Fichas a Firestore
+            const updatedFichas = await syncFichasToFirestore(fichas, (p) => {
+                setProgress({
+                    total: p.total,
+                    synced: p.current - 1,
+                    currentFile: p.msg,
+                    error: null
+                });
+            });
+            onFichasUpdated(updatedFichas);
+
+            // 2. Sincronizar Fotos a Drive
+            await syncPhotosToDrive((p) => {
+                setProgress({
+                    total: p.total,
+                    synced: p.synced,
+                    currentFile: p.currentFile,
+                    error: p.error
+                });
+            });
+
             setStatus('COMPLETED');
         } catch (err: any) {
+            console.error("Sync error:", err);
             setStatus('ERROR');
+            setProgress(prev => ({ ...prev, error: err.message || "Error desconocido" }));
         }
     };
 

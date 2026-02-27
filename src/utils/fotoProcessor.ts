@@ -114,3 +114,60 @@ export const procesarFoto = (filename: string, idPozo: string, base64String: str
         blobId: base64String
     };
 };
+
+/**
+ * Redimensiona una imagen para evitar errores de memoria en dispositivos móviles.
+ * Utiliza URL.createObjectURL para ser más eficiente que base64.
+ * Limita el ancho/alto máximo a 1600px (Sugerido para ingeniería).
+ */
+export const resizeImage = (file: File | Blob, maxWidth = 1600, maxHeight = 1600, quality = 0.7): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+
+        img.onload = () => {
+            let width = img.width;
+            let height = img.height;
+
+            if (width > height) {
+                if (width > maxWidth) {
+                    height *= maxWidth / width;
+                    width = maxWidth;
+                }
+            } else {
+                if (height > maxHeight) {
+                    width *= maxHeight / height;
+                    height = maxHeight;
+                }
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+
+            if (!ctx) {
+                URL.revokeObjectURL(url);
+                reject(new Error("No se pudo obtener el contexto del canvas"));
+                return;
+            }
+
+            ctx.drawImage(img, 0, 0, width, height);
+
+            // toDataURL sigue siendo necesario porque Firestore guarda base64,
+            // pero lo llamamos después del redimensionado, por lo que el string es 10x más pequeño.
+            const result = canvas.toDataURL('image/jpeg', quality);
+
+            // Liberar memoria inmediatamente
+            URL.revokeObjectURL(url);
+            resolve(result);
+        };
+
+        img.onerror = (e) => {
+            URL.revokeObjectURL(url);
+            reject(e);
+        };
+
+        img.src = url;
+    });
+};

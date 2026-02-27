@@ -780,7 +780,12 @@ const App: React.FC = () => {
                                 <div className="field-row">
                                     <div className="field">
                                         <label>Pozo No.*</label>
-                                        <input type="text" value={state.pozo} onChange={e => updateState({ pozo: e.target.value })} placeholder="P-001" />
+                                        <input
+                                            type="text"
+                                            value={state.pozo}
+                                            onChange={e => updateState({ pozo: e.target.value.toUpperCase().replace(/\s+/g, '') })}
+                                            placeholder="P-001"
+                                        />
                                     </div>
                                     <div className="field">
                                         <label>Fecha</label>
@@ -1029,6 +1034,8 @@ const App: React.FC = () => {
                                     <FotosZone
                                         pozoId={state.pozo || 'S/N'}
                                         photos={state.fotoList}
+                                        pipes={state.pipes}
+                                        sums={state.sums}
                                         onAddPhoto={(foto) => updateState({ fotoList: [...state.fotoList, foto] })}
                                         onDeletePhoto={(id) => updateState({ fotoList: state.fotoList.filter(f => f.id !== id) })}
                                     />
@@ -1127,8 +1134,14 @@ const App: React.FC = () => {
                                     <button className="btn btn-yellow" onClick={handleExcel}><Download size={14} /> Excel Global</button>
                                     <button className="btn btn-orange" onClick={handlePDF}><FileText size={14} /> PDF Ficha</button>
                                 </div>
-                                <button className="btn btn-ghost btn-full" onClick={() => toast("📲 Test Sync Cel2: Conexión Activa")}>
-                                    <RefreshCw size={16} /> Test Sync Cel2
+                                <button className="btn btn-ghost btn-full" onClick={() => {
+                                    if (isOnline) {
+                                        saveFicha();
+                                    } else {
+                                        toast("⚠️ Modo Offline: No se pudo testear sync");
+                                    }
+                                }}>
+                                    <RefreshCw size={16} /> Test Sync Cel2 (Forzar Nube)
                                 </button>
                                 <button className="btn btn-ghost btn-full" onClick={startNewFicha}>
                                     <Plus size={16} /> Nueva Ficha
@@ -1165,7 +1178,16 @@ const App: React.FC = () => {
             {activeScreen === 'sConfig' && renderConfig()}
             {activeScreen === 'sForm' && renderForm()}
 
-            {showSyncScreen && <SyncScreen onClose={() => setShowSyncScreen(false)} />}
+            {showSyncScreen && (
+                <SyncScreen
+                    fichas={fichas}
+                    onFichasUpdated={(updated) => {
+                        setFichas(updated);
+                        localStorage.setItem('fichas_star', JSON.stringify(updated));
+                    }}
+                    onClose={() => setShowSyncScreen(false)}
+                />
+            )}
 
             {/* TOAST NOTIFICATION */}
             <div id="toast" className={showToast ? 'show' : ''}>{toastMsg}</div>
