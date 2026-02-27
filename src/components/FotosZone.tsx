@@ -29,6 +29,63 @@ const PhotoThumb: React.FC<{ photo: FotoRegistro; onDelete: (id: string) => void
     </div>
 );
 
+/**
+ * Función utilitaria para comprimir fotos antes de guardar en IndexedDB.
+ * Reduce resolución al máximo de 1600px y aplica calidad 0.7 para ahorrar RAM.
+ */
+async function compressImageFileToDataUrl(file: File, maxSize = 1600, quality = 0.7): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        const objectUrl = URL.createObjectURL(file);
+
+        img.onload = () => {
+            URL.revokeObjectURL(objectUrl);
+            const canvas = document.createElement('canvas');
+            let width = img.width;
+            let height = img.height;
+
+            if (width > height) {
+                if (width > maxSize) {
+                    height *= maxSize / width;
+                    width = maxSize;
+                }
+            } else {
+                if (height > maxSize) {
+                    width *= maxSize / height;
+                    height = maxSize;
+                }
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                reject(new Error("No se pudo obtener el contexto del canvas"));
+                return;
+            }
+
+            ctx.drawImage(img, 0, 0, width, height);
+            canvas.toBlob((blob) => {
+                if (!blob) {
+                    reject(new Error("Error al generar el Blob de imagen"));
+                    return;
+                }
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result as string);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+            }, 'image/jpeg', quality);
+        };
+
+        img.onerror = (err) => {
+            URL.revokeObjectURL(objectUrl);
+            reject(err);
+        };
+
+        img.src = objectUrl;
+    });
+}
+
 const PhotoSection: React.FC<{
     title: string;
     description: string;
@@ -68,8 +125,8 @@ const PhotoSection: React.FC<{
         if (!file) return;
 
         try {
-            // REDIMENSIONADO CRÍTICO PARA MÓVILES (Optimizado según recomendaciones)
-            const blob = await resizeImage(file);
+            // COMPRESIÓN CRÍTICA: Convertir archivo original a Data URL optimizado
+            const blob = await compressImageFileToDataUrl(file, 1600, 0.7);
 
             let parts = [pozoId];
 
@@ -80,7 +137,6 @@ const PhotoSection: React.FC<{
             } else if (type === "tapa" || type === "interior") {
                 parts.push(type === "tapa" ? "T" : "I");
             } else if (type === "entrada" || type === "salida") {
-                // index already contains "E1", "E2" or "S1", "S2"
                 parts.push(`${index}-${extraType}`);
             }
 
@@ -89,6 +145,8 @@ const PhotoSection: React.FC<{
             }
 
             const filename = `${parts.join('-').toUpperCase()}.JPG`;
+
+            // Usamos el blob comprimido tanto para el estado de React como para IndexedDB
             const newFoto = procesarFoto(filename, pozoId, blob);
 
             const userStr = localStorage.getItem('ut_star_user');
@@ -101,7 +159,7 @@ const PhotoSection: React.FC<{
                 municipio: municipio,
                 barrio: '',
                 filename: filename,
-                blob: blob,
+                blob: blob, // Aquí guardamos el String Base64 COMPRIMIDO
                 categoria: newFoto.tipo === 'general' ? 'General' :
                     newFoto.tipo === 'tapa' || newFoto.tipo === 'interior' ? 'Interior' : 'Tuberia',
                 inspector: inspector,
@@ -111,8 +169,11 @@ const PhotoSection: React.FC<{
 
             onAdd({ ...newFoto, blobId: blob });
         } catch (err) {
-            console.error("Error al procesar/guardar foto", err);
-            alert("No se pudo procesar la imagen. Cierre otras aplicaciones e intente de nuevo.");
+            console.error("Error al procesar/guardar foto:", err);
+            alert("Memoria insuficiente o error al procesar la foto. Intenta cerrar otras apps o liberar espacio.");
+        } finally {
+            // Limpiamos el input para permitir capturas repetidas
+            if (e.target) e.target.value = '';
         }
     };
 

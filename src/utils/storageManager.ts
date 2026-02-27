@@ -105,7 +105,7 @@ export async function checkStorageSpace(minMB: number = 500): Promise<{ hasSpace
  * Determina si debe usar el Modo Texto basado en el espacio y cantidad de fotos
  */
 export async function getHybridModeStatus(photoCount: number): Promise<{ mode: 'LOCKED' | 'FULL' | 'HYBRID', info: string }> {
-    const { hasSpace, availableMB } = await checkStorageSpace(500);
+    const { hasSpace, availableMB } = await checkStorageSpace(200);
 
     if (!hasSpace) {
         return {

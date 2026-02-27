@@ -26,7 +26,8 @@ const AUTHORIZED_USERS = [
     { email: "juan.vega.icya@gmail.com", pin: "5701", name: "Juan Vega ICYA" },
     { email: "mariangelsp.icya@gmail.com", pin: "5702", name: "Mariangel" },
     { email: "samara.icya@gmail.com", pin: "5703", name: "Samara" },
-    { email: "darly.icya@gmail.com", pin: "1234", name: "Darly" }
+    { email: "darly.icya@gmail.com", pin: "1234", name: "Darly" },
+    { email: "invitado@icya.com", pin: "0000", name: "Inspector Invitado" }
 ];
 
 interface AuthContextType {
