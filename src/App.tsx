@@ -774,7 +774,7 @@ const App: React.FC = () => {
                         </button>
                         <div className="header-titles">
                             <div className="header-title">{stepTitle}</div>
-                            <div className="header-sub">Paso {currentStep} de 5</div>
+                            <div className="header-sub">Paso {currentStep} de 5 • <strong>{state.municipio}</strong></div>
                         </div>
                         {loading && <RefreshCw size={14} className="animate-spin text-blue-500" />}
                     </div>
@@ -840,12 +840,7 @@ const App: React.FC = () => {
                                         {ESTADOS_POZO.map(e => <option key={e} value={e}>{e}</option>)}
                                     </select>
                                 </div>
-                                <div className="field">
-                                    <label>Municipio</label>
-                                    <select value={state.municipio} onChange={e => updateState({ municipio: e.target.value })}>
-                                        {MUNICIPIOS.map(m => <option key={m} value={m}>{m}</option>)}
-                                    </select>
-                                </div>
+
                                 <div className="field">
                                     <label>Barrio*</label>
                                     <input type="text" value={state.barrio} onChange={e => updateState({ barrio: e.target.value })} placeholder="Ej: Centro" />
