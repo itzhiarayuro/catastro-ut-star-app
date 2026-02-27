@@ -104,6 +104,41 @@ if (typeof window !== 'undefined') {
     });
 }
 
+/**
+ * Helper unificado para guardar una ficha en Firestore asegurando historial completo.
+ * Escribe en dos colecciones:
+ * 1. 'fichas': La versión más reciente de cada pozo (sobrescribe).
+ * 2. 'historial_fichas': Un registro único de cada guardado con su timestamp (no se borra).
+ */
+export const persistFicha = async (ficha: any) => {
+    if (!ficha.pozo || !ficha.municipio) return;
+
+    const pozoId = ficha.pozo.replace(/\s+/g, '').toUpperCase();
+    const mun = ficha.municipio.toUpperCase();
+
+    // Ruta Maestra (Siempre la última versión)
+    const masterPath = `fichas/${mun}_${pozoId}`;
+
+    // Ruta Historial (ID Único con timestamp)
+    const timestamp = Date.now();
+    const historyPath = `historial_fichas/${mun}_${pozoId}_${timestamp}`;
+
+    const dataToSave = {
+        ...ficha,
+        lastSync: new Date().toISOString()
+    };
+
+    // 1. Guardar en Master
+    await setDoc(doc(db, masterPath), dataToSave, { merge: true });
+
+    // 2. Guardar en Historial (Copia inmutable con ID de versión)
+    await setDoc(doc(db, historyPath), {
+        ...dataToSave,
+        versionId: timestamp,
+        tipoRegistro: 'HISTORIAL'
+    });
+};
+
 export function useFirestoreDoc(path: string) {
     const [data, setData] = useState<any>(null);
     const [loading, setLoading] = useState(true);
@@ -127,9 +162,11 @@ export function useFirestoreDoc(path: string) {
 
     const saveData = async (newData: any) => {
         if (!path) return;
-        const docRef = doc(db, path);
+        // Backup local extra por seguridad
         localStorage.setItem(`backup_${path.replace(/\//g, '_')}`, JSON.stringify(newData));
-        await setDoc(docRef, newData, { merge: true });
+
+        // Usamos el persistFicha que maneja master + historial
+        await persistFicha(newData);
     };
 
     return { data, loading, error, saveData };

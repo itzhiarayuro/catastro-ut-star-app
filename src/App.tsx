@@ -109,6 +109,24 @@ const TIPOS_CAMARA = [
     'ALV_SALTO', 'ALV_BARRERA', 'ALV_LAT_DOBLE', 'ALV_LAT_SENCILLO',
     'ALV_ORIFICIO', 'DESCONOCIDO', 'NO_APLICA', 'OTRO'
 ];
+const POZO_PREFIX = 'P-';
+
+/** Limpia valor "0" o "0.00" al enfocar un input numérico */
+const numFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    const v = e.target.value;
+    if (v === '0' || v === '0.00' || v === '0.0' || v === '0.9' || v === '2' || v === '2.0' || v === '2600' || v === '2600.00') {
+        e.target.select();
+    }
+};
+
+/** Normaliza ceros a la izquierda en un string numérico */
+const normalizeNum = (val: string): string => {
+    if (!val) return val;
+    // Permitir decimales
+    const num = parseFloat(val);
+    if (isNaN(num)) return '0';
+    return String(num);
+};
 
 const INITIAL_STATE: AppState = {
     pozo: '',
@@ -470,16 +488,30 @@ const App: React.FC = () => {
     };
 
     const confirmDelete = () => {
-        if (deleteConfirmText.toUpperCase() === 'ELIMINAR') {
-            const updated = { ...fichas };
-            delete updated[deleteId!];
-            setFichas(updated);
-            localStorage.setItem('fichas_star', JSON.stringify(updated));
-            setDeleteId(null);
-            toast("🗑 Ficha eliminada permanentemente");
-        } else {
+        if (deleteConfirmText.toUpperCase() !== 'ELIMINAR') {
             toast("❌ Escribe ELIMINAR para confirmar");
+            return;
         }
+
+        const fichaToDelete = fichas[deleteId!];
+
+        // Protección: no eliminar fichas no sincronizadas sin conexión
+        if (!fichaToDelete?.synced && !navigator.onLine) {
+            toast("⚠️ No puedes eliminar esta ficha hasta que se sincronice con la nube.");
+            setDeleteId(null);
+            return;
+        }
+        if (!fichaToDelete?.synced) {
+            const ok = confirm("⚠️ Esta ficha NO se ha sincronizado. Se perderán los datos. ¿Eliminar de todos modos?");
+            if (!ok) { setDeleteId(null); return; }
+        }
+
+        const updated = { ...fichas };
+        delete updated[deleteId!];
+        setFichas(updated);
+        localStorage.setItem('fichas_star', JSON.stringify(updated));
+        setDeleteId(null);
+        toast("🗑 Ficha eliminada permanentemente");
     };
 
     const captureGPS = () => {
@@ -779,13 +811,21 @@ const App: React.FC = () => {
                                 <div className="card-title">Identificación del Pozo</div>
                                 <div className="field-row">
                                     <div className="field">
-                                        <label>Pozo No.*</label>
-                                        <input
-                                            type="text"
-                                            value={state.pozo}
-                                            onChange={e => updateState({ pozo: e.target.value.toUpperCase().replace(/\s+/g, '') })}
-                                            placeholder="P-001"
-                                        />
+                                        <label>Pozo No.* <span style={{ fontSize: '9px', color: '#64748b' }}>(Prefijo {POZO_PREFIX} automático)</span></label>
+                                        <div style={{ position: 'relative' }}>
+                                            <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#3b82f6', fontWeight: 'bold', fontSize: '14px', fontFamily: 'DM Mono', pointerEvents: 'none' }}>{POZO_PREFIX}</span>
+                                            <input
+                                                type="text"
+                                                inputMode="numeric"
+                                                value={state.pozo.replace(POZO_PREFIX, '')}
+                                                onChange={e => {
+                                                    const num = e.target.value.replace(/[^0-9]/g, '');
+                                                    updateState({ pozo: num ? POZO_PREFIX + num : '' });
+                                                }}
+                                                placeholder="001"
+                                                style={{ paddingLeft: '36px' }}
+                                            />
+                                        </div>
                                     </div>
                                     <div className="field">
                                         <label>Fecha</label>
@@ -813,8 +853,12 @@ const App: React.FC = () => {
                                     <input type="text" value={state.direccion} onChange={e => updateState({ direccion: e.target.value })} placeholder="Ej: Cl 10 # 5-20" />
                                 </div>
                                 <div className="field">
-                                    <label>Altura Total (H pozo)</label>
-                                    <input type="number" step="0.01" value={state.altura} onChange={e => updateState({ altura: parseFloat(e.target.value) || 0 })} placeholder="0.00" />
+                                    <label>Altura Total (H pozo) <span style={{ fontSize: '9px', color: '#64748b' }}>m</span></label>
+                                    <input type="number" step="0.01" value={state.altura}
+                                        onFocus={numFocus}
+                                        onChange={e => updateState({ altura: parseFloat(e.target.value) || 0 })}
+                                        onBlur={e => { if (!e.target.value) updateState({ altura: 2.0 }); }}
+                                        placeholder="2.00 m" />
                                 </div>
                             </div>
 
@@ -840,10 +884,18 @@ const App: React.FC = () => {
                                         <MapPin size={14} /> Capturar Coordenadas
                                     </button>
                                     {state.gps.lat && (
-                                        <div className="gps-result show">
-                                            📍 Lat: <strong>{state.gps.lat}</strong> | Lng: <strong>{state.gps.lng}</strong><br />
-                                            🎯 Precisión: <strong>{state.gps.precision} m</strong>
-                                        </div>
+                                        <>
+                                            <div className="gps-result show">
+                                                📍 Lat: <strong>{state.gps.lat}</strong> | Lng: <strong>{state.gps.lng}</strong><br />
+                                                🎯 Precisión: <strong>{state.gps.precision} m</strong>
+                                            </div>
+                                            <button
+                                                className="btn btn-ghost btn-sm btn-full"
+                                                onClick={() => window.open(`https://www.google.com/maps?q=${state.gps.lat},${state.gps.lng}`, '_blank')}
+                                            >
+                                                <Globe size={14} /> Ver en Google Maps
+                                            </button>
+                                        </>
                                     )}
                                 </div>
                             </div>
@@ -870,23 +922,27 @@ const App: React.FC = () => {
                                 <div className="field-row">
                                     <div className="field-row">
                                         <div className="field">
-                                            <label>Diámetro del Cuerpo (m)</label>
+                                            <label>Diámetro del Cuerpo <span style={{ fontSize: '9px', color: '#64748b' }}>m</span></label>
                                             <input
                                                 type="number"
                                                 step="0.05"
                                                 value={state.diam}
+                                                onFocus={numFocus}
                                                 onChange={e => updateState({ diam: parseFloat(e.target.value) || 0 })}
-                                                placeholder="0.00"
+                                                onBlur={e => { if (!e.target.value) updateState({ diam: 0.9 }); }}
+                                                placeholder="0.90 m"
                                             />
                                         </div>
                                         <div className="field">
-                                            <label>Altura Total (m)</label>
+                                            <label>Altura Total <span style={{ fontSize: '9px', color: '#64748b' }}>m</span></label>
                                             <input
                                                 type="number"
                                                 step="0.05"
                                                 value={state.altura}
+                                                onFocus={numFocus}
                                                 onChange={e => updateState({ altura: parseFloat(e.target.value) || 0 })}
-                                                placeholder="0.00"
+                                                onBlur={e => { if (!e.target.value) updateState({ altura: 2.0 }); }}
+                                                placeholder="2.00 m"
                                             />
                                         </div>
                                     </div>
@@ -928,7 +984,7 @@ const App: React.FC = () => {
                                 label="Tapa"
                                 data={state.tapa}
                                 onChange={(v) => updateState({ tapa: { ...state.tapa, ...v } })}
-                                materials={['CONCRETO', 'HIERRO', 'POLIPROPILENO', 'PVC', 'OTRO']}
+                                materials={['CONCRETO', 'METAL', 'POLIPROPILENO', 'PVC', 'OTRO']}
                             />
                             <ComponentEditor
                                 label="Cuerpo"
@@ -953,7 +1009,7 @@ const App: React.FC = () => {
                                 label="Peldaños"
                                 data={state.peld}
                                 onChange={(v) => updateState({ peld: { ...state.peld, ...v } })}
-                                materials={['HIERRO', 'POLIPROPILENO', 'NO_TIENE']}
+                                materials={['METAL', 'POLIPROPILENO', 'NO_TIENE']}
                             />
 
                             <div className="btn-row">
@@ -1390,6 +1446,7 @@ const ComponentEditor: React.FC<{
                         {((data.mat && !materials.includes(data.mat as string)) || data.mat === 'OTRO') && (
                             <input
                                 type="text"
+                                maxLength={60}
                                 value={data.mat === 'OTRO' ? '' : data.mat}
                                 onChange={e => onChange({ mat: e.target.value.toUpperCase() })}
                                 style={{ width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', padding: '10px', marginTop: '8px', color: 'var(--text)', borderRadius: '8px', fontSize: '12px' }}
@@ -1468,19 +1525,23 @@ const PipeCard: React.FC<{ pipe: Pipe; index: number; onUpdate: (u: Partial<Pipe
                 <div className="field-row">
                     <div className="field">
                         <label>Material</label>
-                        <select value={pipe.mat && ['CONCRETO', 'PVC CORRUGADO', 'PVC LISO', 'MAMPOSTERIA', 'GRES', 'GRP'].includes(pipe.mat) ? pipe.mat : pipe.mat ? 'OTRO' : ''} onChange={e => onUpdate({ mat: e.target.value === 'OTRO' ? 'OTRO' : e.target.value })}>
+                        <select value={pipe.mat && ['CONCRETO', 'PVC CORRUGADO', 'PVC LISO', 'PLÁSTICO', 'ASBESTO CEMENTO', 'MAMPOSTERIA', 'GRES', 'GRP', 'METAL'].includes(pipe.mat) ? pipe.mat : pipe.mat ? 'OTRO' : ''} onChange={e => onUpdate({ mat: e.target.value === 'OTRO' ? 'OTRO' : e.target.value })}>
                             <option value="">—</option>
                             <option>CONCRETO</option>
                             <option>PVC CORRUGADO</option>
                             <option>PVC LISO</option>
+                            <option>PLÁSTICO</option>
+                            <option>ASBESTO CEMENTO</option>
                             <option>MAMPOSTERIA</option>
                             <option>GRES</option>
                             <option>GRP</option>
+                            <option>METAL</option>
                             <option>OTRO</option>
                         </select>
-                        {(!['CONCRETO', 'PVC CORRUGADO', 'PVC LISO', 'MAMPOSTERIA', 'GRES', 'GRP', ''].includes(pipe.mat) || pipe.mat === 'OTRO') && (
+                        {(!['CONCRETO', 'PVC CORRUGADO', 'PVC LISO', 'PLÁSTICO', 'ASBESTO CEMENTO', 'MAMPOSTERIA', 'GRES', 'GRP', 'METAL', ''].includes(pipe.mat) || pipe.mat === 'OTRO') && (
                             <input
                                 type="text"
+                                maxLength={60}
                                 value={pipe.mat === 'OTRO' ? '' : pipe.mat}
                                 onChange={e => onUpdate({ mat: e.target.value.toUpperCase() })}
                                 className="mt-2 bg-gray-800 text-white border-blue-500/30"
@@ -1523,11 +1584,14 @@ const PipeCard: React.FC<{ pipe: Pipe; index: number; onUpdate: (u: Partial<Pipe
                 </div>
                 <div className="field-row">
                     <div className="field">
-                        <label>Cota Batea (Z)</label>
-                        <input type="number" step="0.01" value={pipe.cotaZ} onChange={e => onUpdate({ cotaZ: e.target.value })} placeholder="0.00" className="bg-gray-800 text-green-400 font-mono" />
+                        <label>Cota Batea Z <span style={{ fontSize: '9px', color: '#64748b' }}>m</span></label>
+                        <input type="number" step="0.01" value={pipe.cotaZ}
+                            onFocus={numFocus}
+                            onChange={e => onUpdate({ cotaZ: e.target.value })}
+                            placeholder="0.00 m" className="bg-gray-800 text-green-400 font-mono" />
                     </div>
                     <div className="field">
-                        <label>Cota Clave (Z+Ø)</label>
+                        <label>Cota Clave Z+Ø <span style={{ fontSize: '9px', color: '#64748b' }}>m</span></label>
                         <input
                             type="text"
                             readOnly
@@ -1592,16 +1656,16 @@ const SumideroCard: React.FC<{ sum: Sumidero; index: number; onUpdate: (u: Parti
             </div>
             <div className="field">
                 <label>Mat. Rejilla</label>
-                <select value={['DESCONOCIDO', 'CONCRETO', 'HIERRO DÚCTIL', 'POLIPROPILENO'].includes(sum.matRejilla) ? sum.matRejilla : sum.matRejilla ? 'OTRO' : ''} onChange={e => onUpdate({ matRejilla: e.target.value === 'OTRO' ? 'OTRO' : e.target.value })}>
+                <select value={['DESCONOCIDO', 'CONCRETO', 'METAL DÚCTIL', 'POLIPROPILENO'].includes(sum.matRejilla) ? sum.matRejilla : sum.matRejilla ? 'OTRO' : ''} onChange={e => onUpdate({ matRejilla: e.target.value === 'OTRO' ? 'OTRO' : e.target.value })}>
                     <option value="">—</option>
                     <option>DESCONOCIDO</option>
                     <option>CONCRETO</option>
-                    <option>HIERRO DÚCTIL</option>
+                    <option>METAL DÚCTIL</option>
                     <option>POLIPROPILENO</option>
                     <option>OTRO</option>
                 </select>
-                {(!['DESCONOCIDO', 'CONCRETO', 'HIERRO DÚCTIL', 'POLIPROPILENO', ''].includes(sum.matRejilla) || sum.matRejilla === 'OTRO') && (
-                    <input type="text" value={sum.matRejilla === 'OTRO' ? '' : sum.matRejilla} onChange={e => onUpdate({ matRejilla: e.target.value.toUpperCase() })} className="mt-1 text-xs" placeholder="Especifique..." />
+                {(!['DESCONOCIDO', 'CONCRETO', 'METAL DÚCTIL', 'POLIPROPILENO', ''].includes(sum.matRejilla) || sum.matRejilla === 'OTRO') && (
+                    <input type="text" maxLength={60} value={sum.matRejilla === 'OTRO' ? '' : sum.matRejilla} onChange={e => onUpdate({ matRejilla: e.target.value.toUpperCase() })} className="mt-1 text-xs" placeholder="Especifique..." />
                 )}
             </div>
         </div>
@@ -1634,18 +1698,21 @@ const SumideroCard: React.FC<{ sum: Sumidero; index: number; onUpdate: (u: Parti
 
         <div className="field">
             <label>Material Tubería Salida</label>
-            <select value={['CONCRETO', 'PVC CORRUGADO', 'PVC LISO', 'MAMPOSTERIA', 'GRES', 'GRP'].includes(sum.matTub) ? sum.matTub : sum.matTub ? 'OTRO' : ''} onChange={e => onUpdate({ matTub: e.target.value === 'OTRO' ? 'OTRO' : e.target.value })}>
+            <select value={['CONCRETO', 'PVC CORRUGADO', 'PVC LISO', 'PLÁSTICO', 'ASBESTO CEMENTO', 'MAMPOSTERIA', 'GRES', 'GRP', 'METAL'].includes(sum.matTub) ? sum.matTub : sum.matTub ? 'OTRO' : ''} onChange={e => onUpdate({ matTub: e.target.value === 'OTRO' ? 'OTRO' : e.target.value })}>
                 <option value="">—</option>
                 <option>CONCRETO</option>
                 <option>PVC CORRUGADO</option>
                 <option>PVC LISO</option>
+                <option>PLÁSTICO</option>
+                <option>ASBESTO CEMENTO</option>
                 <option>MAMPOSTERIA</option>
                 <option>GRES</option>
                 <option>GRP</option>
+                <option>METAL</option>
                 <option>OTRO</option>
             </select>
-            {(!['CONCRETO', 'PVC CORRUGADO', 'PVC LISO', 'MAMPOSTERIA', 'GRES', 'GRP', ''].includes(sum.matTub) || sum.matTub === 'OTRO') && (
-                <input type="text" value={sum.matTub === 'OTRO' ? '' : sum.matTub} onChange={e => onUpdate({ matTub: e.target.value.toUpperCase() })} className="mt-1 text-xs" placeholder="Especifique..." />
+            {(!['CONCRETO', 'PVC CORRUGADO', 'PVC LISO', 'PLÁSTICO', 'ASBESTO CEMENTO', 'MAMPOSTERIA', 'GRES', 'GRP', 'METAL', ''].includes(sum.matTub) || sum.matTub === 'OTRO') && (
+                <input type="text" maxLength={60} value={sum.matTub === 'OTRO' ? '' : sum.matTub} onChange={e => onUpdate({ matTub: e.target.value.toUpperCase() })} className="mt-1 text-xs" placeholder="Especifique..." />
             )}
         </div>
     </div>

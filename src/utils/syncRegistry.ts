@@ -1,4 +1,4 @@
-import { db } from '../lib/firebase';
+import { db, persistFicha } from '../lib/firebase';
 import { doc, setDoc } from 'firebase/firestore';
 
 export interface AppState {
@@ -26,13 +26,11 @@ export const syncFichasToFirestore = async (
         }
 
         try {
-            const path = `fichas/${ficha.municipio.toUpperCase()}_${ficha.pozo.replace(/\s+/g, '')}`;
-            const docRef = doc(db, path);
-
             // Marcar como sincronizado antes de subir
-            const finalData = { ...ficha, synced: true, lastSync: new Date().toISOString() };
+            const finalData = { ...ficha, synced: true };
 
-            await setDoc(docRef, finalData, { merge: true });
+            // Usamos el persistFicha que maneja master + historial automáticamente
+            await persistFicha(finalData);
 
             updatedFichas[ficha.id!] = finalData;
         } catch (err) {
