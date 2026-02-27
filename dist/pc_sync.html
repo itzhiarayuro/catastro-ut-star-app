@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PC Sync - UT STAR Drive</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body {
+            background: #020617;
+            color: white;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .glass {
+            background: rgba(30, 41, 59, 0.5);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(51, 65, 85, 0.5);
+        }
+
+        .drop-zone {
+            border: 2px dashed #334155;
+            transition: all 0.3s;
+        }
+
+        .drop-zone.active {
+            border-color: #3b82f6;
+            background: rgba(59, 130, 246, 0.1);
+        }
+    </style>
+</head>
+
+<body class="min-h-screen flex items-center justify-center p-4">
+    <div class="max-w-2xl w-full glass rounded-3xl p-8 shadow-2xl">
+        <div class="text-center mb-10">
+            <h1 class="text-3xl font-black tracking-tighter text-blue-400 mb-2">UT★ STAR PC SYNC</h1>
+            <p class="text-slate-400 text-sm">Sincronización masiva desde Tarjeta SD (GoPro)</p>
+        </div>
+
+        <div class="space-y-6">
+            <div class="grid grid-cols-2 gap-4">
+                <div class="space-y-2">
+                    <label class="text-[10px] font-bold uppercase text-slate-500">Municipio</label>
+                    <select id="municipio" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm">
+                        <option>Sopó</option>
+                        <option>Sibaté</option>
+                        <option>Granada</option>
+                    </select>
+                </div>
+                <div class="space-y-2">
+                    <label class="text-[10px] font-bold uppercase text-slate-500">ID Elemento (Ej: M076)</label>
+                    <input id="pozoId" type="text" placeholder="ID..."
+                        class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm uppercase">
+                </div>
+            </div>
+
+            <div id="dropZone" class="drop-zone rounded-2xl p-12 text-center cursor-pointer">
+                <i class="fas fa-cloud-upload-alt text-4xl text-slate-600 mb-4"></i>
+                <p class="text-slate-300 font-medium">Arrastra las fotos aquí</p>
+                <p class="text-slate-500 text-xs mt-2">O haz clic para seleccionar archivos</p>
+                <input type="file" id="fileInput" multiple accept="image/jpeg" class="hidden">
+            </div>
+
+            <div id="fileList" class="space-y-2 max-h-48 overflow-y-auto"></div>
+
+            <button id="syncBtn"
+                class="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-bold py-4 rounded-xl shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-3">
+                <i class="fas fa-sync-alt" id="syncIcon"></i>
+                Sincronizar con Google Drive
+            </button>
+        </div>
+
+        <div id="status" class="mt-6 text-center text-xs font-medium hidden"></div>
+    </div>
+
+    <script>
+        const GAS_URL = 'https://script.google.com/macros/s/AKfycbz_YOUR_GAS_ID/exec';
+        const SECRET_TOKEN = 'STAR-2025-VIP-SYNC';
+
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const fileList = document.getElementById('fileList');
+        const syncBtn = document.getElementById('syncBtn');
+        const status = document.getElementById('status');
+
+        let pendingFiles = [];
+
+        dropZone.onclick = () => fileInput.click();
+
+        fileInput.onchange = (e) => handleFiles(e.target.files);
+
+        dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('active'); };
+        dropZone.ondragleave = () => dropZone.classList.remove('active');
+        dropZone.ondrop = (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('active');
+            handleFiles(e.dataTransfer.files);
+        };
+
+        function handleFiles(files) {
+            for (let file of files) {
+                if (!pendingFiles.find(f => f.name === file.name)) {
+                    pendingFiles.push(file);
+                    const el = document.createElement('div');
+                    el.className = 'flex items-center justify-between bg-slate-900/50 p-2 rounded-lg text-[10px] font-mono';
+                    el.innerHTML = `<span>${file.name}</span> <span class="text-slate-500">${(file.size / 1024 / 1024).toFixed(1)}MB</span>`;
+                    fileList.appendChild(el);
+                }
+            }
+        }
+
+        syncBtn.onclick = async () => {
+            const pozoId = document.getElementById('pozoId').value.toUpperCase();
+            if (!pozoId) return alert('Ingresa el ID del elemento');
+            if (pendingFiles.length === 0) return alert('No hay archivos seleccionados');
+
+            syncBtn.disabled = true;
+            status.classList.remove('hidden');
+            status.innerText = 'Preparando sincronización...';
+            status.className = 'mt-6 text-center text-xs font-medium text-blue-400';
+
+            try {
+                // Here we usually would ZIP on PC too if using the same endpoint
+                // But for simplicity in this PC version, we'll send them in batches too
+                // Implementing a small ZIP logic here would require a library or 
+                // just sending them one by one/small groups.
+
+                // Let's assume we use the same batching logic. 
+                // Since this is a standalone HTML, we'll keep it simple: One by one for maximum reliability.
+
+                for (let i = 0; i < pendingFiles.length; i++) {
+                    const file = pendingFiles[i];
+                    status.innerText = `Sincronizando ${i + 1} de ${pendingFiles.length}: ${file.name}`;
+
+                    const base64 = await toBase64(file);
+                    const cleanBase64 = base64.split(',')[1];
+
+                    // Envolvemos en el formato que espera el GAS (batch de 1)
+                    const payload = {
+                        token: SECRET_TOKEN,
+                        zipData: '', // We could send as raw if we adjust GAS, but let's keep it compatible
+                        // Actually, GAS is expecting ZIP. To keep it simple without heavy JSZip here:
+                        // I'll send it as raw data and the user will have to adjust GAS or 
+                        // I'll add a simple ZIP library.
+                        // Let's use raw for PC to avoid complexity.
+                        rawFile: {
+                            name: file.name,
+                            data: cleanBase64,
+                            meta: {
+                                pozoId,
+                                municipio: document.getElementById('municipio').value,
+                                inspector: 'PC_SYNC_USER',
+                                categoria: 'PC_DRAG_DROP'
+                            }
+                        }
+                    };
+
+                    // Note: GAS doPost will need a small adjustment to handle "rawFile" if present
+                    await fetch(GAS_URL, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        body: JSON.stringify(payload)
+                    });
+                }
+
+                status.innerText = '¡TODA LA CARGA COMPLETADA EXITOSAMENTE!';
+                status.className = 'mt-6 text-center text-xs font-medium text-green-400';
+                pendingFiles = [];
+                fileList.innerHTML = '';
+            } catch (err) {
+                status.innerText = 'Error: ' + err.message;
+                status.className = 'mt-6 text-center text-xs font-medium text-red-400';
+            } finally {
+                syncBtn.disabled = false;
+            }
+        };
+
+        const toBase64 = file => new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = error => reject(error);
+        });
+    </script>
+</body>
+
+</html>

@@ -6,10 +6,12 @@ import {
     ChevronLeft, ChevronRight, Check, Plus, Trash2,
     Wifi, WifiOff, Save, FileJson, FileText, Download,
     Cloud, Globe, Lightbulb, AlertTriangle, Info, Camera,
-    RefreshCw, LogOut
+    RefreshCw, LogOut, Moon
 } from 'lucide-react';
 import { FotoRegistro } from './utils/fotoProcessor';
 import FotosZone from './components/FotosZone';
+import SyncScreen from './components/SyncScreen';
+import { getPendingPhotosCount, checkPendingInList, renamePhotoInStorage } from './utils/storageManager';
 
 /* ═══════════════════════════════════════════════════════════
    TYPES & INTERFACES
@@ -39,6 +41,7 @@ interface Pipe {
     cotaZ: string;
     pendiente: string;
     emboq: string;
+    unit?: 'mm' | 'in';
 }
 
 interface Sumidero {
@@ -52,6 +55,7 @@ interface Sumidero {
     codEsquema: string;
     diamTub: string;
     matTub: string;
+    unitTub?: 'mm' | 'in';
 }
 
 interface AppState {
@@ -89,6 +93,7 @@ interface AppState {
     id: string | null;
     savedAt?: string;
     zRasante?: number;
+    synced?: boolean;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -134,7 +139,8 @@ const INITIAL_STATE: AppState = {
     aprobo: '',
     createdAt: null,
     id: null,
-    zRasante: 2600.00
+    zRasante: 2600.00,
+    synced: false
 };
 
 /* ═══════════════════════════════════════════════════════════
@@ -156,7 +162,27 @@ const App: React.FC = () => {
     const [isOnline, setIsOnline] = useState(navigator.onLine);
     const [toastMsg, setToastMsg] = useState('');
     const [showToast, setShowToast] = useState(false);
+    const [showSyncScreen, setShowSyncScreen] = useState(false);
+    const [pendingCount, setPendingCount] = useState(0);
+    const [deleteId, setDeleteId] = useState<string | null>(null);
+    const [deleteConfirmText, setDeleteConfirmText] = useState('');
     const autoSaveTimer = useRef<NodeJS.Timeout | null>(null);
+
+    // Global Municipality for storage manager
+    useEffect(() => {
+        (window as any).CURRENT_MUNICIPIO = state.municipio;
+    }, [state.municipio]);
+
+    // Check pending photos for indicator
+    useEffect(() => {
+        const checkPending = async () => {
+            const count = await getPendingPhotosCount();
+            setPendingCount(count);
+        };
+        const interval = setInterval(checkPending, 30000); // Check every 30s
+        checkPending();
+        return () => clearInterval(interval);
+    }, []);
 
     const firestorePath = state.pozo && state.municipio
         ? `fichas/${state.municipio.toUpperCase()}_${state.pozo.replace(/\s+/g, '')}`
@@ -166,9 +192,8 @@ const App: React.FC = () => {
 
     // Dynamic Imports for Exports
     const handlePDF = async () => {
-        const { exportToPDF } = await import('./utils/export');
-        exportToPDF(state);
-        toast("📄 PDF Generado");
+        // Deshabilitado temporalmente para integración con API externa
+        alert("🛠️ Generación de PDF deshabilitada. Estamos integrando este botón con tu nueva API externa.");
     };
 
     const handleExcel = async () => {
@@ -259,6 +284,36 @@ const App: React.FC = () => {
         }
     }, [state.sistema, state.estadoPozo, state.rasante, state.camara]);
 
+    // Reactive Photo Renaming Effect
+    useEffect(() => {
+        const newIdPozo = (state.pozo || 'S/N').toUpperCase();
+
+        // Verificamos si hay fotos que necesiten renombrarse
+        const needsRename = state.fotoList.some(f => f.idPozo !== newIdPozo);
+
+        if (needsRename) {
+            console.log(`Renombrando fotos para el nuevo Pozo: ${newIdPozo}`);
+
+            const updatedList = state.fotoList.map(foto => {
+                if (foto.idPozo !== newIdPozo) {
+                    const oldPrefix = foto.idPozo;
+                    // El nuevo nombre mantiene el sufijo (ej: -P.JPG, -E1-T.JPG)
+                    const newFilename = foto.filename.replace(new RegExp(`^${oldPrefix}`, 'i'), newIdPozo);
+
+                    // Actualizar en IndexedDB de forma asíncrona
+                    renamePhotoInStorage(foto.id, newIdPozo, newFilename).catch(err =>
+                        console.error(`Error renombrando foto ${foto.id} en DB:`, err)
+                    );
+
+                    return { ...foto, idPozo: newIdPozo, filename: newFilename };
+                }
+                return foto;
+            });
+
+            setState(prev => ({ ...prev, fotoList: updatedList }));
+        }
+    }, [state.pozo]);
+
     /* ═════════════════════════════════════
        HELPERS
     ═════════════════════════════════════ */
@@ -284,6 +339,14 @@ const App: React.FC = () => {
     };
 
     const startNewFicha = () => {
+        // If a draft already exists, ask the user before overwriting it.
+        const existingDraft = localStorage.getItem('catastro_draft');
+        if (existingDraft) {
+            const ok = window.confirm(
+                'Hay un borrador guardado. Crear una nueva ficha lo sobrescribirá y perderás los cambios actuales. ¿Continuar?'
+            );
+            if (!ok) return;
+        }
         const id = `F_${Date.now()}`;
         const newState = { ...INITIAL_STATE, id, createdAt: new Date().toISOString() };
         setState(newState);
@@ -293,25 +356,55 @@ const App: React.FC = () => {
     };
 
     const saveFicha = async () => {
-        // VALIDATION CHECKLIST
-        if (!state.pozo) return toast("⚠️ ERROR: Pozo No. obligatorio");
-        if (!state.estadoPozo) return toast("⚠️ ERROR: Estado Pozo obligatorio");
-        if (!state.sistema) return toast("⚠️ ERROR: Sistema obligatorio");
-
         const id = state.id || `F_${Date.now()}`;
         const now = new Date().toISOString();
-        const finalData = { ...state, id, savedAt: now };
+        const finalData = { ...state, id, savedAt: now, synced: false };
 
-        // Save to LocalStorage
+        // FIRST: Always save locally (Emergency Save / Auto-Draft)
         const updatedFichas = { ...fichas, [id]: finalData };
         setFichas(updatedFichas);
         localStorage.setItem('fichas_star', JSON.stringify(updatedFichas));
-        localStorage.removeItem('catastro_draft');
+        // localStorage.removeItem('catastro_draft'); // Keep draft after saving so it survives page reloads
+
+        // VALIDATION CHECK
+        const missingFields: string[] = [];
+        if (!state.pozo) missingFields.push("Pozo No.");
+        if (!state.estadoPozo) missingFields.push("Estado Pozo");
+        if (!state.sistema) missingFields.push("Sistema");
+        if (!state.municipio) missingFields.push("Municipio");
+        if (!state.barrio) missingFields.push("Barrio");
+        if (!state.direccion) missingFields.push("Dirección");
+        if (!state.elaboro) missingFields.push("Inspector");
+        if (!state.rasante) missingFields.push("Rasante");
+        if (!state.camara) missingFields.push("Tipo Cámara");
+
+        // Pipes & Sums validation
+        state.pipes.forEach((p, i) => {
+            if (!p.deA || !p.diam || p.diam === '0' || !p.mat || !p.estado || !p.emboq) {
+                missingFields.push(`Tubería #${i + 1} (incompleta)`);
+            }
+        });
+        state.sums.forEach((s, i) => {
+            if (!s.tipo || !s.estado || !s.matRejilla || !s.matCaja || !s.diamTub || s.diamTub === '0' || !s.matTub) {
+                missingFields.push(`Sumidero #${i + 1} (incompleto)`);
+            }
+        });
+
+        if (missingFields.length > 0) {
+            toast(`📁 Guardado como Borrador. Pendiente: ${missingFields[0]}...`);
+            // We DON'T return, we stay in the form so they can fix it, but now it's in the list!
+            setActiveScreen('sFichas');
+            return;
+        }
 
         // Save to Firestore if online
         if (isOnline) {
             try {
                 await saveData(finalData);
+                const completeSynced = { ...finalData, synced: true };
+                const finalFichas = { ...updatedFichas, [id]: completeSynced };
+                setFichas(finalFichas);
+                localStorage.setItem('fichas_star', JSON.stringify(finalFichas));
                 toast("✅ Sincronizado en Nube");
             } catch (e) {
                 toast("⚠️ Error Nube, guardado local");
@@ -319,17 +412,25 @@ const App: React.FC = () => {
         } else {
             toast("✅ Guardado local (Offline)");
         }
-
         setActiveScreen('sFichas');
     };
 
     const deleteFicha = (id: string) => {
-        if (!confirm("¿Eliminar esta ficha?")) return;
-        const updated = { ...fichas };
-        delete updated[id];
-        setFichas(updated);
-        localStorage.setItem('fichas_star', JSON.stringify(updated));
-        toast("🗑 Ficha eliminada");
+        setDeleteId(id);
+        setDeleteConfirmText('');
+    };
+
+    const confirmDelete = () => {
+        if (deleteConfirmText.toUpperCase() === 'ELIMINAR') {
+            const updated = { ...fichas };
+            delete updated[deleteId!];
+            setFichas(updated);
+            localStorage.setItem('fichas_star', JSON.stringify(updated));
+            setDeleteId(null);
+            toast("🗑 Ficha eliminada permanentemente");
+        } else {
+            toast("❌ Escribe ELIMINAR para confirmar");
+        }
     };
 
     const captureGPS = () => {
@@ -360,36 +461,78 @@ const App: React.FC = () => {
        RENDER LOGIC
     ═════════════════════════════════════ */
 
-    const renderHome = () => (
-        <div id="s0" className={`screen ${activeScreen === 's0' ? 'active' : ''}`}>
-            <div className="home-center">
-                <div className="home-logo-container">
-                    <div className="home-logo-text">UT★</div>
-                    <div className="home-logo-sub">CAT★STRO STAR</div>
-                </div>
-                <div>
-                    <div className="home-title">Ficha <span>Catastro</span><br />Alcantarillado</div>
-                </div>
-                <div className="home-badge">
-                    <span className="dot"></span>
-                    UT STAR · Municipio {state.municipio}
-                </div>
-                <div style={{ fontSize: '11px', color: 'var(--text3)', fontFamily: 'DM Mono, monospace', textAlign: 'center', lineHeight: '1.6' }}>
-                    Contrato EPC-PDA-C-570-2025<br />Plan Maestro ALC · UT STAR
-                </div>
-                <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <button className="btn btn-green btn-full" onClick={startNewFicha}>
-                        <Plus size={16} strokeWidth={2.5} />
-                        Nueva Ficha
-                    </button>
-                    <button className="btn btn-ghost btn-full" onClick={() => setActiveScreen('sFichas')}>
-                        <List size={16} />
-                        Ver Guardadas
-                    </button>
+    const renderHome = () => {
+        const fichasArr = Object.values(fichas);
+        const totalFichas = fichasArr.length;
+        const pendingFichas = fichasArr.filter(f => !f.synced).length;
+        const syncedFichas = totalFichas - pendingFichas;
+
+        return (
+            <div id="s0" className={`screen ${activeScreen === 's0' ? 'active' : ''}`}>
+                <div className="home-center">
+                    <div className="home-logo-container">
+                        <img src="/logo-ut-star.png" alt="UT STAR Logo" className="home-logo-img" />
+                    </div>
+                    <div>
+                        <div className="home-title">Ficha <span>Catastro</span><br />Alcantarillado</div>
+                    </div>
+
+                    {/* Sync Summary Card */}
+                    <div className="sync-summary-card">
+                        <div className="flex justify-between items-center mb-3">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-blue-400">Resumen de Hoy</span>
+                            <div className={`flex items-center gap-1 text-[9px] font-bold ${isOnline ? 'text-green-500' : 'text-amber-500'}`}>
+                                <div className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-green-500' : 'bg-amber-500 animate-pulse'}`}></div>
+                                {isOnline ? 'CONECTADO' : 'MODO OFFLINE'}
+                            </div>
+                        </div>
+                        <div className="sync-grid">
+                            <div className="sync-stat synced">
+                                <label>Fichas en Nube</label>
+                                <div className="sync-stat-val">{syncedFichas}<span>{totalFichas} total</span></div>
+                            </div>
+                            <div className="sync-stat pending">
+                                <label>Fotos Pendientes</label>
+                                <div className="sync-stat-val">{pendingCount}<span>cola Drive</span></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="home-badge">
+                        <span className="dot"></span>
+                        UT STAR · Municipio {state.municipio}
+                    </div>
+
+                    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <button className="btn btn-green btn-full py-4 text-sm" onClick={startNewFicha}>
+                            <Plus size={18} strokeWidth={3} />
+                            Nueva Inspección
+                        </button>
+
+                        {(pendingCount > 0 || pendingFichas > 0) && (
+                            <button className="btn btn-blue btn-full relative py-4 group overflow-hidden" onClick={() => setShowSyncScreen(true)} style={{ background: 'linear-gradient(135deg, #2563eb, #7c3aed)', border: 'none' }}>
+                                <div className="absolute inset-0 bg-white/10 translate-y-full group-hover:translate-y-0 transition-transform"></div>
+                                <Cloud size={16} className="z-10" />
+                                <span className="z-10">Sincronización Nocturna</span>
+                                <span className="absolute -top-1 -right-1 bg-red-500 text-[9px] w-5 h-5 rounded-full flex items-center justify-center border-2 border-[#020617] font-black z-20">
+                                    {pendingCount + pendingFichas}
+                                </span>
+                            </button>
+                        )}
+
+                        <button className="btn btn-ghost btn-full" onClick={() => setActiveScreen('sFichas')}>
+                            <List size={16} />
+                            Historial de Fichas
+                        </button>
+                    </div>
+
+                    <div className="mt-6 opacity-30 text-[9px] uppercase tracking-widest font-bold">
+                        PDA-C-570-2025 · UT STAR
+                    </div>
                 </div>
             </div>
-        </div>
-    );
+        );
+    };
 
     const renderFichas = () => {
         const list = Object.values(fichas).sort((a, b) => (b.savedAt || '').localeCompare(a.savedAt || ''));
@@ -414,26 +557,37 @@ const App: React.FC = () => {
                         </div>
                     ) : (
                         list.map(f => (
-                            <div key={f.id} className="ficha-item" onClick={() => { setState(f); setActiveScreen('sForm'); setCurrentStep(6); }}>
-                                <div className="ficha-item-title">
-                                    Pozo {f.pozo || '—'} &nbsp;
-                                    <span className={`badge ${f.sistema === 'PLUVIAL' ? 'badge-blue' : 'badge-orange'}`}>{f.sistema || '?'}</span>
-                                </div>
-                                <div className="ficha-item-meta">
-                                    <span>📅 {f.fecha}</span>
-                                    <span>📍 {f.barrio || f.municipio}</span>
-                                    <span>🔩 {f.pipes.length} tub.</span>
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); if (f.id) deleteFicha(f.id); }}
-                                        style={{ background: 'none', border: 'none', color: 'var(--red)', marginLeft: 'auto' }}
-                                    >
-                                        <Trash2 size={14} />
-                                    </button>
-                                </div>
-                            </div>
+                            <FichaItemRow
+                                key={f.id}
+                                f={f}
+                                onEdit={() => { setState(f); setActiveScreen('sForm'); setCurrentStep(6); }}
+                                onDelete={() => deleteFicha(f.id!)}
+                            />
                         ))
                     )}
                 </div>
+
+                {/* MODAL ELIMINAR */}
+                {deleteId && (
+                    <div className="fixed inset-0 z-[1000] bg-black/90 backdrop-blur-sm flex items-center justify-center p-6">
+                        <div className="bg-[#1c2230] border border-[#2d3748] p-6 rounded-2xl w-full max-w-xs shadow-2xl text-center">
+                            <AlertTriangle size={40} className="text-red-500 mx-auto mb-4" />
+                            <h3 className="text-lg font-bold text-white mb-2">¿Eliminar Ficha?</h3>
+                            <p className="text-gray-400 text-xs mb-6">Esta acción es permanente. Escribe <span className="text-white font-bold">ELIMINAR</span> para confirmar:</p>
+                            <input
+                                type="text"
+                                className="w-full bg-[#0f172a] border border-[#334155] rounded-xl p-3 text-center text-white font-bold uppercase mb-6"
+                                value={deleteConfirmText}
+                                onChange={e => setDeleteConfirmText(e.target.value)}
+                                placeholder="..."
+                            />
+                            <div className="flex gap-3">
+                                <button className="btn btn-ghost flex-1 py-3" onClick={() => setDeleteId(null)}>Cancelar</button>
+                                <button className="btn btn-danger flex-1 py-3" onClick={confirmDelete}>Eliminar</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         );
     };
@@ -823,8 +977,35 @@ const App: React.FC = () => {
                             <div className="card">
                                 <div className="card-title">Observaciones y Cierre</div>
                                 <div className="field">
-                                    <label>Observaciones</label>
-                                    <textarea value={state.obs} onChange={e => updateState({ obs: e.target.value })} rows={4} placeholder="..." />
+                                    <div className="flex justify-between items-end mb-1">
+                                        <label className="mb-0">Observaciones</label>
+                                        <button
+                                            className="bg-white/5 hover:bg-white/10 text-[10px] py-1 px-2 rounded-md flex items-center gap-1 transition-all"
+                                            onClick={() => {
+                                                const bullet = "• ";
+                                                updateState({ obs: state.obs + (state.obs.endsWith('\n') || state.obs === '' ? '' : '\n') + bullet });
+                                            }}
+                                        >
+                                            <List size={12} /> Añadir Viñeta
+                                        </button>
+                                    </div>
+                                    <textarea
+                                        value={state.obs}
+                                        onChange={e => updateState({ obs: e.target.value })}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const lines = state.obs.split('\n');
+                                                const lastLine = lines[lines.length - 1];
+                                                if (lastLine.trim().startsWith('•')) {
+                                                    // Continue bullet list if last line had one
+                                                    e.preventDefault();
+                                                    updateState({ obs: state.obs + '\n• ' });
+                                                }
+                                            }
+                                        }}
+                                        rows={6}
+                                        placeholder="Ej: • Tapa fisurada..."
+                                    />
                                 </div>
                                 <div className="field-row">
                                     <div className="field">
@@ -918,6 +1099,8 @@ const App: React.FC = () => {
             {activeScreen === 'sConfig' && renderConfig()}
             {activeScreen === 'sForm' && renderForm()}
 
+            {showSyncScreen && <SyncScreen onClose={() => setShowSyncScreen(false)} />}
+
             {/* TOAST NOTIFICATION */}
             <div id="toast" className={showToast ? 'show' : ''}>{toastMsg}</div>
 
@@ -959,6 +1142,64 @@ const App: React.FC = () => {
 /* ═══════════════════════════════════════════════════════════
    SUB-COMPONENTS
 ═══════════════════════════════════════════════════════════ */
+
+const FichaItemRow: React.FC<{ f: AppState; onEdit: () => void; onDelete: () => void }> = ({ f, onEdit, onDelete }) => {
+    const [pendingPhotos, setPendingPhotos] = useState<string[]>([]);
+    const [checking, setChecking] = useState(true);
+
+    useEffect(() => {
+        const check = async () => {
+            if (f.fotoList && f.fotoList.length > 0) {
+                const ids = f.fotoList.map(p => p.id);
+                const pending = await checkPendingInList(ids);
+                setPendingPhotos(pending);
+            }
+            setChecking(false);
+        };
+        check();
+        const interval = setInterval(check, 10000); // Check cada 10s
+        return () => clearInterval(interval);
+    }, [f.fotoList]);
+
+    const hasPending = pendingPhotos.length > 0;
+    const totalPhotos = f.fotoList?.length || 0;
+
+    return (
+        <div className="ficha-item" onClick={onEdit}>
+            <div className="ficha-item-title">
+                <span className="flex items-center gap-2">
+                    Pozo {f.pozo || '—'}
+                    {f.synced ? (
+                        <Cloud size={14} className="text-green-500" />
+                    ) : (
+                        <Cloud size={14} className="text-gray-600" />
+                    )}
+                </span>
+                <span className={`badge ${f.sistema === 'PLUVIAL' ? 'badge-blue' : 'badge-orange'}`}>{f.sistema || '?'}</span>
+            </div>
+            <div className="ficha-item-meta" style={{ gap: '10px' }}>
+                <span>📅 {f.fecha}</span>
+                <span>📍 {f.barrio || f.municipio}</span>
+
+                <span className="flex items-center gap-1">
+                    <Camera size={12} />
+                    {checking ? '...' : (
+                        <span className={hasPending ? 'text-amber-500' : 'text-green-500'}>
+                            {totalPhotos - pendingPhotos.length}/{totalPhotos}
+                        </span>
+                    )}
+                </span>
+
+                <button
+                    onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                    className="ml-auto p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
+                >
+                    <Trash2 size={16} />
+                </button>
+            </div>
+        </div>
+    );
+};
 
 const SummaryItem: React.FC<{ label: string; val: string }> = ({ label, val }) => (
     <div className="summary-cell">
@@ -1042,43 +1283,64 @@ const ComponentEditor: React.FC<{
                 <span className="comp-label">Existe</span>
                 <div className="toggle3 w-32">
                     <button className={`t-si ${data.existe === 'SI' ? 'active-si' : ''}`} onClick={() => onChange({ existe: 'SI' })}>SI</button>
-                    <button className={`t-no ${data.existe === 'NO' ? 'active-no' : ''}`} onClick={() => onChange({ existe: 'NO' })}>NO</button>
-                    <button className={`t-dk ${data.existe === 'DESCONOCIDO' ? 'active-dk' : ''}`} onClick={() => onChange({ existe: 'DESCONOCIDO' })}>DESC.</button>
+                    <button className={`t-no ${data.existe === 'NO' ? 'active-no' : ''}`} onClick={() => onChange({ existe: 'NO', mat: '-', estado: '-' })}>NO</button>
+                    <button className={`t-dk ${data.existe === 'DESCONOCIDO' ? 'active-dk' : ''}`} onClick={() => onChange({ existe: 'DESCONOCIDO', mat: '-', estado: '-' })}>DESC.</button>
                 </div>
             </div>
-            <div>
-                <label className="comp-label">{isCono ? 'Tipo' : 'Material'}</label>
-                <div className="chips">
-                    {materials.map(m => (
-                        <div key={m} className={`chip ${(data.mat === m && m !== 'OTRO') || (m === 'OTRO' && data.mat && !materials.includes(data.mat as string)) || (data.mat === 'OTRO' && m === 'OTRO') ? 'selected' : ''}`} onClick={() => onChange({ mat: m })}>
-                            {m}
+
+            {data.existe === 'SI' ? (
+                <>
+                    <div>
+                        <label className="comp-label">{isCono ? 'Tipo' : 'Material'}</label>
+                        <div className="chips">
+                            {materials.map(m => (
+                                <div key={m} className={`chip ${(data.mat === m && m !== 'OTRO') || (m === 'OTRO' && data.mat && !materials.includes(data.mat as string)) || (data.mat === 'OTRO' && m === 'OTRO') ? 'selected' : ''}`} onClick={() => onChange({ mat: m })}>
+                                    {m}
+                                </div>
+                            ))}
                         </div>
-                    ))}
+                        {((data.mat && !materials.includes(data.mat as string)) || data.mat === 'OTRO') && (
+                            <input
+                                type="text"
+                                value={data.mat === 'OTRO' ? '' : data.mat}
+                                onChange={e => onChange({ mat: e.target.value.toUpperCase() })}
+                                style={{ width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', padding: '10px', marginTop: '8px', color: 'var(--text)', borderRadius: '8px', fontSize: '12px' }}
+                                placeholder="ESPECIFIQUE..."
+                            />
+                        )}
+                    </div>
+                    <div>
+                        <label className="comp-label">Estado</label>
+                        <div className="semaphore">
+                            {['bueno', 'regular', 'malo', 'desconocido'].map(e => (
+                                <button
+                                    key={e}
+                                    className={`sem-btn s-${e === 'bueno' ? 'good' : e === 'regular' ? 'reg' : e === 'malo' ? 'bad' : 'unk'} ${data.estado === e ? 'active' : ''}`}
+                                    onClick={() => onChange({ estado: e })}
+                                >
+                                    {e === 'desconocido' ? 'Desconocido' : e[0].toUpperCase() + e.slice(1)}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                    {label === 'Peldaños' && (
+                        <div>
+                            <label className="comp-label">Cantidad de Peldaños</label>
+                            <input
+                                type="number"
+                                value={data.num || ''}
+                                onChange={e => onChange({ num: parseInt(e.target.value) || 0 })}
+                                style={{ width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', padding: '10px', marginTop: '4px', color: 'var(--text)', borderRadius: '8px', fontSize: '14px' }}
+                                placeholder="0"
+                            />
+                        </div>
+                    )}
+                </>
+            ) : (
+                <div className="text-[10px] text-gray-500 italic mt-2 py-4 border-t border-dashed border-white/5 text-center bg-black/10 rounded-lg">
+                    {data.existe === 'NO' ? 'Componente marcado como INEXISTENTE. Campos deshabilitados.' : 'Estado del componente DESCONOCIDO. Campos deshabilitados.'}
                 </div>
-                {((data.mat && !materials.includes(data.mat as string)) || data.mat === 'OTRO') && (
-                    <input
-                        type="text"
-                        value={data.mat === 'OTRO' ? '' : data.mat}
-                        onChange={e => onChange({ mat: e.target.value.toUpperCase() })}
-                        style={{ width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', padding: '10px', marginTop: '8px', color: 'var(--text)', borderRadius: '8px', fontSize: '12px' }}
-                        placeholder="ESPECIFIQUE..."
-                    />
-                )}
-            </div>
-            <div>
-                <label className="comp-label">Estado</label>
-                <div className="semaphore">
-                    {['bueno', 'regular', 'malo', 'desconocido'].map(e => (
-                        <button
-                            key={e}
-                            className={`sem-btn s-${e === 'bueno' ? 'good' : e === 'regular' ? 'reg' : e === 'malo' ? 'bad' : 'unk'} ${data.estado === e ? 'active' : ''}`}
-                            onClick={() => onChange({ estado: e })}
-                        >
-                            {e === 'desconocido' ? 'Desconocido' : e[0].toUpperCase() + e.slice(1)}
-                        </button>
-                    ))}
-                </div>
-            </div>
+            )}
         </div>
     </div>
 );
@@ -1103,31 +1365,98 @@ const PipeCard: React.FC<{ pipe: Pipe; index: number; onUpdate: (u: Partial<Pipe
                     <button className={pipe.es === 'SALIDA' ? 's-active' : ''} onClick={() => onUpdate({ es: 'SALIDA' })}>⬆ SALIDA</button>
                 </div>
                 <div className="field-row">
-                    <div className="field"><label>De/Hasta</label><input type="text" value={pipe.deA} onChange={e => onUpdate({ deA: e.target.value })} /></div>
-                    <div className="field"><label>Ø (mm)</label><input type="number" value={pipe.diam} onChange={e => onUpdate({ diam: e.target.value })} /></div>
+                    <div className="field" style={{ flex: 2 }}><label>De/Hasta</label><input type="text" value={pipe.deA} onChange={e => onUpdate({ deA: e.target.value })} placeholder="Ej: P-002" /></div>
+                    <div className="field" style={{ flex: 1.5 }}>
+                        <label className="flex justify-between">
+                            Ø
+                            <span className="unit-toggle">
+                                <button className={(!pipe.unit || pipe.unit === 'mm') ? 'active' : ''} onClick={(e) => { e.preventDefault(); onUpdate({ unit: 'mm' }); }}>mm</button>
+                                <button className={pipe.unit === 'in' ? 'active' : ''} onClick={(e) => { e.preventDefault(); onUpdate({ unit: 'in' }); }}>in</button>
+                            </span>
+                        </label>
+                        <input type="number" value={pipe.diam} onChange={e => onUpdate({ diam: e.target.value })} placeholder="0" />
+                    </div>
                 </div>
                 <div className="field-row">
                     <div className="field">
                         <label>Material</label>
-                        <select value={pipe.mat} onChange={e => onUpdate({ mat: e.target.value })}>
+                        <select value={pipe.mat && ['CONCRETO', 'PVC CORRUGADO', 'PVC LISO', 'MAMPOSTERIA', 'GRES', 'GRP'].includes(pipe.mat) ? pipe.mat : pipe.mat ? 'OTRO' : ''} onChange={e => onUpdate({ mat: e.target.value === 'OTRO' ? 'OTRO' : e.target.value })}>
                             <option value="">—</option>
                             <option>CONCRETO</option>
-                            <option>PVC_CORR</option>
-                            <option>PVC_LISO</option>
+                            <option>PVC CORRUGADO</option>
+                            <option>PVC LISO</option>
+                            <option>MAMPOSTERIA</option>
                             <option>GRES</option>
                             <option>GRP</option>
+                            <option>OTRO</option>
+                        </select>
+                        {(!['CONCRETO', 'PVC CORRUGADO', 'PVC LISO', 'MAMPOSTERIA', 'GRES', 'GRP', ''].includes(pipe.mat) || pipe.mat === 'OTRO') && (
+                            <input
+                                type="text"
+                                value={pipe.mat === 'OTRO' ? '' : pipe.mat}
+                                onChange={e => onUpdate({ mat: e.target.value.toUpperCase() })}
+                                className="mt-2 bg-gray-800 text-white border-blue-500/30"
+                                placeholder="Especifique Material..."
+                            />
+                        )}
+                    </div>
+                </div>
+                <div className="field-row">
+                    <div className="field">
+                        <label>Estado Tub.</label>
+                        <select value={pipe.estado && ['LIMPIO', 'INUNDADO', 'SEDIMENTADO', 'COLMATADO', 'CON BASURAS'].includes(pipe.estado) ? pipe.estado : pipe.estado ? 'OTRO' : ''} onChange={e => onUpdate({ estado: e.target.value === 'OTRO' ? 'OTRO' : e.target.value })}>
+                            <option value="">—</option>
+                            <option>LIMPIO</option>
+                            <option>INUNDADO</option>
+                            <option>SEDIMENTADO</option>
+                            <option>COLMATADO</option>
+                            <option>CON BASURAS</option>
+                            <option>OTRO</option>
+                        </select>
+                        {(!['LIMPIO', 'INUNDADO', 'SEDIMENTADO', 'COLMATADO', 'CON BASURAS', ''].includes(pipe.estado || '') || pipe.estado === 'OTRO') && (
+                            <input
+                                type="text"
+                                value={pipe.estado === 'OTRO' ? '' : pipe.estado}
+                                onChange={e => onUpdate({ estado: e.target.value.toUpperCase() })}
+                                className="mt-2 bg-gray-800 text-white border-blue-500/30 text-xs"
+                                placeholder="Especifique Estado..."
+                            />
+                        )}
+                    </div>
+                    <div className="field">
+                        <label>Emboquillado</label>
+                        <select value={pipe.emboq} onChange={e => onUpdate({ emboq: e.target.value })}>
+                            <option value="">—</option>
+                            <option value="SI">SI</option>
+                            <option value="NO">NO</option>
+                            <option value="DESC">DESC</option>
                         </select>
                     </div>
                 </div>
                 <div className="field-row">
                     <div className="field">
-                        <label>Cota Rasante (Z)</label>
+                        <label>Cota Batea (Z)</label>
                         <input type="number" step="0.01" value={pipe.cotaZ} onChange={e => onUpdate({ cotaZ: e.target.value })} placeholder="0.00" className="bg-gray-800 text-green-400 font-mono" />
                     </div>
                     <div className="field">
-                        <label>Pendiente (%)</label>
-                        <input type="text" value={pipe.pendiente} onChange={e => onUpdate({ pendiente: e.target.value })} placeholder="0.0%" className="bg-gray-800 text-yellow-400 font-mono" />
+                        <label>Cota Clave (Z+Ø)</label>
+                        <input
+                            type="text"
+                            readOnly
+                            value={(() => {
+                                const z = parseFloat(pipe.cotaZ) || 0;
+                                let d = parseFloat(pipe.diam) || 0;
+                                if (pipe.unit === 'in') d = (d * 25.4); // mm
+                                const d_m = d / 1000; // metros
+                                return (z + d_m).toFixed(3);
+                            })()}
+                            className="bg-gray-900 text-blue-300 font-mono opacity-80 cursor-not-allowed"
+                        />
                     </div>
+                </div>
+                <div className="field">
+                    <label>Pendiente (%)</label>
+                    <input type="text" value={pipe.pendiente} onChange={e => onUpdate({ pendiente: e.target.value })} placeholder="0.0%" className="bg-gray-800 text-yellow-400 font-mono text-center" />
                 </div>
             </div>
         </div>
@@ -1138,9 +1467,98 @@ const SumideroCard: React.FC<{ sum: Sumidero; index: number; onUpdate: (u: Parti
     <div className="sum-card">
         <button className="del-sum" onClick={onDelete}><Trash2 size={14} /></button>
         <div className="comp-section-title">Sumidero {index + 1} ({sum.codEsquema})</div>
+
         <div className="field-row">
-            <div className="field"><label>Cód.</label><input type="text" value={sum.codEsquema} onChange={e => onUpdate({ codEsquema: e.target.value })} /></div>
-            <div className="field"><label>Tipo</label><select value={sum.tipo} onChange={e => onUpdate({ tipo: e.target.value })}><option>MIXTO</option><option>VENTANA</option><option>REJILLA</option></select></div>
+            <div className="field"><label>Cód. Esquema</label><input type="text" value={sum.codEsquema} onChange={e => onUpdate({ codEsquema: e.target.value })} placeholder="S-001" /></div>
+            <div className="field">
+                <label>Tipo Sumidero</label>
+                <select value={['COMBINADO O MIXTO', 'VENTANA O LATERAL', 'REJILLA', 'RANURADOS', 'TRANSVERSAL'].includes(sum.tipo) ? sum.tipo : sum.tipo ? 'OTRO' : ''} onChange={e => onUpdate({ tipo: e.target.value === 'OTRO' ? 'OTRO' : e.target.value })}>
+                    <option value="">—</option>
+                    <option>COMBINADO O MIXTO</option>
+                    <option>VENTANA O LATERAL</option>
+                    <option>REJILLA</option>
+                    <option>RANURADOS</option>
+                    <option>TRANSVERSAL</option>
+                    <option>OTRO</option>
+                </select>
+                {(!['COMBINADO O MIXTO', 'VENTANA O LATERAL', 'REJILLA', 'RANURADOS', 'TRANSVERSAL', ''].includes(sum.tipo) || sum.tipo === 'OTRO') && (
+                    <input type="text" value={sum.tipo === 'OTRO' ? '' : sum.tipo} onChange={e => onUpdate({ tipo: e.target.value.toUpperCase() })} className="mt-1 text-xs" placeholder="Especifique..." />
+                )}
+            </div>
+        </div>
+
+        <div className="field-row">
+            <div className="field">
+                <label>Estado</label>
+                <select value={['SIN REPRESAMIENTO', 'INUNDADO', 'COLMATADO', 'OCULTO'].includes(sum.estado) ? sum.estado : sum.estado ? 'OTRO' : ''} onChange={e => onUpdate({ estado: e.target.value === 'OTRO' ? 'OTRO' : e.target.value })}>
+                    <option value="">—</option>
+                    <option>SIN REPRESAMIENTO</option>
+                    <option>INUNDADO</option>
+                    <option>COLMATADO</option>
+                    <option>OCULTO</option>
+                    <option>OTRO</option>
+                </select>
+                {(!['SIN REPRESAMIENTO', 'INUNDADO', 'COLMATADO', 'OCULTO', ''].includes(sum.estado) || sum.estado === 'OTRO') && (
+                    <input type="text" value={sum.estado === 'OTRO' ? '' : sum.estado} onChange={e => onUpdate({ estado: e.target.value.toUpperCase() })} className="mt-1 text-xs" placeholder="Especifique..." />
+                )}
+            </div>
+            <div className="field">
+                <label>Mat. Rejilla</label>
+                <select value={['DESCONOCIDO', 'CONCRETO', 'HIERRO DÚCTIL', 'POLIPROPILENO'].includes(sum.matRejilla) ? sum.matRejilla : sum.matRejilla ? 'OTRO' : ''} onChange={e => onUpdate({ matRejilla: e.target.value === 'OTRO' ? 'OTRO' : e.target.value })}>
+                    <option value="">—</option>
+                    <option>DESCONOCIDO</option>
+                    <option>CONCRETO</option>
+                    <option>HIERRO DÚCTIL</option>
+                    <option>POLIPROPILENO</option>
+                    <option>OTRO</option>
+                </select>
+                {(!['DESCONOCIDO', 'CONCRETO', 'HIERRO DÚCTIL', 'POLIPROPILENO', ''].includes(sum.matRejilla) || sum.matRejilla === 'OTRO') && (
+                    <input type="text" value={sum.matRejilla === 'OTRO' ? '' : sum.matRejilla} onChange={e => onUpdate({ matRejilla: e.target.value.toUpperCase() })} className="mt-1 text-xs" placeholder="Especifique..." />
+                )}
+            </div>
+        </div>
+
+        <div className="field-row">
+            <div className="field">
+                <label>Mat. Caja</label>
+                <select value={['DESCONOCIDO', 'CONCRETO', 'MAMPOSTERIA'].includes(sum.matCaja) ? sum.matCaja : sum.matCaja ? 'OTRO' : ''} onChange={e => onUpdate({ matCaja: e.target.value === 'OTRO' ? 'OTRO' : e.target.value })}>
+                    <option value="">—</option>
+                    <option>DESCONOCIDO</option>
+                    <option>CONCRETO</option>
+                    <option>MAMPOSTERIA</option>
+                    <option>OTRO</option>
+                </select>
+                {(!['DESCONOCIDO', 'CONCRETO', 'MAMPOSTERIA', ''].includes(sum.matCaja) || sum.matCaja === 'OTRO') && (
+                    <input type="text" value={sum.matCaja === 'OTRO' ? '' : sum.matCaja} onChange={e => onUpdate({ matCaja: e.target.value.toUpperCase() })} className="mt-1 text-xs" placeholder="Especifique..." />
+                )}
+            </div>
+            <div className="field" style={{ flex: 1.5 }}>
+                <label className="flex justify-between">
+                    Ø Tub. Salida
+                    <span className="unit-toggle">
+                        <button className={(!sum.unitTub || sum.unitTub === 'mm') ? 'active' : ''} onClick={(e) => { e.preventDefault(); onUpdate({ unitTub: 'mm' }); }}>mm</button>
+                        <button className={sum.unitTub === 'in' ? 'active' : ''} onClick={(e) => { e.preventDefault(); onUpdate({ unitTub: 'in' }); }}>in</button>
+                    </span>
+                </label>
+                <input type="number" value={sum.diamTub} onChange={e => onUpdate({ diamTub: e.target.value })} placeholder="0" />
+            </div>
+        </div>
+
+        <div className="field">
+            <label>Material Tubería Salida</label>
+            <select value={['CONCRETO', 'PVC CORRUGADO', 'PVC LISO', 'MAMPOSTERIA', 'GRES', 'GRP'].includes(sum.matTub) ? sum.matTub : sum.matTub ? 'OTRO' : ''} onChange={e => onUpdate({ matTub: e.target.value === 'OTRO' ? 'OTRO' : e.target.value })}>
+                <option value="">—</option>
+                <option>CONCRETO</option>
+                <option>PVC CORRUGADO</option>
+                <option>PVC LISO</option>
+                <option>MAMPOSTERIA</option>
+                <option>GRES</option>
+                <option>GRP</option>
+                <option>OTRO</option>
+            </select>
+            {(!['CONCRETO', 'PVC CORRUGADO', 'PVC LISO', 'MAMPOSTERIA', 'GRES', 'GRP', ''].includes(sum.matTub) || sum.matTub === 'OTRO') && (
+                <input type="text" value={sum.matTub === 'OTRO' ? '' : sum.matTub} onChange={e => onUpdate({ matTub: e.target.value.toUpperCase() })} className="mt-1 text-xs" placeholder="Especifique..." />
+            )}
         </div>
     </div>
 );

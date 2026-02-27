@@ -1,0 +1,15 @@
+{
+    "token": "STAR-2025-VIP-SYNC",
+    "zipData": "UEsDBAoAAAAAAOC7SlgAAAAAAAAAAAAAAAAHABwANy50eHRCVQIABNIGAABVWAUAAgAAAAAAVGVzdCBQSwECFQMKAAAAAADgu0pYAAAAAAAAAAAAAAAAHABwAAAAAAAAAAAAAAP0BAAA3LnR4dEJVAwIABNIGAABVWAUAAgAAAAAAVW5pc3RhcFBLBQYAAAAAAQABAFkAAABCAAAAAAA=",
+    "metadata": [
+        {
+            "id": "test_curl",
+            "filename": "7.txt",
+            "municipio": "SOPO",
+            "pozoId": "TEST-POZO-01",
+            "barrio": "TEST",
+            "categoria": "General",
+            "inspector": "CURL TEST"
+        }
+    ]
+}
