@@ -1,7 +1,7 @@
 export interface FotoRegistro {
     id: string;
     idPozo: string;
-    tipo: "general" | "tapa" | "interior" | "medicion" | "entrada" | "salida" | "sumidero";
+    tipo: "general" | "tapa" | "interior" | "medicion" | "entrada" | "salida" | "sumidero" | "esquema" | "ubicacion";
     categoria: "PRINCIPAL" | "ENTRADA" | "SALIDA" | "SUMIDERO" | "OTRO";
     subcategoria: string;
     filename: string;
@@ -63,6 +63,16 @@ export const procesarFoto = (filename: string, idPozo: string, base64String: str
         categoria = "PRINCIPAL";
         subcategoria = "I";
         tipo = "interior";
+    }
+    else if (cleanFilename.endsWith("-EV.JPG")) {
+        categoria = "PRINCIPAL";
+        subcategoria = "EV";
+        tipo = "esquema";
+    }
+    else if (cleanFilename.endsWith("-UG.JPG")) {
+        categoria = "PRINCIPAL";
+        subcategoria = "UG";
+        tipo = "ubicacion";
     }
     else if (cleanFilename.endsWith("-AT.JPG")) {
         categoria = "PRINCIPAL";

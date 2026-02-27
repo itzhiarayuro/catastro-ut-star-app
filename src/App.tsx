@@ -84,6 +84,8 @@ interface AppState {
         general: string[];
         interior: string[];
         danos: string[];
+        esquemaVertical: string[];
+        ubGeneral: string[];
     };
     fotoList: FotoRegistro[];
     obs: string;
@@ -150,7 +152,7 @@ const INITIAL_STATE: AppState = {
     peld: { existe: 'DESCONOCIDO', mat: '', num: 0, estado: 'desconocido' },
     pipes: [],
     sums: [],
-    photos: { general: [], interior: [], danos: [] },
+    photos: { general: [], interior: [], danos: [], esquemaVertical: [], ubGeneral: [] },
     fotoList: [],
     obs: '',
     reviso: '',
@@ -889,11 +891,25 @@ const App: React.FC = () => {
                                                 📍 Lat: <strong>{state.gps.lat}</strong> | Lng: <strong>{state.gps.lng}</strong><br />
                                                 🎯 Precisión: <strong>{state.gps.precision} m</strong>
                                             </div>
+
+                                            {/* Embedded Map */}
+                                            <div style={{ width: '100%', height: '150px', borderRadius: '12px', overflow: 'hidden', marginTop: '10px', border: '1px solid #30363d' }}>
+                                                <iframe
+                                                    width="100%"
+                                                    height="150"
+                                                    style={{ border: 0 }}
+                                                    loading="lazy"
+                                                    allowFullScreen
+                                                    referrerPolicy="no-referrer-when-downgrade"
+                                                    src={`https://www.google.com/maps/embed/v1/place?key=AIzaSyClaOKQqLG6-KBNcVaAD_QYlBjeKyP3i2c&q=${state.gps.lat},${state.gps.lng}&zoom=18&maptype=satellite`}
+                                                ></iframe>
+                                            </div>
+
                                             <button
                                                 className="btn btn-ghost btn-sm btn-full"
                                                 onClick={() => window.open(`https://www.google.com/maps?q=${state.gps.lat},${state.gps.lng}`, '_blank')}
                                             >
-                                                <Globe size={14} /> Ver en Google Maps
+                                                <Globe size={14} /> Ver en Full Google Maps
                                             </button>
                                         </>
                                     )}

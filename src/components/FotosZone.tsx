@@ -391,6 +391,28 @@ const FotosZone: React.FC<FotosZoneProps> = ({ pozoId, photos, pipes, sums, onAd
                     isLocked={isLocked}
                     onPreview={setPreviewPhoto}
                 />
+                <PhotoSection
+                    title="Esquema Vertical"
+                    description="Dibujo/Corte del pozo"
+                    type="esquema"
+                    pozoId={pozoId}
+                    photos={photos.filter(p => p.tipo === "esquema")}
+                    onAdd={onAddPhoto}
+                    onDelete={onDeletePhoto}
+                    isLocked={isLocked}
+                    onPreview={setPreviewPhoto}
+                />
+                <PhotoSection
+                    title="Ubicación General"
+                    description="Croquis de localización"
+                    type="ubicacion"
+                    pozoId={pozoId}
+                    photos={photos.filter(p => p.tipo === "ubicacion")}
+                    onAdd={onAddPhoto}
+                    onDelete={onDeletePhoto}
+                    isLocked={isLocked}
+                    onPreview={setPreviewPhoto}
+                />
             </div>
 
             {/* Photo Preview Modal */}
