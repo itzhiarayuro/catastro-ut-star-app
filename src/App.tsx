@@ -149,14 +149,33 @@ const INITIAL_STATE: AppState = {
 
 const App: React.FC = () => {
     const { user, loading: authLoading, isAuthorized, logout } = useAuth();
-    const [activeScreen, setActiveScreen] = useState<'s0' | 'sFichas' | 'sConfig' | 'sForm'>('s0');
-    const [currentStep, setCurrentStep] = useState(1);
     const [state, setState] = useState<AppState>(() => {
-        const draft = localStorage.getItem('catastro_draft');
-        if (draft) {
-            try { return JSON.parse(draft); } catch (e) { }
+        try {
+            const draft = localStorage.getItem('catastro_draft');
+            if (draft) {
+                const parsed = JSON.parse(draft);
+                // Si el borrador tiene ID, es válido para cargarlo
+                if (parsed && (parsed.id || parsed.pozo)) return parsed;
+            }
+        } catch (e) {
+            console.error("Error loading draft from localStorage", e);
         }
         return INITIAL_STATE;
+    });
+
+    const [activeScreen, setActiveScreen] = useState<'s0' | 'sFichas' | 'sConfig' | 'sForm'>(() => {
+        const saved = localStorage.getItem('catastro_active_screen');
+        // Validamos que si volvemos a un formulario, realmente haya datos
+        if (saved === 'sForm') {
+            const draft = localStorage.getItem('catastro_draft');
+            if (!draft) return 's0';
+        }
+        return (saved as any) || 's0';
+    });
+
+    const [currentStep, setCurrentStep] = useState(() => {
+        const saved = localStorage.getItem('catastro_current_step');
+        return saved ? parseInt(saved) : 1;
     });
     const [fichas, setFichas] = useState<Record<string, AppState>>({});
     const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -167,6 +186,15 @@ const App: React.FC = () => {
     const [deleteId, setDeleteId] = useState<string | null>(null);
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
     const autoSaveTimer = useRef<NodeJS.Timeout | null>(null);
+
+    // Persistencia de navegación activa
+    useEffect(() => {
+        localStorage.setItem('catastro_active_screen', activeScreen);
+    }, [activeScreen]);
+
+    useEffect(() => {
+        localStorage.setItem('catastro_current_step', currentStep.toString());
+    }, [currentStep]);
 
     // Global Municipality for storage manager
     useEffect(() => {
@@ -342,10 +370,14 @@ const App: React.FC = () => {
         // If a draft already exists, ask the user before overwriting it.
         const existingDraft = localStorage.getItem('catastro_draft');
         if (existingDraft) {
-            const ok = window.confirm(
-                'Hay un borrador guardado. Crear una nueva ficha lo sobrescribirá y perderás los cambios actuales. ¿Continuar?'
-            );
-            if (!ok) return;
+            const draftObj = JSON.parse(existingDraft);
+            // Only warn if the draft has some progress (id or pozo)
+            if (draftObj.id || draftObj.pozo) {
+                const ok = window.confirm(
+                    `Hay un borrador guardado (Pozo: ${draftObj.pozo || 'S/N'}). Crear una nueva ficha lo sobrescribirá. ¿Continuar?`
+                );
+                if (!ok) return;
+            }
         }
         const id = `F_${Date.now()}`;
         const newState = { ...INITIAL_STATE, id, createdAt: new Date().toISOString() };
@@ -353,6 +385,23 @@ const App: React.FC = () => {
         localStorage.setItem('catastro_draft', JSON.stringify(newState));
         setCurrentStep(1);
         setActiveScreen('sForm');
+    };
+
+    const continueDraft = () => {
+        const draft = localStorage.getItem('catastro_draft');
+        if (draft) {
+            try {
+                const parsed = JSON.parse(draft);
+                setState(parsed);
+                setActiveScreen('sForm');
+                // Intentamos volver al paso donde estaba, o al 1 por defecto
+                const savedStep = localStorage.getItem('catastro_current_step');
+                setCurrentStep(savedStep ? parseInt(savedStep) : 1);
+                toast("📂 Borrador restaurado");
+            } catch (e) {
+                toast("❌ Error al cargar borrador");
+            }
+        }
     };
 
     const saveFicha = async () => {
@@ -504,6 +553,13 @@ const App: React.FC = () => {
                     </div>
 
                     <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        {state.id && (
+                            <button className="btn btn-yellow btn-full py-4 text-sm" onClick={continueDraft} style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)', border: 'none' }}>
+                                <Save size={18} />
+                                Continuar Borrador ({state.pozo || 'Sin Nombre'})
+                            </button>
+                        )}
+
                         <button className="btn btn-green btn-full py-4 text-sm" onClick={startNewFicha}>
                             <Plus size={18} strokeWidth={3} />
                             Nueva Inspección
@@ -560,7 +616,12 @@ const App: React.FC = () => {
                             <FichaItemRow
                                 key={f.id}
                                 f={f}
-                                onEdit={() => { setState(f); setActiveScreen('sForm'); setCurrentStep(6); }}
+                                onEdit={() => {
+                                    setState(f);
+                                    localStorage.setItem('catastro_draft', JSON.stringify(f));
+                                    setActiveScreen('sForm');
+                                    setCurrentStep(1);
+                                }}
                                 onDelete={() => deleteFicha(f.id!)}
                             />
                         ))
@@ -1051,9 +1112,14 @@ const App: React.FC = () => {
                             </div>
 
                             <div className="space-y-3 mt-6">
-                                <button className="btn btn-green btn-full" onClick={saveFicha}>
-                                    <Save size={16} /> Guardar y Sincronizar
-                                </button>
+                                <div className="flex gap-3">
+                                    <button className="btn btn-ghost flex-1 py-3" onClick={() => setCurrentStep(5)}>
+                                        <ChevronLeft size={16} /> Volver
+                                    </button>
+                                    <button className="btn btn-green flex-[2] py-3" onClick={saveFicha}>
+                                        <Save size={16} /> Finalizar y Guardar
+                                    </button>
+                                </div>
                                 <button className="btn btn-blue btn-full" onClick={handleExcel}>
                                     <FileJson size={16} /> Exportar Reporte XLSX
                                 </button>
