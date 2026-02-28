@@ -42,8 +42,19 @@ docs/
 - ✅ Captura de fotos con almacenamiento local
 - ✅ Geolocalización GPS
 - ✅ Motor de reglas automáticas
-- ✅ Visualización en mapa (Google Maps)
+- ✅ Visualización en mapa (Google Maps) con ubicación en tiempo real
 - ✅ Exportación a Excel
+
+#### Mapa Interactivo (Actualizado)
+- ✅ Sincronización en tiempo real con Firestore (onSnapshot)
+- ✅ Ubicación del usuario con punto azul pulsante
+- ✅ Botón flotante para centrar en ubicación actual
+- ✅ Marcadores personalizados por tipo de sistema
+- ✅ InfoWindow con detalles de cada pozo
+- ✅ Estadísticas en tiempo real por tipo de sistema
+- ✅ Cambio entre vista híbrida y roadmap
+- ✅ Soporte para estilos personalizados de Google Maps
+- ✅ Evita violación de "User Gesture" (solicita ubicación solo al presionar botón)
 
 #### Backend
 - ✅ Firebase Firestore para almacenamiento de fichas
@@ -60,6 +71,7 @@ docs/
 - ✅ Reintentos automáticos con backoff
 - ✅ Subida idempotente (no duplica datos)
 - ✅ Historial inmutable en Firestore
+- ✅ Actualizaciones en tiempo real en el mapa
 
 #### Seguridad
 - ✅ Autenticación requerida para todas las operaciones

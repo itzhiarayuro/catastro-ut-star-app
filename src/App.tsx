@@ -79,6 +79,7 @@ interface AppState {
     pendiente: string;
     camara: string;
     tapa: ComponentState;
+    cargue: ComponentState;
     cuerpo: ComponentState;
     cono: ComponentState;
     canu: ComponentState;
@@ -154,6 +155,7 @@ const INITIAL_STATE: AppState = {
     pendiente: '',
     camara: '',
     tapa: { existe: 'DESCONOCIDO', mat: '', estado: 'desconocido' },
+    cargue: { existe: 'DESCONOCIDO', mat: '', estado: 'desconocido' },
     cuerpo: { existe: 'DESCONOCIDO', mat: '', estado: 'desconocido' },
     cono: { existe: 'DESCONOCIDO', tipo: '', mat: '', estado: 'desconocido' },
     canu: { existe: 'DESCONOCIDO', mat: '', estado: 'desconocido' },
@@ -327,7 +329,7 @@ const App: React.FC = () => {
         // 1. Prioridad: OCULTO -> TODO bloqueado Desconocido
         if (state.sistema === 'OCULTO') {
             if (state.camara !== 'DESCONOCIDO') { newState.camara = 'DESCONOCIDO'; changed = true; }
-            const fields: (keyof AppState)[] = ['tapa', 'cuerpo', 'cono', 'canu', 'peld'];
+            const fields: (keyof AppState)[] = ['tapa', 'cargue', 'cuerpo', 'cono', 'canu', 'peld'];
             fields.forEach(f => {
                 if ((state[f] as any).existe !== 'DESCONOCIDO') {
                     (newState[f] as any) = { ...(state[f] as any), existe: 'DESCONOCIDO', estado: 'desconocido' };
@@ -1162,6 +1164,12 @@ const App: React.FC = () => {
                                 label="Tapa"
                                 data={state.tapa}
                                 onChange={(v) => updateState({ tapa: { ...state.tapa, ...v } })}
+                                materials={['CONCRETO', 'FERROCONCRETO', 'METAL', 'POLIPROPILENO', 'PVC', 'OTRO']}
+                            />
+                            <ComponentEditor
+                                label="Cargue"
+                                data={state.cargue}
+                                onChange={(v) => updateState({ cargue: { ...state.cargue, ...v } })}
                                 materials={['CONCRETO', 'FERROCONCRETO', 'METAL', 'POLIPROPILENO', 'PVC', 'OTRO']}
                             />
                             <ComponentEditor

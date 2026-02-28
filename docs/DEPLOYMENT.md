@@ -26,7 +26,22 @@ VITE_FIREBASE_MESSAGING_SENDER_ID=123456789
 VITE_FIREBASE_APP_ID=1:123456789:web:abc123
 VITE_GAS_DRIVE_SYNC_URL=https://script.google.com/macros/s/TU_SCRIPT_ID/exec
 VITE_GAS_SECRET_TOKEN=tu-token-secreto-aqui
+VITE_GOOGLE_MAPS_ID=tu_map_id_personalizado
 ```
+
+**Descripción de Variables:**
+
+| Variable | Descripción | Dónde Obtenerla |
+|----------|-------------|-----------------|
+| `VITE_FIREBASE_API_KEY` | API Key de Firebase | Firebase Console → Project Settings → General |
+| `VITE_FIREBASE_AUTH_DOMAIN` | Dominio de autenticación | Firebase Console → Project Settings → General |
+| `VITE_FIREBASE_PROJECT_ID` | ID del proyecto | Firebase Console → Project Settings → General |
+| `VITE_FIREBASE_STORAGE_BUCKET` | Bucket de almacenamiento | Firebase Console → Project Settings → General |
+| `VITE_FIREBASE_MESSAGING_SENDER_ID` | ID de mensajería | Firebase Console → Project Settings → Cloud Messaging |
+| `VITE_FIREBASE_APP_ID` | ID de la aplicación | Firebase Console → Project Settings → General |
+| `VITE_GAS_DRIVE_SYNC_URL` | URL del Google Apps Script | Google Apps Script → Deploy → Web App URL |
+| `VITE_GAS_SECRET_TOKEN` | Token secreto para GAS | Generar manualmente (string aleatorio) |
+| `VITE_GOOGLE_MAPS_ID` | ID de estilo de Google Maps (opcional) | Google Cloud Console → Maps → Map IDs |
 
 ### 2. Verificar Dependencias
 

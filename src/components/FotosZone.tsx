@@ -321,11 +321,11 @@ const FotosZone: React.FC<FotosZoneProps> = ({ pozoId, photos, pipes, sums, onAd
                     <p className="text-[10px] text-gray-500 uppercase tracking-widest">Nomenclatura Automática: {pozoId}-...</p>
                 </div>
                 <button
-                    onClick={() => window.location.href = "intent://#Intent;scheme=launch;package=com.gopro.smarty;end"}
-                    className="ml-auto flex items-center gap-2 bg-[#0668E1] hover:bg-[#0556ba] text-white text-[10px] font-bold py-1.5 px-3 rounded-full transition-all shadow-lg active:scale-95"
+                    onClick={() => window.location.href = "intent://#Intent;scheme=launch;package=com.akaso.go;end"}
+                    className="ml-auto flex items-center gap-2 bg-[#FF5722] hover:bg-[#E64A19] text-white text-[10px] font-bold py-1.5 px-3 rounded-full transition-all shadow-lg active:scale-95"
                 >
-                    <img src="https://gopro.com/v/favicon.ico" className="w-4 h-4 rounded-sm" alt="GoPro" />
-                    Abrir GoPro Quik
+                    <Camera size={14} />
+                    Abrir Akaso GO
                 </button>
             </div>
 

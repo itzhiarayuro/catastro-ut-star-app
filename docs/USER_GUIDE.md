@@ -228,19 +228,59 @@ Si falta algo, aparece mensaje: "📁 Guardado como Borrador. Pendiente: [campo]
 ### Ver Fichas en el Mapa
 
 1. Pantalla principal → Botón de mapa
-2. El mapa muestra todos los pozos georeferenciados
-3. Los colores indican el tipo de sistema:
+2. El mapa muestra todos los pozos georeferenciados en tiempo real
+3. Los colores de los marcadores indican el tipo de sistema:
    - 🔵 Azul: PLUVIAL
    - ⚫ Gris: RESIDUAL
    - 🟣 Morado: COMBINADO
    - 🟠 Ámbar: OCULTO
    - 🔴 Rojo: DESCONOCIDO
 
+### Ubicación en Tiempo Real
+
+**Punto Azul Pulsante:**
+- Representa tu ubicación actual
+- Se actualiza automáticamente
+- Tiene un efecto de pulso para fácil identificación
+
+**Centrar en tu Ubicación:**
+1. Presionar el botón flotante azul con ícono de navegación (esquina derecha)
+2. Otorgar permisos de ubicación si es la primera vez
+3. El mapa se centrará en tu posición actual con zoom 18
+4. El botón se anima mientras busca tu ubicación
+
+**Consejos:**
+- El GPS funciona mejor al aire libre
+- La primera vez puede tardar 5-10 segundos
+- El punto azul se actualiza automáticamente mientras te mueves
+
+### Cambiar Tipo de Mapa
+
+**Opciones disponibles:**
+- **Híbrido** (default): Satélite + nombres de calles
+- **Roadmap**: Vista de calles tradicional
+
+**Cambiar:**
+1. Presionar botón de capas (esquina superior derecha)
+2. Alterna entre híbrido y roadmap
+
 ### Ver Detalles de un Pozo
 
-1. Hacer clic en un marcador
-2. Aparece ventana con información
-3. Presionar "Ver Ficha →" para editar
+1. Hacer clic en un marcador (pin de color)
+2. Aparece ventana emergente con:
+   - Número de pozo
+   - Municipio
+   - Sistema
+   - Dirección
+   - Coordenadas GPS
+3. Presionar botón "EDITAR" para abrir la ficha completa
+
+### Estadísticas en el Mapa
+
+**Panel inferior:**
+- Muestra conteo en tiempo real por tipo de sistema
+- Se actualiza automáticamente al agregar/editar fichas
+- Se oculta cuando hay una ventana de información abierta
 
 ---
 

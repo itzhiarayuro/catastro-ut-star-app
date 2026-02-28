@@ -65,6 +65,9 @@ export const exportToExcel = (fichas: any[]) => {
         Longitud: f.gps?.lng,
         Diametro: f.diam,
         Altura: f.altura,
+        Tapa_Mat: f.tapa?.mat,
+        Cargue_Mat: f.cargue?.mat,
+        Cuerpo_Mat: f.cuerpo?.mat,
         Tuberias: f.pipes?.length || 0,
         Fotos: (f.photos?.general?.length || 0) + (f.photos?.interior?.length || 0) + (f.photos?.danos?.length || 0)
     }));

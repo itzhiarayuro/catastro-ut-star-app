@@ -153,7 +153,22 @@ VITE_FIREBASE_MESSAGING_SENDER_ID=...
 VITE_FIREBASE_APP_ID=...
 VITE_GAS_DRIVE_SYNC_URL=...
 VITE_GAS_SECRET_TOKEN=...
+VITE_GOOGLE_MAPS_ID=...
 ```
+
+**Descripción de Variables:**
+
+| Variable | Descripción | Requerida |
+|----------|-------------|-----------|
+| `VITE_FIREBASE_API_KEY` | API Key de Firebase | ✅ Sí |
+| `VITE_FIREBASE_AUTH_DOMAIN` | Dominio de autenticación | ✅ Sí |
+| `VITE_FIREBASE_PROJECT_ID` | ID del proyecto Firebase | ✅ Sí |
+| `VITE_FIREBASE_STORAGE_BUCKET` | Bucket de almacenamiento | ✅ Sí |
+| `VITE_FIREBASE_MESSAGING_SENDER_ID` | ID de mensajería | ✅ Sí |
+| `VITE_FIREBASE_APP_ID` | ID de la aplicación | ✅ Sí |
+| `VITE_GAS_DRIVE_SYNC_URL` | URL del Google Apps Script | ✅ Sí |
+| `VITE_GAS_SECRET_TOKEN` | Token secreto para GAS | ✅ Sí |
+| `VITE_GOOGLE_MAPS_ID` | ID de estilo de Google Maps | ❌ Opcional |
 
 **Protección:**
 

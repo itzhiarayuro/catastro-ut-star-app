@@ -385,6 +385,24 @@ enableIndexedDbPersistence(db).catch((err) => {
 });
 ```
 
+**Sincronización en Tiempo Real:**
+
+El mapa utiliza `onSnapshot` para actualizaciones en tiempo real:
+
+```typescript
+const q = query(collection(db, 'fichas'));
+const unsubscribe = onSnapshot(q, (snapshot) => {
+  // Actualiza marcadores automáticamente
+  const items = snapshot.docs.map(doc => doc.data());
+  setFichas(items);
+});
+```
+
+**Características:**
+- ✅ Actualizaciones en tiempo real sin recargar
+- ✅ Múltiples usuarios ven cambios instantáneamente
+- ✅ Funciona offline con caché local
+
 #### Firebase Authentication
 
 **Método:** Email + Password
@@ -482,6 +500,141 @@ onAuthStateChanged(auth, (firebaseUser) => {
 - Validación de token para seguridad
 - Creación automática de estructura de carpetas
 - Manejo de errores con try/catch
+
+---
+
+## 🗺️ Componente de Mapas (Actualizado)
+
+### MapasScreen.tsx
+
+**Características Principales:**
+
+#### 1. Ubicación en Tiempo Real
+
+```typescript
+// Marcador de ubicación del usuario (punto azul pulsante)
+{userPos && (
+  <AdvancedMarker position={userPos}>
+    <div className="relative flex items-center justify-center">
+      <div className="absolute w-10 h-10 bg-blue-500/30 rounded-full animate-ping"></div>
+      <div className="w-5 h-5 bg-blue-600 rounded-full border-2 border-white shadow-[0_0_15px_rgba(0,132,255,1)]"></div>
+    </div>
+  </AdvancedMarker>
+)}
+```
+
+**Funcionalidad:**
+- Punto azul con efecto de pulso
+- Actualización automática de posición
+- Botón flotante para centrar en ubicación actual
+- Animación mientras busca ubicación
+
+#### 2. Sincronización en Tiempo Real
+
+```typescript
+useEffect(() => {
+  const q = query(collection(db, 'fichas'));
+  const unsubscribe = onSnapshot(q, (snapshot) => {
+    const items = snapshot.docs.map(doc => {
+      const data = doc.data();
+      // Procesar datos...
+      return fichaMapItem;
+    });
+    setFichas(items);
+  });
+  return () => unsubscribe();
+}, []);
+```
+
+**Características:**
+- Actualizaciones instantáneas sin recargar
+- Múltiples usuarios ven cambios en tiempo real
+- Contador de fichas actualizado automáticamente
+
+#### 3. Marcadores Personalizados
+
+```typescript
+// Custom pin marker (evita warnings de <gmp-pin> deprecado)
+<div style={{ width: '30px', height: '42px' }}>
+  <svg viewBox="0 0 30 42" width="30" height="42">
+    <path
+      d="M15 0C6.716 0 0 6.716 0 15c0 10.5 15 27 15 27s15-16.5 15-27C30 6.716 23.284 0 15 0z"
+      fill={getPinColor(ficha.sistema)}
+      stroke="#ffffff"
+      strokeWidth="2"
+    />
+    <circle cx="15" cy="14" r="6" fill="#ffffff" opacity="0.9" />
+  </svg>
+</div>
+```
+
+**Colores por Sistema:**
+- PLUVIAL: `#3b82f6` (Azul)
+- RESIDUAL: `#64748b` (Gris)
+- COMBINADO: `#a855f7` (Morado)
+- OCULTO: `#f59e0b` (Ámbar)
+- DESCONOCIDO: `#ef4444` (Rojo)
+
+#### 4. Controles del Mapa
+
+**Botón de Centrar:**
+```typescript
+const handleCenterMap = () => {
+  if (userPos && map) {
+    map.panTo(userPos);
+    map.setZoom(18);
+  } else {
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const newPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setUserPos(newPos);
+        if (map) {
+          map.panTo(newPos);
+          map.setZoom(18);
+        }
+        setIsLocating(false);
+      },
+      () => setIsLocating(false),
+      { enableHighAccuracy: true }
+    );
+  }
+};
+```
+
+**Características:**
+- Solicita ubicación solo cuando el usuario presiona el botón
+- Evita violación de "User Gesture" (no solicita automáticamente)
+- Animación visual mientras busca ubicación
+- Zoom automático a nivel 18 (muy cercano)
+
+#### 5. Estadísticas en Tiempo Real
+
+```typescript
+<div className="grid grid-cols-3 gap-2">
+  <div className="bg-blue-500/10 rounded-xl p-2">
+    <p className="text-[8px] text-blue-400">Pluvial</p>
+    <p className="text-sm font-black">{fichas.filter(f => f.sistema === 'PLUVIAL').length}</p>
+  </div>
+  {/* ... más estadísticas */}
+</div>
+```
+
+**Características:**
+- Conteo automático por tipo de sistema
+- Se oculta cuando hay InfoWindow abierta
+- Actualización en tiempo real
+
+#### 6. Variables de Entorno
+
+```env
+VITE_GOOGLE_MAPS_ID=tu_map_id_personalizado
+```
+
+**Uso:**
+- ID de estilo personalizado de Google Maps
+- Permite temas oscuros y personalizaciones
+- Opcional (funciona sin él)
 
 ---
 
