@@ -17,9 +17,9 @@ import {
     Search,
     Info,
     MapPin,
-    Wifi,
     ChevronLeft
 } from 'lucide-react';
+import { BingLayer } from './BingLayer';
 
 // Estilo Premium Dark para Google Maps
 const MAP_ID = import.meta.env.VITE_GOOGLE_MAPS_ID; // ID de estilo personalizado (opcional)
@@ -44,7 +44,7 @@ const MapasScreen: React.FC<{
     const map = useMap();
     const [fichas, setFichas] = useState<FichaMapItem[]>([]);
     const [selectedFicha, setSelectedFicha] = useState<FichaMapItem | null>(null);
-    const [mapType, setMapType] = useState<'roadmap' | 'satellite' | 'hybrid'>('hybrid');
+    const [mapType, setMapType] = useState<'hybrid' | 'roadmap' | 'bing'>('hybrid');
     const [center, setCenter] = useState({ lat: 6.244, lng: -75.581 }); // Un centro más neutro si falla (Medellín)
     const [userPos, setUserPos] = useState<{ lat: number; lng: number } | null>(null);
     const [isLocating, setIsLocating] = useState(false);
@@ -187,10 +187,11 @@ const MapasScreen: React.FC<{
 
                     <div className="flex items-center gap-2">
                         <button
-                            onClick={() => setMapType(mapType === 'hybrid' ? 'roadmap' : 'hybrid')}
-                            className="p-2.5 rounded-xl bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 transition-colors shadow-lg"
+                            onClick={() => setMapType(t => t === 'hybrid' ? 'roadmap' : t === 'roadmap' ? 'bing' : 'hybrid')}
+                            className="p-2.5 rounded-xl bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 transition-colors shadow-lg flex items-center justify-center min-w-[40px]"
                         >
                             <Layers className="w-4 h-4" />
+                            {mapType === 'bing' && <span className="ml-1 text-[10px] font-bold text-blue-400">BING</span>}
                         </button>
                     </div>
                 </div>
@@ -204,11 +205,13 @@ const MapasScreen: React.FC<{
                     onTilesLoaded={() => setMapReady(true)}
                     defaultZoom={15}
                     mapId={MAP_ID}
-                    mapTypeId={mapType}
+                    mapTypeId={mapType === 'bing' ? 'hybrid' : mapType}
                     disableDefaultUI={true}
                     gestureHandling={'greedy'}
                     style={{ width: '100%', height: '100%' }}
                 >
+                    <BingLayer active={mapType === 'bing'} defaultType={mapType === 'bing' ? 'hybrid' : mapType} />
+
                     {/* Marcador de Ubicación del Usuario (Punto Azul) */}
                     {userPos && (
                         <AdvancedMarker position={userPos}>

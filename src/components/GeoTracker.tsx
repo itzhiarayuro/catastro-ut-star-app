@@ -8,6 +8,7 @@ import {
     AlertTriangle,
     RefreshCw,
 } from 'lucide-react';
+import { BingLayer } from './BingLayer';
 
 const MAP_ID = import.meta.env.VITE_GOOGLE_MAPS_ID;
 
@@ -57,7 +58,7 @@ const GeoTracker: React.FC<GeoTrackerProps> = ({ initialCoords, onConfirm, onClo
     const [gpsPos, setGpsPos] = useState<{ lat: number; lng: number } | null>(null);
     const [accuracy, setAccuracy] = useState(0);
     const [isLocating, setIsLocating] = useState(false);
-    const [mapType, setMapType] = useState<'hybrid' | 'roadmap'>('hybrid');
+    const [mapType, setMapType] = useState<'hybrid' | 'roadmap' | 'bing'>('hybrid');
     const [isDragging, setIsDragging] = useState(false);
 
     const watchId = useRef<number | null>(null);
@@ -120,10 +121,11 @@ const GeoTracker: React.FC<GeoTrackerProps> = ({ initialCoords, onConfirm, onClo
 
                     {/* Capas */}
                     <button
-                        onClick={() => setMapType(t => t === 'hybrid' ? 'roadmap' : 'hybrid')}
-                        style={{ pointerEvents: 'auto', background: 'rgba(0,0,0,0.8)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '14px', padding: '10px', color: '#fff', display: 'flex' }}
+                        onClick={() => setMapType(t => t === 'hybrid' ? 'roadmap' : t === 'roadmap' ? 'bing' : 'hybrid')}
+                        style={{ pointerEvents: 'auto', background: 'rgba(0,0,0,0.8)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '14px', padding: '10px', color: '#fff', display: 'flex', alignItems: 'center' }}
                     >
                         <Layers size={18} />
+                        {mapType === 'bing' && <span style={{ marginLeft: '4px', fontSize: '10px', fontWeight: 'bold', color: '#60a5fa' }}>BING</span>}
                     </button>
                 </div>
 
@@ -135,14 +137,16 @@ const GeoTracker: React.FC<GeoTrackerProps> = ({ initialCoords, onConfirm, onClo
                             setMapCenter(ev.detail.center);
                             setIsDragging(true);
                         }}
-                        onDragEnd={() => setIsDragging(false)}
+                        onDragend={() => setIsDragging(false)}
                         defaultZoom={20}
                         mapId={MAP_ID}
-                        mapTypeId={mapType}
+                        mapTypeId={mapType === 'bing' ? 'hybrid' : mapType}
                         disableDefaultUI={true}
                         gestureHandling="greedy"
                         style={{ width: '100%', height: '100%' }}
                     >
+                        <BingLayer active={mapType === 'bing'} defaultType={mapType === 'bing' ? 'hybrid' : mapType} />
+
                         {/* Círculo de precisión GPS (muestra radio del GPS, no del punto manual) */}
                         {gpsPos && accuracy > 0 && (
                             <AccuracyCircle center={gpsPos} radius={accuracy} />
