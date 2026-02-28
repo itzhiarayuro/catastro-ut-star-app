@@ -67,7 +67,14 @@ const uploadBatch = async (batch: any[], onProgress: (p: SyncProgress) => void, 
     }
 
     const zipped = zipSync(zipData);
-    const zipBase64 = btoa(String.fromCharCode(...zipped));
+
+    // Chunking to avoid "Maximum call stack size exceeded" on large zips
+    const CHUNK_SZ = 0x8000;
+    const charChunks: string[] = [];
+    for (let i = 0; i < zipped.length; i += CHUNK_SZ) {
+        charChunks.push(String.fromCharCode.apply(null, zipped.subarray(i, i + CHUNK_SZ) as any));
+    }
+    const zipBase64 = btoa(charChunks.join(''));
 
     try {
         const response = await fetch(GAS_URL, {
