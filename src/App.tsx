@@ -111,7 +111,7 @@ const TIPOS_CAMARA = [
     'ALV_SALTO', 'ALV_BARRERA', 'ALV_LAT_DOBLE', 'ALV_LAT_SENCILLO',
     'ALV_ORIFICIO', 'DESCONOCIDO', 'NO_APLICA', 'OTRO'
 ];
-const POZO_PREFIX = 'P-';
+const POZO_PREFIX = 'P';
 
 /** Limpia valor "0" o "0.00" al enfocar un input numérico */
 const numFocus = (e: React.FocusEvent<HTMLInputElement>) => {
@@ -772,9 +772,11 @@ const App: React.FC = () => {
                         <button onClick={() => { if (confirm("¿Salir?")) setActiveScreen('s0'); }} className="btn-ghost" style={{ padding: '8px', border: 'none' }}>
                             <ChevronLeft size={20} />
                         </button>
-                        <div className="header-titles">
-                            <div className="header-title">{stepTitle}</div>
-                            <div className="header-sub">Paso {currentStep} de 5 • <strong>{state.municipio}</strong></div>
+                        <div className="header-titles" style={{ textAlign: 'center' }}>
+                            <div className="header-title" style={{ fontSize: '12px' }}>{stepTitle}</div>
+                            <div className="header-sub" style={{ fontSize: '13px', color: '#fff', fontWeight: 'bold' }}>
+                                Paso {currentStep} de 5 • <span style={{ color: 'var(--blue)' }}>{state.municipio}</span>
+                            </div>
                         </div>
                         {loading && <RefreshCw size={14} className="animate-spin text-blue-500" />}
                     </div>
@@ -819,13 +821,13 @@ const App: React.FC = () => {
                                             <input
                                                 type="text"
                                                 inputMode="numeric"
-                                                value={state.pozo.replace(POZO_PREFIX, '')}
+                                                value={state.pozo.startsWith(POZO_PREFIX) ? state.pozo.slice(POZO_PREFIX.length) : state.pozo}
                                                 onChange={e => {
                                                     const num = e.target.value.replace(/[^0-9]/g, '');
                                                     updateState({ pozo: num ? POZO_PREFIX + num : '' });
                                                 }}
                                                 placeholder="001"
-                                                style={{ paddingLeft: '36px' }}
+                                                style={{ paddingLeft: '28px' }}
                                             />
                                         </div>
                                     </div>
@@ -931,31 +933,29 @@ const App: React.FC = () => {
                                     <WellDiagram diam={state.diam} altura={state.altura} pipes={state.pipes} />
                                 </div>
                                 <div className="field-row">
-                                    <div className="field-row">
-                                        <div className="field">
-                                            <label>Diámetro del Cuerpo <span style={{ fontSize: '9px', color: '#64748b' }}>m</span></label>
-                                            <input
-                                                type="number"
-                                                step="0.05"
-                                                value={state.diam}
-                                                onFocus={numFocus}
-                                                onChange={e => updateState({ diam: parseFloat(e.target.value) || 0 })}
-                                                onBlur={e => { if (!e.target.value) updateState({ diam: 0.9 }); }}
-                                                placeholder="0.90 m"
-                                            />
-                                        </div>
-                                        <div className="field">
-                                            <label>Altura Total <span style={{ fontSize: '9px', color: '#64748b' }}>m</span></label>
-                                            <input
-                                                type="number"
-                                                step="0.05"
-                                                value={state.altura}
-                                                onFocus={numFocus}
-                                                onChange={e => updateState({ altura: parseFloat(e.target.value) || 0 })}
-                                                onBlur={e => { if (!e.target.value) updateState({ altura: 2.0 }); }}
-                                                placeholder="2.00 m"
-                                            />
-                                        </div>
+                                    <div className="field">
+                                        <label>Diámetro Cuerpo <span style={{ fontSize: '9px', color: '#64748b' }}>m</span></label>
+                                        <input
+                                            type="number"
+                                            step="0.05"
+                                            value={state.diam}
+                                            onFocus={numFocus}
+                                            onChange={e => updateState({ diam: parseFloat(e.target.value) || 0 })}
+                                            onBlur={e => { if (!e.target.value) updateState({ diam: 0.9 }); }}
+                                            placeholder="0.90 m"
+                                        />
+                                    </div>
+                                    <div className="field">
+                                        <label>Altura Total <span style={{ fontSize: '9px', color: '#64748b' }}>m</span></label>
+                                        <input
+                                            type="number"
+                                            step="0.05"
+                                            value={state.altura}
+                                            onFocus={numFocus}
+                                            onChange={e => updateState({ altura: parseFloat(e.target.value) || 0 })}
+                                            onBlur={e => { if (!e.target.value) updateState({ altura: 1.2 }); }}
+                                            placeholder="1.20 m"
+                                        />
                                     </div>
                                 </div>
                             </div>
@@ -964,22 +964,42 @@ const App: React.FC = () => {
                                 <div className="card-title">Tipo de Cámara</div>
                                 <div className="chips">
                                     {TIPOS_CAMARA.map(t => (
-                                        <div key={t} className={`chip ${state.camara === t ? 'selected' : ''}`} onClick={() => updateState({ camara: t })}>
+                                        <div key={t} className={`chip ${(state.camara === t && t !== 'OTRO') || (t === 'OTRO' && state.camara && !TIPOS_CAMARA.includes(state.camara)) || (state.camara === 'OTRO' && t === 'OTRO') ? 'selected' : ''}`} onClick={() => updateState({ camara: t })}>
                                             {t.replace(/_/g, ' ')}
                                         </div>
                                     ))}
                                 </div>
+                                {((state.camara && !TIPOS_CAMARA.includes(state.camara)) || state.camara === 'OTRO') && (
+                                    <input
+                                        type="text"
+                                        maxLength={60}
+                                        value={state.camara === 'OTRO' ? '' : state.camara}
+                                        onChange={e => updateState({ camara: e.target.value.toUpperCase() })}
+                                        placeholder="Especifique tipo de cámara..."
+                                        style={{ marginTop: '10px', width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)' }}
+                                    />
+                                )}
                             </div>
 
                             <div className="card">
                                 <div className="card-title">Rasante</div>
                                 <div className="chips">
                                     {RASANTES.map(r => (
-                                        <div key={r} className={`chip ${state.rasante === r ? 'selected' : ''}`} onClick={() => updateState({ rasante: r })}>
+                                        <div key={r} className={`chip ${(state.rasante === r && r !== 'OTRO') || (r === 'OTRO' && state.rasante && !RASANTES.includes(state.rasante)) || (state.rasante === 'OTRO' && r === 'OTRO') ? 'selected' : ''}`} onClick={() => updateState({ rasante: r })}>
                                             {r.replace(/_/g, ' ')}
                                         </div>
                                     ))}
                                 </div>
+                                {((state.rasante && !RASANTES.includes(state.rasante)) || state.rasante === 'OTRO') && (
+                                    <input
+                                        type="text"
+                                        maxLength={60}
+                                        value={state.rasante === 'OTRO' ? '' : state.rasante}
+                                        onChange={e => updateState({ rasante: e.target.value.toUpperCase() })}
+                                        placeholder="Especifique la rasante..."
+                                        style={{ marginTop: '10px', width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)' }}
+                                    />
+                                )}
                             </div>
 
                             <div className="btn-row">
@@ -1395,9 +1415,9 @@ const WellDiagram: React.FC<{ diam: number; altura: number; pipes?: Pipe[] }> = 
             {/* Body */}
             <rect x={cx - bodyW / 2} y={bodyTop} width={bodyW} height={bodyH} fill="url(#bodyGrad)" stroke="#334060" />
 
-            {/* Highlighted Diameter Line */}
-            <line x1={cx - bodyW / 2} y1={bodyTop + 10} x2={cx + bodyW / 2} y2={bodyTop + 10} stroke="#3b82f6" strokeWidth="1" strokeDasharray="2,2" />
-            <text x={cx} y={bodyTop + 8} textAnchor="middle" fontSize="6" fill="#3b82f6" fontWeight="bold">Ø {diam}m</text>
+            {/* Highlighted Diameter Line starting from top (Cone/Tapa level) */}
+            <line x1={cx - tapW / 2} y1={coneTop + 4} x2={cx + tapW / 2} y2={coneTop + 4} stroke="#3b82f6" strokeWidth="1" strokeDasharray="2,2" />
+            <text x={cx} y={coneTop + 2} textAnchor="middle" fontSize="6" fill="#3b82f6" fontWeight="bold">Ø {diam}m</text>
 
             {/* Visual Pipes */}
             {pipes.map((p, i) => {

@@ -1,7 +1,7 @@
 import { getPendingPhotos, updatePhotoSyncStatus } from './storageManager';
 import { zipSync, strToU8 } from 'fflate';
 
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbyJQamjf4n64SZoBpwnIAzsukFDGh70x6VbuQIU367rp8MuKQZR3gq3xXWdmwVHNroS/exec'; // User must replace this
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbyrNgrDzmJwFLqG6c2vpN8Pj0F0VU0fOcdttSexcNJbelcJUDF4WnPAN7jd09_iHjre/exec'; // User must replace this
 const SECRET_TOKEN = 'STAR-2025-VIP-SYNC';
 const MAX_BATCH_SIZE = 35 * 1024 * 1024; // ~35MB to stay safe within 40MB limit
 
