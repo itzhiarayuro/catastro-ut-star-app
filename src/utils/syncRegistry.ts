@@ -9,11 +9,25 @@ export interface AppState {
     [key: string]: any;
 }
 
+export const validateFicha = (f: any): boolean => {
+    // Paso 1
+    const step1 = f.pozo && f.barrio && f.direccion && f.municipio && f.sistema && f.gps?.lat && f.gps?.lng;
+    // Paso 2
+    const step2 = f.camara && f.rasante && f.diam > 0 && f.altura > 0;
+
+    // Evitar valores literales "OTRO" sin contenido real (ya manejado por el formulario, pero doble check)
+    const isOtroCamara = f.camara === 'OTRO';
+    const isOtroRasante = f.rasante === 'OTRO';
+
+    return !!(step1 && step2 && !isOtroCamara && !isOtroRasante);
+};
+
 export const syncFichasToFirestore = async (
     fichas: Record<string, any>,
     onProgress?: (progress: { total: number; current: number; msg: string }) => void
 ): Promise<Record<string, any>> => {
-    const fichasArr = Object.values(fichas).filter(f => !f.synced && f.pozo && f.municipio);
+    // Solo fichas NO sincronizadas que CUMPLAN la validación
+    const fichasArr = Object.values(fichas).filter(f => !f.synced && validateFicha(f));
     const total = fichasArr.length;
     let current = 0;
 

@@ -36,20 +36,32 @@ async function getOrCreateFolder(drive: any, folderName: string, parentId: strin
     return folder.data.id;
 }
 
-export const syncPhotosToDrive = functions.firestore
+export const syncPhotosToDrive = functions.runWith({
+    secrets: ["DRIVE_SERVICE_ACCOUNT", "DRIVE_ROOT_FOLDER_ID"]
+}).firestore
     .document("fichas/{fichaId}")
     .onWrite(async (change, context) => {
         const data = change.after.exists ? change.after.data() : null;
         if (!data || !data.fotoList || data.fotoList.length === 0) return null;
 
-        // 1. Configurar Auth (Cargar desde secret o archivo)
-        // Para simplificar al inicio, usaremos un archivo local que el usuario debe subir
-        // pero lo ideal es usar Firebase Secrets.
-        const auth = new google.auth.GoogleAuth({
-            keyFilename: "./service-account.json",
-            scopes: ["https://www.googleapis.com/auth/drive.file"],
-        });
+        // 1. Configurar Auth desde Firebase Secret
+        const serviceAccountValue = process.env.DRIVE_SERVICE_ACCOUNT || "";
+        if (!serviceAccountValue) {
+            console.error("Falta el secreto DRIVE_SERVICE_ACCOUNT");
+            return null;
+        }
+
+        const serviceAccount = JSON.parse(serviceAccountValue);
+        const auth = new google.auth.JWT(
+            serviceAccount.client_email,
+            undefined,
+            serviceAccount.private_key,
+            ["https://www.googleapis.com/auth/drive.file"]
+        );
         const drive = google.drive({ version: "v3", auth });
+
+        // Usar también la raíz de drive desde secreto o env
+        const driveRootId = process.env.DRIVE_ROOT_FOLDER_ID || DRIVE_ROOT_FOLDER_ID;
 
         const municipio = data.municipio || "SIN_MUNICIPIO";
         const barrio = data.barrio || "SIN_BARRIO";
@@ -59,7 +71,7 @@ export const syncPhotosToDrive = functions.firestore
             // 2. Navegar/Crear Estructura: Raíz -> Municipio -> Barrio -> Pozo
             console.log(`Iniciando sincronización para Pozo: ${pozo} en ${municipio}`);
 
-            const municipioId = await getOrCreateFolder(drive, municipio.toUpperCase(), DRIVE_ROOT_FOLDER_ID);
+            const municipioId = await getOrCreateFolder(drive, municipio.toUpperCase(), driveRootId);
             const barrioId = await getOrCreateFolder(drive, barrio.toUpperCase(), municipioId);
             const pozoIdFolder = await getOrCreateFolder(drive, pozo.toUpperCase(), barrioId);
 

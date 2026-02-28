@@ -1,8 +1,8 @@
 import { getPendingPhotos, updatePhotoSyncStatus } from './storageManager';
 import { zipSync, strToU8 } from 'fflate';
 
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbyrNgrDzmJwFLqG6c2vpN8Pj0F0VU0fOcdttSexcNJbelcJUDF4WnPAN7jd09_iHjre/exec'; // User must replace this
-const SECRET_TOKEN = 'STAR-2025-VIP-SYNC';
+const GAS_URL = import.meta.env.VITE_GAS_DRIVE_SYNC_URL;
+const SECRET_TOKEN = import.meta.env.VITE_GAS_SECRET_TOKEN;
 const MAX_BATCH_SIZE = 35 * 1024 * 1024; // ~35MB to stay safe within 40MB limit
 
 interface SyncProgress {

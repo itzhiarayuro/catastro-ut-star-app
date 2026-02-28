@@ -1,13 +1,15 @@
+import 'dotenv/config'; // Carga las variables desde .env
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, getDocs, limit } from 'firebase/firestore';
 
+// Extraer configuración desde el archivo .env.local
 const firebaseConfig = {
-    apiKey: "AIzaSyClaOKQqLG6-KBNcVaAD_QYlBjeKyP3i2c",
-    authDomain: "catastro-ut-star.firebaseapp.com",
-    projectId: "catastro-ut-star",
-    storageBucket: "catastro-ut-star.firebasestorage.app",
-    messagingSenderId: "691178303694",
-    appId: "1:691178303694:web:778ae824c94020f990209f"
+    apiKey: process.env.VITE_FIREBASE_API_KEY,
+    authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN,
+    projectId: process.env.VITE_FIREBASE_PROJECT_ID,
+    storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+    appId: process.env.VITE_FIREBASE_APP_ID
 };
 
 const app = initializeApp(firebaseConfig);

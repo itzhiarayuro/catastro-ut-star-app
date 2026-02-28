@@ -59,13 +59,12 @@ const LoginPage: React.FC = () => {
                     </div>
 
                     <div className="input-group">
-                        <label className="input-label">PIN de Acceso</label>
+                        <label className="input-label">Contraseña</label>
                         <div className="input-with-icon">
                             <Lock size={16} />
                             <input
                                 type="password"
-                                placeholder="••••"
-                                maxLength={4}
+                                placeholder="Tu contraseña..."
                                 value={pin}
                                 onChange={(e) => setPin(e.target.value)}
                             />

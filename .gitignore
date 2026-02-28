@@ -1,1 +1,13 @@
+# node_modules
 node_modules
+
+# Ambiente
+.env
+.env.local
+.env.*.local
+
+# Credenciales y Logs de Firebase
+service-account.json
+*-service-account.json
+firebase-debug.log
+firebase-debug.*.log

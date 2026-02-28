@@ -1,17 +1,22 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db, useFirestoreDoc, useAuth } from './lib/firebase';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import LoginPage from './components/LoginPage';
 import {
     Home, List, MapPin, Settings as SettingsIcon,
     ChevronLeft, ChevronRight, Check, Plus, Trash2,
     Wifi, WifiOff, Save, FileJson, FileText, Download,
     Cloud, Globe, Lightbulb, AlertTriangle, Info, Camera,
-    RefreshCw, LogOut, Moon
+    RefreshCw, LogOut, Moon, Navigation
 } from 'lucide-react';
 import { FotoRegistro } from './utils/fotoProcessor';
 import FotosZone from './components/FotosZone';
 import SyncScreen from './components/SyncScreen';
+import MapasScreen from './components/MapasScreen';
+import GeoTracker from './components/GeoTracker';
 import { getPendingPhotosCount, checkPendingInList, renamePhotoInStorage } from './utils/storageManager';
+import { Crosshair, LocateFixed, Signal } from 'lucide-react';
+import { APIProvider, Map, AdvancedMarker } from '@vis.gl/react-google-maps';
 
 /* ═══════════════════════════════════════════════════════════
    TYPES & INTERFACES
@@ -96,6 +101,9 @@ interface AppState {
     savedAt?: string;
     zRasante?: number;
     synced?: boolean;
+    contingencia?: boolean;
+    contingenciaMotivo?: string;
+    deleted?: boolean;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -160,7 +168,10 @@ const INITIAL_STATE: AppState = {
     createdAt: null,
     id: null,
     zRasante: 2600.00,
-    synced: false
+    synced: false,
+    contingencia: false,
+    contingenciaMotivo: '',
+    deleted: false,
 };
 
 /* ═══════════════════════════════════════════════════════════
@@ -183,7 +194,7 @@ const App: React.FC = () => {
         return INITIAL_STATE;
     });
 
-    const [activeScreen, setActiveScreen] = useState<'s0' | 'sFichas' | 'sConfig' | 'sForm'>(() => {
+    const [activeScreen, setActiveScreen] = useState<'s0' | 'sFichas' | 'sConfig' | 'sForm' | 'sMaps'>(() => {
         const saved = localStorage.getItem('catastro_active_screen');
         // Validamos que si volvemos a un formulario, realmente haya datos
         if (saved === 'sForm') {
@@ -205,6 +216,7 @@ const App: React.FC = () => {
     const [pendingCount, setPendingCount] = useState(0);
     const [deleteId, setDeleteId] = useState<string | null>(null);
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
+    const [showGeoTracker, setShowGeoTracker] = useState(false);
     const autoSaveTimer = useRef<NodeJS.Timeout | null>(null);
 
     // Persistencia de navegación activa
@@ -248,6 +260,40 @@ const App: React.FC = () => {
         const { exportToExcel } = await import('./utils/export');
         exportToExcel(Object.values(fichas));
         toast("📊 Excel Generado");
+    };
+
+    const restoreFromCloud = async () => {
+        if (!navigator.onLine) {
+            toast("❌ Necesitas conexión para restaurar");
+            return;
+        }
+        if (!confirm("⚠️ Esto sobrescribirá tus fichas locales con las descargas de la nube. ¿Continuar?")) return;
+
+        toast("🔄 Descargando desde la nube...");
+        try {
+            const operatorId = user?.name || state.elaboro;
+            if (!operatorId) {
+                toast("❌ No se encontró nombre de operario para buscar");
+                return;
+            }
+            const q = query(collection(db, 'fichas'), where('elaboro', '==', operatorId));
+            const snapshot = await getDocs(q);
+            const recovered: Record<string, AppState> = {};
+            snapshot.forEach(doc => {
+                const data = doc.data() as AppState;
+                recovered[doc.id] = { ...data, synced: true };
+            });
+            if (Object.keys(recovered).length === 0) {
+                toast("ℹ️ No se encontraron fichas tuyas en la nube");
+                return;
+            }
+            setFichas(recovered);
+            localStorage.setItem('fichas_star', JSON.stringify(recovered));
+            toast(`✅ Restauradas ${Object.keys(recovered).length} fichas asignadas a ti`);
+        } catch (error) {
+            console.error("Error restoring from cloud", error);
+            toast("❌ Error al restaurar desde la nube");
+        }
     };
 
     // Load fichas from LocalStorage
@@ -424,6 +470,16 @@ const App: React.FC = () => {
         }
     };
 
+    const handleEditFromMap = (fichaData: any) => {
+        // Asegurar que state reciba todos los campos requeridos mezclando con INITIAL_STATE
+        const safeData = { ...INITIAL_STATE, ...fichaData };
+        setState(safeData);
+        localStorage.setItem('catastro_draft', JSON.stringify(safeData));
+        setActiveScreen('sForm');
+        setCurrentStep(1);
+        toast("✏️ Editando Ficha de Mapa...");
+    };
+
     const saveFicha = async () => {
         const id = state.id || `F_${Date.now()}`;
         const now = new Date().toISOString();
@@ -497,23 +553,20 @@ const App: React.FC = () => {
 
         const fichaToDelete = fichas[deleteId!];
 
-        // Protección: no eliminar fichas no sincronizadas sin conexión
-        if (!fichaToDelete?.synced && !navigator.onLine) {
-            toast("⚠️ No puedes eliminar esta ficha hasta que se sincronice con la nube.");
-            setDeleteId(null);
-            return;
-        }
-        if (!fichaToDelete?.synced) {
-            const ok = confirm("⚠️ Esta ficha NO se ha sincronizado. Se perderán los datos. ¿Eliminar de todos modos?");
-            if (!ok) { setDeleteId(null); return; }
-        }
-
         const updated = { ...fichas };
-        delete updated[deleteId!];
+
+        // Soft Delete: en lugar de borrar la clave, simplemente marcamos como deleted. 
+        // Force sync a false para reenviar a Firestore y dejar la traza.
+        updated[deleteId!] = {
+            ...fichaToDelete,
+            deleted: true,
+            synced: false
+        };
+
         setFichas(updated);
         localStorage.setItem('fichas_star', JSON.stringify(updated));
         setDeleteId(null);
-        toast("🗑 Ficha eliminada permanentemente");
+        toast("🗑 Ficha movida a papelera (Soft Delete)");
     };
 
     const captureGPS = () => {
@@ -523,20 +576,21 @@ const App: React.FC = () => {
             (pos) => {
                 updateState({
                     gps: {
-                        lat: parseFloat(pos.coords.latitude.toFixed(6)),
-                        lng: parseFloat(pos.coords.longitude.toFixed(6)),
+                        lat: parseFloat(pos.coords.latitude.toFixed(7)),
+                        lng: parseFloat(pos.coords.longitude.toFixed(7)),
                         precision: parseFloat(pos.coords.accuracy.toFixed(1))
                     }
                 });
-                toast("✅ GPS Capturado");
+                toast("✅ GPS Capturado (Alta Precisión)");
             },
             (err) => {
                 // Mock fallback for Sopó
-                const lat = (4.90 + (Math.random() - 0.5) * 0.01).toFixed(6);
-                const lng = (-73.94 + (Math.random() - 0.5) * 0.01).toFixed(6);
+                const lat = (4.908 + (Math.random() - 0.5) * 0.001).toFixed(7);
+                const lng = (-73.948 + (Math.random() - 0.5) * 0.001).toFixed(7);
                 updateState({ gps: { lat: parseFloat(lat), lng: parseFloat(lng), precision: 5.4 } });
                 toast("📍 GPS Simulado (Sopó)");
-            }
+            },
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
         );
     };
 
@@ -545,7 +599,7 @@ const App: React.FC = () => {
     ═════════════════════════════════════ */
 
     const renderHome = () => {
-        const fichasArr = Object.values(fichas);
+        const fichasArr = Object.values(fichas).filter(f => !f.deleted);
         const totalFichas = fichasArr.length;
         const pendingFichas = fichasArr.filter(f => !f.synced).length;
         const syncedFichas = totalFichas - pendingFichas;
@@ -625,7 +679,8 @@ const App: React.FC = () => {
     };
 
     const renderFichas = () => {
-        const list = Object.values(fichas).sort((a, b) => (b.savedAt || '').localeCompare(a.savedAt || ''));
+        const list = Object.values(fichas).filter(f => !f.deleted).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+
         return (
             <div id="sFichas" className={`screen ${activeScreen === 'sFichas' ? 'active' : ''}`}>
                 <div className="app-header">
@@ -717,16 +772,34 @@ const App: React.FC = () => {
                 </div>
                 <div className="card">
                     <div className="card-title">Estado del Sistema</div>
-                    <div className="flex items-center gap-4 text-xs">
+                    <div className="flex flex-col gap-3 text-xs">
                         <div className={`p-2 rounded-lg flex items-center gap-2 ${isOnline ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
                             {isOnline ? <Wifi size={16} /> : <WifiOff size={16} />}
                             {isOnline ? 'CONEXIÓN ESTABLE' : 'MODO OFFLINE'}
                         </div>
-                        <div className="text-gray-500">
-                            {Object.keys(fichas).length} fichas locales
+                        <div className="flex items-center justify-between p-2 bg-slate-800 rounded-lg">
+                            <div className="text-gray-400">Total fichas locales:</div>
+                            <div className="font-bold text-white">{Object.keys(fichas).length} fichas</div>
+                        </div>
+                        <div className="flex items-center justify-between p-2 bg-slate-800 rounded-lg">
+                            <div className="text-gray-400">Fotos en cola local:</div>
+                            <div className="font-bold text-amber-400">{pendingCount} fotos <span className="text-[10px] text-gray-500 ml-1">(~{(pendingCount * 1.2).toFixed(1)} MB)</span></div>
                         </div>
                     </div>
                 </div>
+
+                <div className="card" style={{ marginTop: '20px', background: 'rgba(59, 130, 246, 0.05)', borderColor: 'rgba(59, 130, 246, 0.2)' }}>
+                    <div className="card-title" style={{ color: '#3b82f6', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Cloud size={16} /> Recuperación (Backup)
+                    </div>
+                    <p style={{ fontSize: '11px', color: 'var(--text3)', lineHeight: '1.4', marginBottom: '12px' }}>
+                        Si perdiste tus datos locales por problemas de memoria del navegador o si cambiaste de celular, puedes descargar nuevamente las fichas que ya subiste a la nube.
+                    </p>
+                    <button className="btn btn-blue btn-full" onClick={restoreFromCloud}>
+                        <RefreshCw size={16} /> Descargar fichas asignadas a mí
+                    </button>
+                </div>
+
                 <button
                     className="btn btn-danger btn-full"
                     onClick={() => { if (confirm("¿Borrar todo?")) { localStorage.removeItem('fichas_star'); setFichas({}); toast("🗑 Memoria limpiada"); } }}
@@ -878,28 +951,50 @@ const App: React.FC = () => {
 
                             <div className="card">
                                 <div className="card-title">Ubicación GPS</div>
-                                <div className="gps-wrap">
-                                    <button className="btn btn-blue btn-full btn-sm" onClick={captureGPS}>
-                                        <MapPin size={14} /> Capturar Coordenadas
-                                    </button>
+                                <div className="gps-wrap" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                        <button className="btn btn-blue btn-full btn-sm" style={{ flex: 1 }} onClick={captureGPS}>
+                                            <Navigation size={14} /> Capturar GPS
+                                        </button>
+                                        <button className="btn btn-blue btn-full btn-sm" style={{ flex: 1, backgroundColor: '#0066FF' }} onClick={() => setShowGeoTracker(true)}>
+                                            <Crosshair size={14} /> Punto Exacto
+                                        </button>
+                                    </div>
                                     {state.gps.lat && (
                                         <>
-                                            <div className="gps-result show">
-                                                📍 Lat: <strong>{state.gps.lat}</strong> | Lng: <strong>{state.gps.lng}</strong><br />
-                                                🎯 Precisión: <strong>{state.gps.precision} m</strong>
+                                            <div className="gps-result show" style={{ textAlign: 'left', padding: '12px' }}>
+                                                <div className="gps-line" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                    <LocateFixed size={14} className={state.gps.precision && state.gps.precision <= 15 ? 'text-green-500' : 'text-amber-500'} />
+                                                    <span style={{ fontSize: '12px', fontFamily: 'monospace' }}>Lat: <strong>{state.gps.lat?.toFixed(7)}</strong> | Lng: <strong>{state.gps.lng?.toFixed(7)}</strong></span>
+                                                </div>
+                                                <div className="gps-line" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                                                    {state.gps.precision && state.gps.precision > 20 ? <AlertTriangle size={14} className="text-red-500" /> : <Signal size={14} className="text-green-500" />}
+                                                    <span style={{ fontSize: '11px' }} className={state.gps.precision && state.gps.precision > 20 ? 'text-red-400 font-bold' : 'text-blue-400 opacity-80'}>
+                                                        Precisión: {state.gps.precision?.toFixed(1)} m
+                                                    </span>
+                                                </div>
                                             </div>
 
-                                            {/* Embedded Map */}
+                                            {/* Mapa con JS API (Más robusto que iframe) */}
                                             <div style={{ width: '100%', height: '150px', borderRadius: '12px', overflow: 'hidden', marginTop: '10px', border: '1px solid #30363d' }}>
-                                                <iframe
-                                                    width="100%"
-                                                    height="150"
-                                                    style={{ border: 0 }}
-                                                    loading="lazy"
-                                                    allowFullScreen
-                                                    referrerPolicy="no-referrer-when-downgrade"
-                                                    src={`https://www.google.com/maps/embed/v1/place?key=AIzaSyClaOKQqLG6-KBNcVaAD_QYlBjeKyP3i2c&q=${state.gps.lat},${state.gps.lng}&zoom=18&maptype=satellite`}
-                                                ></iframe>
+                                                <Map
+                                                    style={{ width: '100%', height: '100%' }}
+                                                    center={{ lat: state.gps.lat || 0, lng: state.gps.lng || 0 }}
+                                                    zoom={18}
+                                                    gestureHandling={'none'}
+                                                    disableDefaultUI={true}
+                                                    mapTypeId="satellite"
+                                                    mapId="bf19642642a561"
+                                                >
+                                                    <AdvancedMarker position={{ lat: state.gps.lat || 0, lng: state.gps.lng || 0 }}>
+                                                        <div style={{ width: '24px', height: '34px', filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.4))' }}>
+                                                            <svg viewBox="0 0 30 42" width="24" height="34" xmlns="http://www.w3.org/2000/svg">
+                                                                <path d="M15 0C6.716 0 0 6.716 0 15c0 10.5 15 27 15 27s15-16.5 15-27C30 6.716 23.284 0 15 0z" fill="#0066FF" stroke="#ffffff" strokeWidth="2" />
+                                                                <circle cx="15" cy="14" r="6" fill="#ffffff" opacity="0.9" />
+                                                            </svg>
+                                                        </div>
+                                                    </AdvancedMarker>
+                                                </Map>
                                             </div>
 
                                             <button
@@ -1002,9 +1097,61 @@ const App: React.FC = () => {
                                 )}
                             </div>
 
+                            <div className="card" style={{ background: state.contingencia ? 'rgba(255, 107, 53, 0.1)' : 'var(--bg3)', borderColor: state.contingencia ? 'var(--orange)' : 'var(--border)' }}>
+                                <div className="card-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <span>⚠️ Modo Contingencia</span>
+                                    <label className="switch">
+                                        <input
+                                            type="checkbox"
+                                            checked={!!state.contingencia}
+                                            onChange={(e) => updateState({ contingencia: e.target.checked, contingenciaMotivo: e.target.checked ? state.contingenciaMotivo : '' })}
+                                        />
+                                        <span className="slider round"></span>
+                                    </label>
+                                </div>
+                                <p style={{ fontSize: '11px', color: 'var(--text3)', marginTop: '4px', lineHeight: '1.4' }}>
+                                    Habilita esto si es <strong>imposible</strong> medir el pozo (ej. está pavimentado/sellado). Levantará una bandera para revisión en oficina.
+                                </p>
+                                {state.contingencia && (
+                                    <input
+                                        type="text"
+                                        maxLength={100}
+                                        value={state.contingenciaMotivo || ''}
+                                        onChange={e => updateState({ contingenciaMotivo: e.target.value })}
+                                        placeholder="Ej: Pozo sellado bajo pavimento profundo..."
+                                        style={{ marginTop: '10px', width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid var(--orange)', background: '#1c1713', color: 'var(--text)' }}
+                                    />
+                                )}
+                            </div>
+
                             <div className="btn-row">
                                 <button className="btn btn-ghost" onClick={() => setCurrentStep(1)}><ChevronLeft size={16} /> Volver</button>
-                                <button className="btn btn-green" onClick={() => setCurrentStep(3)}>Siguiente <ChevronRight size={16} /></button>
+                                <button className="btn btn-green" onClick={() => {
+                                    const isOtroCamara = (state.camara === 'OTRO' || (state.camara && !TIPOS_CAMARA.includes(state.camara)));
+                                    const isOtroRasante = (state.rasante === 'OTRO' || (state.rasante && !RASANTES.includes(state.rasante)));
+
+                                    if (state.contingencia) {
+                                        if (!state.contingenciaMotivo || state.contingenciaMotivo.trim().length < 5) {
+                                            toast("⚠️ Por favor, explica brevemente el motivo de la contingencia.");
+                                            return;
+                                        }
+                                    } else {
+                                        // Validaciones Normales
+                                        if (!state.diam || state.diam <= 0 || !state.altura || state.altura <= 0) {
+                                            toast("⚠️ El Diámetro y la Altura deben ser mayores a 0.");
+                                            return;
+                                        }
+                                        if (!state.camara || (isOtroCamara && state.camara === 'OTRO')) {
+                                            toast("⚠️ Selecciona o escribe un Tipo de Cámara.");
+                                            return;
+                                        }
+                                        if (!state.rasante || (isOtroRasante && state.rasante === 'OTRO')) {
+                                            toast("⚠️ Selecciona o escribe una Rasante.");
+                                            return;
+                                        }
+                                    }
+                                    setCurrentStep(3);
+                                }}>Siguiente <ChevronRight size={16} /></button>
                             </div>
                         </div>
                     )}
@@ -1015,7 +1162,7 @@ const App: React.FC = () => {
                                 label="Tapa"
                                 data={state.tapa}
                                 onChange={(v) => updateState({ tapa: { ...state.tapa, ...v } })}
-                                materials={['CONCRETO', 'METAL', 'POLIPROPILENO', 'PVC', 'OTRO']}
+                                materials={['CONCRETO', 'FERROCONCRETO', 'METAL', 'POLIPROPILENO', 'PVC', 'OTRO']}
                             />
                             <ComponentEditor
                                 label="Cuerpo"
@@ -1259,58 +1406,73 @@ const App: React.FC = () => {
     );
 
     return (
-        <div className="app-container">
-            {activeScreen === 's0' && renderHome()}
-            {activeScreen === 'sFichas' && renderFichas()}
-            {activeScreen === 'sConfig' && renderConfig()}
-            {activeScreen === 'sForm' && renderForm()}
+        <APIProvider apiKey={import.meta.env.VITE_FIREBASE_API_KEY} libraries={['marker']}>
+            <div className="app-container">
+                {activeScreen === 's0' && renderHome()}
+                {activeScreen === 'sFichas' && renderFichas()}
+                {activeScreen === 'sConfig' && renderConfig()}
+                {activeScreen === 'sForm' && renderForm()}
+                {activeScreen === 'sMaps' && <MapasScreen onEditFicha={handleEditFromMap} onBack={() => setActiveScreen('s0')} />}
 
-            {showSyncScreen && (
-                <SyncScreen
-                    fichas={fichas}
-                    onFichasUpdated={(updated) => {
-                        setFichas(updated);
-                        localStorage.setItem('fichas_star', JSON.stringify(updated));
-                    }}
-                    onClose={() => setShowSyncScreen(false)}
-                />
-            )}
+                {showSyncScreen && (
+                    <SyncScreen
+                        fichas={fichas}
+                        onFichasUpdated={(updated) => {
+                            setFichas(updated);
+                            localStorage.setItem('fichas_star', JSON.stringify(updated));
+                        }}
+                        onClose={() => setShowSyncScreen(false)}
+                    />
+                )}
 
-            {/* TOAST NOTIFICATION */}
-            <div id="toast" className={showToast ? 'show' : ''}>{toastMsg}</div>
+                {showGeoTracker && (
+                    <GeoTracker
+                        initialCoords={{ lat: state.gps.lat || 4.908, lng: state.gps.lng || -73.948 }}
+                        onClose={() => setShowGeoTracker(false)}
+                        onConfirm={(c) => {
+                            updateState({ gps: c });
+                            setShowGeoTracker(false);
+                            toast("🎯 Punto Exacto Fijado");
+                        }}
+                    />
+                )}
 
-            {/* BOTTOM NAV */}
-            <nav className="bottom-nav">
-                <button
-                    className={`nav-btn ${activeScreen === 's0' ? 'active' : ''}`}
-                    onClick={() => setActiveScreen('s0')}
-                >
-                    <Home size={20} />
-                    <span>Inicio</span>
-                </button>
-                <button
-                    className={`nav-btn ${activeScreen === 'sFichas' ? 'active' : ''}`}
-                    onClick={() => setActiveScreen('sFichas')}
-                >
-                    <List size={20} />
-                    <span>Fichas</span>
-                </button>
-                <button
-                    className="nav-btn"
-                    onClick={() => toast("📍 Abrir visor de mapa...")}
-                >
-                    <MapPin size={20} />
-                    <span>Mapa</span>
-                </button>
-                <button
-                    className={`nav-btn ${activeScreen === 'sConfig' ? 'active' : ''}`}
-                    onClick={() => setActiveScreen('sConfig')}
-                >
-                    <SettingsIcon size={20} />
-                    <span>Config</span>
-                </button>
-            </nav>
-        </div>
+                {/* TOAST NOTIFICATION */}
+                <div id="toast" className={showToast ? 'show' : ''}>{toastMsg}</div>
+
+                {/* BOTTOM NAV */}
+                <nav className="bottom-nav">
+                    <button
+                        className={`nav-btn ${activeScreen === 's0' ? 'active' : ''}`}
+                        onClick={() => setActiveScreen('s0')}
+                    >
+                        <Home size={20} />
+                        <span>Inicio</span>
+                    </button>
+                    <button
+                        className={`nav-btn ${activeScreen === 'sFichas' ? 'active' : ''}`}
+                        onClick={() => setActiveScreen('sFichas')}
+                    >
+                        <List size={20} />
+                        <span>Fichas</span>
+                    </button>
+                    <button
+                        className={`nav-btn ${activeScreen === 'sMaps' ? 'active' : ''}`}
+                        onClick={() => setActiveScreen('sMaps')}
+                    >
+                        <MapPin size={20} />
+                        <span>Mapa</span>
+                    </button>
+                    <button
+                        className={`nav-btn ${activeScreen === 'sConfig' ? 'active' : ''}`}
+                        onClick={() => setActiveScreen('sConfig')}
+                    >
+                        <SettingsIcon size={20} />
+                        <span>Config</span>
+                    </button>
+                </nav>
+            </div>
+        </APIProvider>
     );
 };
 

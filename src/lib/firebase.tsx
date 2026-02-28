@@ -1,34 +1,32 @@
 import { initializeApp, getApps } from 'firebase/app';
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import {
-    getFirestore,
+    initializeFirestore,
+    persistentLocalCache,
+    persistentMultipleTabManager,
     doc,
     onSnapshot,
-    setDoc,
-    enableIndexedDbPersistence
+    setDoc
 } from 'firebase/firestore';
 import React, { useState, useEffect, createContext, useContext } from 'react';
 
-// Your web app's Firebase configuration
+// Your web app's Firebase configuration - Extraído de Variables de Entorno y GitIgnore (.env.local)
 const firebaseConfig = {
-    apiKey: "AIzaSyClaOKQqLG6-KBNcVaAD_QYlBjeKyP3i2c",
-    authDomain: "catastro-ut-star.firebaseapp.com",
-    projectId: "catastro-ut-star",
-    storageBucket: "catastro-ut-star.firebasestorage.app",
-    messagingSenderId: "691178303694",
-    appId: "1:691178303694:web:778ae824c94020f990209f"
+    apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+    appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
-const db = getFirestore(app);
-
-const AUTHORIZED_USERS = [
-    { email: "juanvegas003@gmail.com", pin: "1234", name: "Juan Vega" },
-    { email: "juan.vega.icya@gmail.com", pin: "5701", name: "Juan Vega ICYA" },
-    { email: "mariangelsp.icya@gmail.com", pin: "5702", name: "Mariangel" },
-    { email: "samara.icya@gmail.com", pin: "5703", name: "Samara" },
-    { email: "darly.icya@gmail.com", pin: "1234", name: "Darly" },
-    { email: "invitado@icya.com", pin: "0000", name: "Inspector Invitado" }
-];
+const db = initializeFirestore(app, {
+    localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager()
+    })
+});
+const auth = getAuth(app);
 
 interface AuthContextType {
     user: { email: string; name: string } | null;
@@ -46,39 +44,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [isAuthorized, setIsAuthorized] = useState(false);
 
     useEffect(() => {
-        const savedUser = localStorage.getItem('ut_star_user');
-        if (savedUser) {
-            try {
-                const parsed = JSON.parse(savedUser);
-                setUser(parsed);
+        const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+            if (firebaseUser) {
+                const userEmail = firebaseUser.email || '';
+                const userName = firebaseUser.displayName || userEmail.split('@')[0];
+                setUser({ email: userEmail, name: userName });
                 setIsAuthorized(true);
-            } catch (e) {
-                localStorage.removeItem('ut_star_user');
+            } else {
+                setUser(null);
+                setIsAuthorized(false);
             }
-        }
-        setLoading(false);
+            setLoading(false);
+        });
+        return () => unsubscribe();
     }, []);
 
     const login = async (email: string, pin: string) => {
-        const found = AUTHORIZED_USERS.find(u =>
-            u.email.toLowerCase() === email.toLowerCase() && u.pin === pin
-        );
-
-        if (found) {
-            const userData = { email: found.email, name: found.name };
-            localStorage.setItem('ut_star_user', JSON.stringify(userData));
-            setUser(userData);
-            setIsAuthorized(true);
-            return userData;
-        } else {
-            throw new Error("Credenciales inválidas.");
+        try {
+            await signInWithEmailAndPassword(auth, email, pin);
+        } catch (error: any) {
+            console.error("Error de Auth:", error.code, error.message);
+            throw new Error(`Error: ${error.code}`);
         }
     };
 
-    const logout = () => {
-        localStorage.removeItem('ut_star_user');
-        setUser(null);
-        setIsAuthorized(false);
+    const logout = async () => {
+        try {
+            await signOut(auth);
+            setUser(null);
+            setIsAuthorized(false);
+        } catch (e) {
+            console.error("Logout Fallido", e);
+        }
     };
 
     return (
@@ -94,15 +91,7 @@ export const useAuth = () => {
     return context;
 };
 
-export { db };
-
-if (typeof window !== 'undefined') {
-    enableIndexedDbPersistence(db).catch((err: any) => {
-        if (err.code === 'failed-precondition') {
-            console.warn('Persistence already enabled in another tab.');
-        }
-    });
-}
+export { db, auth };
 
 /**
  * Helper unificado para guardar una ficha en Firestore asegurando historial completo.

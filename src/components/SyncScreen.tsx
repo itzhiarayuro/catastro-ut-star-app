@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Cloud, Wifi, Battery, Moon, Sun, ArrowLeft, RefreshCw, CheckCircle, AlertTriangle, Info } from 'lucide-react';
 import { syncPhotosToDrive } from '../utils/driveSync';
-import { syncFichasToFirestore } from '../utils/syncRegistry';
+import { syncFichasToFirestore, validateFicha } from '../utils/syncRegistry';
 
 interface SyncScreenProps {
     fichas: Record<string, any>;
@@ -12,6 +12,12 @@ interface SyncScreenProps {
 const SyncScreen: React.FC<SyncScreenProps> = ({ fichas, onFichasUpdated, onClose }) => {
     const [status, setStatus] = useState<'IDLE' | 'SYNCING' | 'COMPLETED' | 'ERROR'>('IDLE');
     const [progress, setProgress] = useState({ total: 0, synced: 0, currentFile: '', error: null as string | null });
+
+    // Conteo de fichas por estado
+    const fichasArr = Object.values(fichas);
+    const readyToSync = fichasArr.filter(f => !f.synced && validateFicha(f));
+    const incomplete = fichasArr.filter(f => !f.synced && !validateFicha(f));
+    const alreadySynced = fichasArr.filter(f => f.synced);
     const [wakeLock, setWakeLock] = useState<any>(null);
 
     // Request Wake Lock to prevent screen sleep
@@ -99,16 +105,52 @@ const SyncScreen: React.FC<SyncScreenProps> = ({ fichas, onFichasUpdated, onClos
                             <Moon size={64} className="text-blue-400" />
                         </div>
                         <h2 className="text-2xl font-bold mb-4">Listo para sincronizar</h2>
-                        <p className="text-slate-400 text-sm max-w-xs mb-12">
-                            Conecta el cargador y mantén la pantalla encendida para una subida segura a Google Drive.
-                        </p>
-                        <button
-                            onClick={handleStartSync}
-                            className="sync-btn-primary"
-                        >
-                            <RefreshCw size={20} />
-                            Comenzar Ahora
-                        </button>
+
+                        <div className="flex flex-col gap-2 mb-8 w-full max-w-[280px] mx-auto text-left">
+                            <div className="flex justify-between items-center bg-blue-500/10 p-3 rounded-xl border border-blue-500/20">
+                                <span className="text-xs text-blue-300 font-bold uppercase">Listas para subir</span>
+                                <span className="text-xl font-black text-blue-400">{readyToSync.length}</span>
+                            </div>
+
+                            {incomplete.length > 0 && (
+                                <div className="flex justify-between items-center bg-red-500/10 p-3 rounded-xl border border-red-500/20">
+                                    <div className="flex flex-col">
+                                        <span className="text-xs text-red-300 font-bold uppercase">Incompletas</span>
+                                        <span className="text-[9px] text-red-400/70 uppercase">Faltan campos obligatorios</span>
+                                    </div>
+                                    <span className="text-xl font-black text-red-500">{incomplete.length}</span>
+                                </div>
+                            )}
+
+                            <div className="flex justify-between items-center bg-slate-500/5 p-3 rounded-xl border border-white/5">
+                                <span className="text-xs text-slate-400 font-bold uppercase">Ya sincronizadas</span>
+                                <span className="text-xl font-black text-slate-500">{alreadySynced.length}</span>
+                            </div>
+                        </div>
+
+                        {readyToSync.length > 0 ? (
+                            <>
+                                <p className="text-slate-400 text-sm max-w-xs mb-8">
+                                    Conecta el cargador y mantén la pantalla encendida para una subida segura a Google Drive.
+                                </p>
+                                <button
+                                    onClick={handleStartSync}
+                                    className="sync-btn-primary"
+                                >
+                                    <RefreshCw size={20} />
+                                    Comenzar Ahora
+                                </button>
+                            </>
+                        ) : (
+                            <div className="bg-red-500/10 border border-red-500/30 p-4 rounded-2xl">
+                                <p className="text-red-400 text-xs font-bold leading-relaxed">
+                                    {incomplete.length > 0
+                                        ? "⚠️ No se puede iniciar: Tienes fichas incompletas. Por favor completa todos los campos (Cámara, Rasante, Diámetro) antes de subir."
+                                        : "✅ Todo al día: No hay fichas pendientes por sincronizar."
+                                    }
+                                </p>
+                            </div>
+                        )}
                     </div>
                 )}
 
