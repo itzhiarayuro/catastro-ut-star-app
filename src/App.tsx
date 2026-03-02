@@ -1588,38 +1588,7 @@ const App: React.FC = () => {
     return (
         <APIProvider apiKey={import.meta.env.VITE_FIREBASE_API_KEY} libraries={['marker']}>
             <div className="app-container">
-                {/* PWA Update Prompt */}
-                {(offlineReady || needRefresh) && (
-                    <div style={{
-                        position: 'fixed', bottom: '80px', left: '20px', right: '20px',
-                        zIndex: 10000, background: '#1d4ed8', color: 'white',
-                        padding: '16px', borderRadius: '16px', display: 'flex',
-                        flexDirection: 'column', gap: '8px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
-                        border: '1px solid rgba(255,255,255,0.2)'
-                    }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <RefreshCw size={20} className={needRefresh ? 'animate-spin' : ''} />
-                            <div style={{ fontSize: '14px', fontWeight: 'bold' }}>
-                                {needRefresh ? '🚀 ¡Nueva versión disponible!' : '✅ App lista para usar sin internet'}
-                            </div>
-                        </div>
-                        {needRefresh && (
-                            <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-                                <button onClick={() => updateServiceWorker(true)} style={{ flex: 1, background: 'white', color: '#1d4ed8', border: 'none', padding: '8px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px' }}>
-                                    ACTUALIZAR AHORA
-                                </button>
-                                <button onClick={() => { setOfflineReady(false); setNeedRefresh(false); }} style={{ flex: 1, background: 'rgba(255,255,255,0.2)', color: 'white', border: 'none', padding: '8px', borderRadius: '8px', fontSize: '12px' }}>
-                                    LUEGO
-                                </button>
-                            </div>
-                        )}
-                        {!needRefresh && (
-                            <button onClick={() => { setOfflineReady(false); setNeedRefresh(false); }} style={{ background: 'white', color: '#1d4ed8', border: 'none', padding: '6px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', alignSelf: 'flex-end' }}>
-                                ENTENDIDO
-                            </button>
-                        )}
-                    </div>
-                )}
+                {/* PWA Update Prompt was unified below near Toast */}
 
                 {activeScreen === 'sActivity' && renderActivitySelect()}
                 {activeScreen === 'sMarcacion' && (
@@ -1684,6 +1653,9 @@ const App: React.FC = () => {
                                     className="btn btn-danger flex-1 py-3 text-xs"
                                     onClick={() => {
                                         if (logoutConfirmText.toLowerCase() === 'cerrar sesion') {
+                                            // Resetear estado de navegacion pero MANTENER borradores (fichas_star, catastro_draft)
+                                            localStorage.removeItem('catastro_active_screen');
+                                            setActiveScreen('sActivity');
                                             logout();
                                             setShowLogoutModal(false);
                                         } else {
