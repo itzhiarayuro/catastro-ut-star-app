@@ -1701,6 +1701,25 @@ const App: React.FC = () => {
                 {/* TOAST NOTIFICATION */}
                 <div id="toast" className={showToast ? 'show' : ''}>{toastMsg}</div>
 
+                {/* PWA UPDATE NOTIFICATION BANNER */}
+                {needRefresh && (
+                    <div className="fixed bottom-20 left-4 right-4 bg-amber-500 text-black p-4 rounded-xl shadow-lg flex items-center justify-between z-[9999] border-2 border-amber-600">
+                        <div className="flex items-center gap-2">
+                            <RefreshCw size={20} className="animate-spin" />
+                            <div>
+                                <span className="font-bold text-sm block">¡Nueva versión disponible!</span>
+                                <span className="text-[10px] opacity-80">Toca para aplicar cambios</span>
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => updateServiceWorker(true)}
+                            className="bg-black text-amber-500 px-4 py-2 rounded-lg font-bold text-xs shadow-md active:scale-95 transition-transform"
+                        >
+                            ACTUALIZAR
+                        </button>
+                    </div>
+                )}
+
                 {/* BOTTOM NAV */}
                 <nav className="bottom-nav">
                     <button
