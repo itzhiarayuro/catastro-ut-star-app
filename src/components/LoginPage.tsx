@@ -27,7 +27,15 @@ const LoginPage: React.FC = () => {
             await login(email, pin);
         } catch (err: any) {
             console.error(err);
-            setError(err.message || "Error al iniciar sesión.");
+            if (err.message.includes('auth/network-request-failed')) {
+                setError("No hay conexión a internet. Para el ingreso inicial o si cerraste sesión, necesitas conexión. Una vez dentro, podrás trabajar totalmente offline.");
+            } else if (err.message.includes('auth/invalid-credential') || err.message.includes('auth/wrong-password')) {
+                setError("Correo o contraseña incorrectos. Verifica tus datos.");
+            } else if (err.message.includes('auth/user-not-found')) {
+                setError("El usuario no existe. Contacta al administrador.");
+            } else {
+                setError(err.message || "Error al iniciar sesión.");
+            }
         } finally {
             setLoading(false);
         }

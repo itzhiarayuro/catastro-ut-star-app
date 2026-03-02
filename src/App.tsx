@@ -7,16 +7,20 @@ import {
     ChevronLeft, ChevronRight, Check, Plus, Trash2,
     Wifi, WifiOff, Save, FileJson, FileText, Download,
     Cloud, Globe, Lightbulb, AlertTriangle, Info, Camera,
-    RefreshCw, LogOut, Moon, Navigation
+    RefreshCw, LogOut, Moon, Navigation, Search, Flag
 } from 'lucide-react';
 import { FotoRegistro } from './utils/fotoProcessor';
 import FotosZone from './components/FotosZone';
 import SyncScreen from './components/SyncScreen';
 import MapasScreen from './components/MapasScreen';
 import GeoTracker from './components/GeoTracker';
+import MarcacionScreen from './components/MarcacionScreen';
 import { getPendingPhotosCount, checkPendingInList, renamePhotoInStorage } from './utils/storageManager';
 import { Crosshair, LocateFixed, Signal } from 'lucide-react';
 import { APIProvider, Map, AdvancedMarker } from '@vis.gl/react-google-maps';
+import { useRegisterSW } from 'virtual:pwa-register/react';
+
+const APP_VERSION = '1.0.1';
 
 /* ═══════════════════════════════════════════════════════════
    TYPES & INTERFACES
@@ -181,6 +185,19 @@ const INITIAL_STATE: AppState = {
 ═══════════════════════════════════════════════════════════ */
 
 const App: React.FC = () => {
+    const {
+        offlineReady: [offlineReady, setOfflineReady],
+        needRefresh: [needRefresh, setNeedRefresh],
+        updateServiceWorker,
+    } = useRegisterSW({
+        onRegistered(r: any) {
+            console.log('SW Registered: ', r);
+        },
+        onRegisterError(error: any) {
+            console.error('SW registration error', error);
+        },
+    });
+
     const { user, loading: authLoading, isAuthorized, logout } = useAuth();
     const [state, setState] = useState<AppState>(() => {
         try {
@@ -196,14 +213,14 @@ const App: React.FC = () => {
         return INITIAL_STATE;
     });
 
-    const [activeScreen, setActiveScreen] = useState<'s0' | 'sFichas' | 'sConfig' | 'sForm' | 'sMaps'>(() => {
+    const [activeScreen, setActiveScreen] = useState<'sActivity' | 's0' | 'sFichas' | 'sConfig' | 'sForm' | 'sMaps' | 'sMarcacion'>(() => {
         const saved = localStorage.getItem('catastro_active_screen');
         // Validamos que si volvemos a un formulario, realmente haya datos
         if (saved === 'sForm') {
             const draft = localStorage.getItem('catastro_draft');
-            if (!draft) return 's0';
+            if (!draft) return 'sActivity';
         }
-        return (saved as any) || 's0';
+        return (saved as any) || 'sActivity';
     });
 
     const [currentStep, setCurrentStep] = useState(() => {
@@ -219,6 +236,8 @@ const App: React.FC = () => {
     const [deleteId, setDeleteId] = useState<string | null>(null);
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
     const [showGeoTracker, setShowGeoTracker] = useState(false);
+    const [showLogoutModal, setShowLogoutModal] = useState(false);
+    const [logoutConfirmText, setLogoutConfirmText] = useState('');
     const autoSaveTimer = useRef<NodeJS.Timeout | null>(null);
 
     // Persistencia de navegación activa
@@ -600,6 +619,109 @@ const App: React.FC = () => {
        RENDER LOGIC
     ═════════════════════════════════════ */
 
+    const renderActivitySelect = () => (
+        <div id="sActivity" className={`screen ${activeScreen === 'sActivity' ? 'active' : ''}`} style={{ background: 'radial-gradient(circle at top right, #0f172a, #020617)' }}>
+            <div className="home-center" style={{ padding: '40px 20px' }}>
+                <div className="home-logo-container" style={{ margin: '0 auto 24px' }}>
+                    <img src="/logo-ut-star.png" alt="UT STAR Logo" className="home-logo-img" />
+                </div>
+
+                <h2 className="text-white text-xl font-bold mb-2">Selección de Actividad</h2>
+                <p className="text-gray-400 text-xs mb-8">Selecciona el módulo para iniciar el trabajo de hoy</p>
+
+                <div className="grid gap-4 w-full">
+                    <button
+                        className="activity-card group"
+                        onClick={() => setActiveScreen('s0')}
+                        style={{
+                            background: 'rgba(30, 41, 59, 0.5)',
+                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                            borderRadius: '24px',
+                            padding: '24px',
+                            textAlign: 'left',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '20px',
+                            transition: '0.3s'
+                        }}
+                    >
+                        <div style={{ background: 'linear-gradient(135deg, #3b82f6, #2563eb)', padding: '16px', borderRadius: '18px', color: 'white' }}>
+                            <Search size={28} />
+                        </div>
+                        <div>
+                            <div className="text-white font-bold text-lg">Actividad Investigación</div>
+                            <div className="text-blue-400 text-[10px] font-black uppercase tracking-widest mt-1">Catastro & Alcantarillado</div>
+                        </div>
+                        <ChevronRight className="ml-auto text-gray-600 group-hover:text-white transition-colors" />
+                    </button>
+
+                    <button
+                        className="activity-card group"
+                        onClick={() => setActiveScreen('sMarcacion')}
+                        style={{
+                            background: 'rgba(30, 41, 59, 0.5)',
+                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                            borderRadius: '24px',
+                            padding: '24px',
+                            textAlign: 'left',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '20px',
+                            transition: '0.3s'
+                        }}
+                    >
+                        <div style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)', padding: '16px', borderRadius: '18px', color: 'white' }}>
+                            <Flag size={28} />
+                        </div>
+                        <div>
+                            <div className="text-white font-bold text-lg">Actividad Marcación</div>
+                            <div className="text-amber-400 text-[10px] font-black uppercase tracking-widest mt-1">Georreferenciación en Campo</div>
+                        </div>
+                        <ChevronRight className="ml-auto text-gray-600 group-hover:text-white transition-colors" />
+                    </button>
+                </div>
+
+                <div className="mt-12 text-[10px] text-gray-500 uppercase font-bold tracking-widest">
+                    Operario: {user?.name}
+                </div>
+            </div>
+
+            <style>{`
+                .activity-card:active { transform: scale(0.98); background: rgba(30, 41, 59, 0.8) !important; }
+                .activity-card:hover { border-color: rgba(255, 255, 255, 0.3) !important; }
+            `}</style>
+        </div>
+    );
+
+    const renderMarcacionPlaceholder = () => (
+        <div id="sMarcacion" className={`screen ${activeScreen === 'sMarcacion' ? 'active' : ''}`}>
+            <div className="app-header">
+                <div className="header-inner">
+                    <button onClick={() => setActiveScreen('sActivity')} className="btn-ghost" style={{ padding: '8px', border: 'none' }}>
+                        <ChevronLeft size={20} />
+                    </button>
+                    <div className="header-titles">
+                        <div className="header-title">Actividad Marcación</div>
+                        <div className="header-sub">Georreferenciación</div>
+                    </div>
+                </div>
+            </div>
+            <div className="content flex flex-col items-center justify-center text-center p-12">
+                <div className="bg-amber-500/10 p-6 rounded-full mb-6">
+                    <Flag size={48} className="text-amber-500 animate-bounce" />
+                </div>
+                <h2 className="text-xl font-bold text-white mb-2">Módulo de Marcación</h2>
+                <p className="text-gray-400 text-sm leading-relaxed">
+                    Estamos preparando este módulo para la georreferenciación rápida de puntos.
+                    Por ahora, utiliza el módulo de **Investigación** para el catastro completo.
+                </p>
+                <button className="btn btn-blue mt-8 px-8" onClick={() => setActiveScreen('sActivity')}>
+                    Volver a Selección
+                </button>
+            </div>
+        </div>
+    );
+
     const renderHome = () => {
         const fichasArr = Object.values(fichas).filter(f => !f.deleted);
         const totalFichas = fichasArr.length;
@@ -669,6 +791,11 @@ const App: React.FC = () => {
                         <button className="btn btn-ghost btn-full" onClick={() => setActiveScreen('sFichas')}>
                             <List size={16} />
                             Historial de Fichas
+                        </button>
+
+                        <button className="btn btn-ghost btn-full mt-4" onClick={() => setActiveScreen('sActivity')} style={{ border: '1px dashed rgba(255,255,255,0.1)', color: '#64748b' }}>
+                            <SettingsIcon size={14} />
+                            Cambiar a Marcación / Selección
                         </button>
                     </div>
 
@@ -821,8 +948,19 @@ const App: React.FC = () => {
                             <div style={{ fontSize: '11px', color: '#64748b' }}>{user?.email}</div>
                         </div>
                     </div>
-                    <button className="btn btn-ghost btn-full" onClick={logout}>
+                    <button className="btn btn-ghost btn-full" onClick={() => { setLogoutConfirmText(''); setShowLogoutModal(true); }}>
                         <LogOut size={16} /> Cerrar Sesión
+                    </button>
+                </div>
+
+                <div style={{ textAlign: 'center', padding: '20px', opacity: 0.3 }}>
+                    <div style={{ fontSize: '9px', fontWeight: 'bold', letterSpacing: '2px' }}>UT STAR Catastro v{APP_VERSION}</div>
+                    <div style={{ fontSize: '7px', marginTop: '4px' }}>© 2026 • SOPÓ, COLOMBIA</div>
+                    <button
+                        onClick={() => window.location.reload()}
+                        style={{ background: 'none', border: 'none', color: 'inherit', fontSize: '8px', textDecoration: 'underline', marginTop: '10px', cursor: 'pointer' }}
+                    >
+                        Forzar recarga de sistema
                     </button>
                 </div>
             </div>
@@ -1409,13 +1547,88 @@ const App: React.FC = () => {
             <AlertTriangle size={48} color="#ef4444" style={{ marginBottom: '20px' }} />
             <h1 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '10px' }}>Acceso No Autorizado</h1>
             <p style={{ color: '#94a3b8', maxWidth: '300px' }}>El correo <strong>{user.email}</strong> no tiene permisos para acceder a este sistema.</p>
-            <button className="btn btn-ghost mt-6" onClick={logout} style={{ marginTop: '30px' }}>Cerrar Sesión</button>
+            <button className="btn btn-ghost mt-6" onClick={() => { setLogoutConfirmText(''); setShowLogoutModal(true); }} style={{ marginTop: '30px' }}>Cerrar Sesión</button>
+
+            {/* Modal de Cierre de Sesión para no autorizados */}
+            {showLogoutModal && (
+                <div className="fixed inset-0 z-[10000] bg-black/90 backdrop-blur-sm flex items-center justify-center p-6">
+                    <div className="bg-[#1c2230] border border-[#2d3748] p-6 rounded-2xl w-full max-w-xs shadow-2xl text-center">
+                        <LogOut size={40} className="text-amber-500 mx-auto mb-4" />
+                        <h3 className="text-lg font-bold text-white mb-2">Cerrar Sesión</h3>
+                        <p className="text-gray-400 text-[11px] mb-6">Si cierras sesión sin internet no podrás volver a entrar. Escribe <span className="text-white font-bold">cerrar sesion</span> para confirmar:</p>
+                        <input
+                            type="text"
+                            className="w-full bg-[#0f172a] border border-[#334155] rounded-xl p-3 text-center text-white font-bold mb-6"
+                            value={logoutConfirmText}
+                            onChange={e => setLogoutConfirmText(e.target.value)}
+                            placeholder="..."
+                        />
+                        <div className="flex gap-3">
+                            <button className="btn btn-ghost flex-1 py-3" onClick={() => setShowLogoutModal(false)}>Cancelar</button>
+                            <button
+                                className="btn btn-danger flex-1 py-3"
+                                onClick={() => {
+                                    if (logoutConfirmText === 'cerrar sesion') {
+                                        logout();
+                                        setShowLogoutModal(false);
+                                    } else {
+                                        toast("❌ Escribe exactamente 'cerrar sesion'");
+                                    }
+                                }}
+                            >
+                                Salir
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 
     return (
         <APIProvider apiKey={import.meta.env.VITE_FIREBASE_API_KEY} libraries={['marker']}>
             <div className="app-container">
+                {/* PWA Update Prompt */}
+                {(offlineReady || needRefresh) && (
+                    <div style={{
+                        position: 'fixed', bottom: '80px', left: '20px', right: '20px',
+                        zIndex: 10000, background: '#1d4ed8', color: 'white',
+                        padding: '16px', borderRadius: '16px', display: 'flex',
+                        flexDirection: 'column', gap: '8px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+                        border: '1px solid rgba(255,255,255,0.2)'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <RefreshCw size={20} className={needRefresh ? 'animate-spin' : ''} />
+                            <div style={{ fontSize: '14px', fontWeight: 'bold' }}>
+                                {needRefresh ? '🚀 ¡Nueva versión disponible!' : '✅ App lista para usar sin internet'}
+                            </div>
+                        </div>
+                        {needRefresh && (
+                            <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                                <button onClick={() => updateServiceWorker(true)} style={{ flex: 1, background: 'white', color: '#1d4ed8', border: 'none', padding: '8px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px' }}>
+                                    ACTUALIZAR AHORA
+                                </button>
+                                <button onClick={() => { setOfflineReady(false); setNeedRefresh(false); }} style={{ flex: 1, background: 'rgba(255,255,255,0.2)', color: 'white', border: 'none', padding: '8px', borderRadius: '8px', fontSize: '12px' }}>
+                                    LUEGO
+                                </button>
+                            </div>
+                        )}
+                        {!needRefresh && (
+                            <button onClick={() => { setOfflineReady(false); setNeedRefresh(false); }} style={{ background: 'white', color: '#1d4ed8', border: 'none', padding: '6px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', alignSelf: 'flex-end' }}>
+                                ENTENDIDO
+                            </button>
+                        )}
+                    </div>
+                )}
+
+                {activeScreen === 'sActivity' && renderActivitySelect()}
+                {activeScreen === 'sMarcacion' && (
+                    <MarcacionScreen
+                        user={user}
+                        onBack={() => setActiveScreen('sActivity')}
+                        onSuccess={(msg) => toast(msg)}
+                    />
+                )}
                 {activeScreen === 's0' && renderHome()}
                 {activeScreen === 'sFichas' && renderFichas()}
                 {activeScreen === 'sConfig' && renderConfig()}
@@ -1443,6 +1656,46 @@ const App: React.FC = () => {
                             toast("🎯 Punto Exacto Fijado");
                         }}
                     />
+                )}
+
+                {/* MODAL CERRAR SESIÓN (Global) */}
+                {showLogoutModal && isAuthorized && (
+                    <div className="fixed inset-0 z-[10000] bg-black/90 backdrop-blur-sm flex items-center justify-center p-6">
+                        <div className="bg-[#1c2230] border border-[#2d3748] p-6 rounded-2xl w-full max-w-xs shadow-2xl text-center">
+                            <div className="bg-amber-500/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 border border-amber-500/20">
+                                <LogOut size={32} className="text-amber-500" />
+                            </div>
+                            <h3 className="text-lg font-bold text-white mb-2">Seguridad de Acceso</h3>
+                            <p className="text-gray-400 text-[11px] mb-6 leading-relaxed">
+                                <span className="text-amber-500 font-bold">⚠️ ADVERTENCIA:</span> Si cierras sesión y estás en una zona sin internet, <span className="text-white">no podrás volver a entrar</span> hasta tener señal.
+                                <br /><br />
+                                Escribe <span className="text-white font-bold">cerrar sesion</span> para confirmar:
+                            </p>
+                            <input
+                                type="text"
+                                className="w-full bg-[#0f172a] border border-[#334155] rounded-xl p-3 text-center text-white font-bold mb-6 focus:border-blue-500 outline-none transition-all"
+                                value={logoutConfirmText}
+                                onChange={e => setLogoutConfirmText(e.target.value)}
+                                placeholder="Escribe aquí..."
+                            />
+                            <div className="flex gap-3">
+                                <button className="btn btn-ghost flex-1 py-3 text-xs" onClick={() => setShowLogoutModal(false)}>CANCELAR</button>
+                                <button
+                                    className="btn btn-danger flex-1 py-3 text-xs"
+                                    onClick={() => {
+                                        if (logoutConfirmText.toLowerCase() === 'cerrar sesion') {
+                                            logout();
+                                            setShowLogoutModal(false);
+                                        } else {
+                                            toast("❌ Escribe exactamente 'cerrar sesion'");
+                                        }
+                                    }}
+                                >
+                                    CERRAR SESIÓN
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 )}
 
                 {/* TOAST NOTIFICATION */}
