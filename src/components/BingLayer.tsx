@@ -47,21 +47,24 @@ export const BingLayer: React.FC<{ active: boolean; defaultType: string }> = ({ 
             });
 
             // Override tile loading to check IndexedDB
-            osmMapType.getTile = (coord, zoom, ownerDocument) => {
-                const img = ownerDocument.createElement('img');
+            osmMapType.getTile = (coord, zoom, ownerDoc) => {
+                const doc = ownerDoc || document;
+                const img = doc.createElement('img');
                 img.style.width = '256px';
                 img.style.height = '256px';
 
-                const key = `osm_${zoom}_${coord.x}_${coord.y}`;
-                import('./OfflineMapManager').then(m => m.getTile(key)).then(blob => {
-                    if (blob) {
-                        img.src = URL.createObjectURL(blob);
-                    } else {
+                if (coord) {
+                    const key = `osm_${zoom}_${coord.x}_${coord.y}`;
+                    import('./OfflineMapManager').then(m => m.getTile(key)).then(blob => {
+                        if (blob) {
+                            img.src = URL.createObjectURL(blob);
+                        } else {
+                            img.src = `https://tile.openstreetmap.org/${zoom}/${coord.x}/${coord.y}.png`;
+                        }
+                    }).catch(() => {
                         img.src = `https://tile.openstreetmap.org/${zoom}/${coord.x}/${coord.y}.png`;
-                    }
-                }).catch(() => {
-                    img.src = `https://tile.openstreetmap.org/${zoom}/${coord.x}/${coord.y}.png`;
-                });
+                    });
+                }
 
                 return img;
             };
