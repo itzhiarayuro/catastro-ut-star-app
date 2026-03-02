@@ -321,7 +321,10 @@ const FotosZone: React.FC<FotosZoneProps> = ({ pozoId, photos, pipes, sums, onAd
                     <p className="text-[10px] text-gray-500 uppercase tracking-widest">Nomenclatura Automática: {pozoId}-...</p>
                 </div>
                 <button
-                    onClick={() => window.location.href = "intent://#Intent;scheme=launch;package=com.akaso.go;end"}
+                    onClick={() => {
+                        const intent = "intent://#Intent;scheme=akasoGo;package=com.akaso.go;S.browser_fallback_url=https://play.google.com/store/apps/details?id=com.akaso.go;end";
+                        window.location.href = intent;
+                    }}
                     className="ml-auto flex items-center gap-2 bg-[#FF5722] hover:bg-[#E64A19] text-white text-[10px] font-bold py-1.5 px-3 rounded-full transition-all shadow-lg active:scale-95"
                 >
                     <Camera size={14} />

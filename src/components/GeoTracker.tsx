@@ -7,8 +7,12 @@ import {
     CheckCircle2,
     AlertTriangle,
     RefreshCw,
+    Camera,
+    Download
 } from 'lucide-react';
 import { BingLayer } from './BingLayer';
+import { FotoRegistro, procesarFoto } from '../utils/fotoProcessor';
+import OfflineMapManager from './OfflineMapManager';
 
 const MAP_ID = import.meta.env.VITE_GOOGLE_MAPS_ID;
 
@@ -45,11 +49,13 @@ const AccuracyCircle = ({ center, radius }: { center: google.maps.LatLngLiteral;
 interface GeoTrackerProps {
     initialCoords: { lat: number; lng: number };
     onConfirm: (coords: { lat: number; lng: number; precision: number }) => void;
+    onScreenshot?: (foto: FotoRegistro) => void;
     onClose: () => void;
+    pozoId?: string;
 }
 
 // ── Componente principal ──────────────────────────────────────────────────────
-const GeoTracker: React.FC<GeoTrackerProps> = ({ initialCoords, onConfirm, onClose }) => {
+const GeoTracker: React.FC<GeoTrackerProps> = ({ initialCoords, onConfirm, onScreenshot, onClose, pozoId }) => {
     const hasInitial = !!(initialCoords.lat && initialCoords.lng);
     const defaultPos = hasInitial ? initialCoords : { lat: 6.2442, lng: -75.5812 };
 
@@ -58,8 +64,11 @@ const GeoTracker: React.FC<GeoTrackerProps> = ({ initialCoords, onConfirm, onClo
     const [gpsPos, setGpsPos] = useState<{ lat: number; lng: number } | null>(null);
     const [accuracy, setAccuracy] = useState(0);
     const [isLocating, setIsLocating] = useState(false);
-    const [mapType, setMapType] = useState<'hybrid' | 'roadmap' | 'bing'>('hybrid');
+    const [mapType, setMapType] = useState<'hybrid' | 'roadmap' | 'bing' | 'osm'>('hybrid');
     const [isDragging, setIsDragging] = useState(false);
+    const [isCapturing, setIsCapturing] = useState(false);
+    const [captureZoom, setCaptureZoom] = useState(20);
+    const [showOfflineManager, setShowOfflineManager] = useState(false);
 
     const watchId = useRef<number | null>(null);
 
@@ -95,6 +104,36 @@ const GeoTracker: React.FC<GeoTrackerProps> = ({ initialCoords, onConfirm, onClo
     const isGoodAccuracy = accuracy > 0 && accuracy <= 20;
     const isBadAccuracy = accuracy > 20;
 
+    const handleCaptureMap = async () => {
+        if (!onScreenshot) return;
+        setIsCapturing(true);
+        try {
+            const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+            const lat = mapCenter.lat;
+            const lng = mapCenter.lng;
+
+            // Google Static Maps API URL
+            const staticMapUrl = `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=${captureZoom}&size=640x640&scale=2&maptype=${mapType === 'roadmap' ? 'roadmap' : 'hybrid'}&markers=color:blue%7C${lat},${lng}&key=${apiKey}`;
+
+            const response = await fetch(staticMapUrl);
+            const blob = await response.blob();
+            const reader = new FileReader();
+            reader.readAsDataURL(blob);
+            reader.onloadend = () => {
+                const base64data = reader.result as string;
+                const filename = `${pozoId || 'M'}-UG-${captureZoom}.JPG`;
+                const newFoto = procesarFoto(filename, pozoId || 'M', base64data);
+                onScreenshot({ ...newFoto, blobId: base64data });
+                setIsCapturing(false);
+                alert("📸 Mapa capturado y guardado como foto de ubicación.");
+            };
+        } catch (err) {
+            console.error("Error capturando mapa:", err);
+            setIsCapturing(false);
+            alert("Error al capturar el mapa.");
+        }
+    };
+
     return (
         <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.7)' }}>
             <div style={{ position: 'relative', width: '100%', maxWidth: '480px', height: '100dvh', maxHeight: '100dvh', background: '#000', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -109,6 +148,15 @@ const GeoTracker: React.FC<GeoTrackerProps> = ({ initialCoords, onConfirm, onClo
                         <X size={18} />
                     </button>
 
+                    {/* Descargar Offline */}
+                    <button
+                        onClick={() => setShowOfflineManager(true)}
+                        style={{ pointerEvents: 'auto', background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: '14px', padding: '10px', color: '#60a5fa', display: 'flex' }}
+                        title="Descargar área offline"
+                    >
+                        <Download size={18} />
+                    </button>
+
                     {/* Coordenadas en vivo */}
                     <div style={{ flex: 1, background: 'rgba(0,0,0,0.8)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '14px', padding: '8px 12px', textAlign: 'center' }}>
                         <div style={{ fontSize: '9px', color: '#60a5fa', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
@@ -121,12 +169,43 @@ const GeoTracker: React.FC<GeoTrackerProps> = ({ initialCoords, onConfirm, onClo
 
                     {/* Capas */}
                     <button
-                        onClick={() => setMapType(t => t === 'hybrid' ? 'roadmap' : t === 'roadmap' ? 'bing' : 'hybrid')}
-                        style={{ pointerEvents: 'auto', background: 'rgba(0,0,0,0.8)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '14px', padding: '10px', color: '#fff', display: 'flex', alignItems: 'center' }}
+                        onClick={() => {
+                            const types: ('hybrid' | 'roadmap' | 'bing' | 'osm')[] = ['hybrid', 'roadmap', 'bing', 'osm'];
+                            const idx = types.indexOf(mapType);
+                            setMapType(types[(idx + 1) % types.length]);
+                        }}
+                        style={{ pointerEvents: 'auto', background: 'rgba(0,0,0,0.8)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '14px', padding: '10px 14px', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}
                     >
                         <Layers size={18} />
-                        {mapType === 'bing' && <span style={{ marginLeft: '4px', fontSize: '10px', fontWeight: 'bold', color: '#60a5fa' }}>BING</span>}
+                        <span style={{ fontSize: '9px', fontWeight: 'bold', textTransform: 'uppercase' }}>
+                            {mapType === 'hybrid' ? 'Satélite' :
+                                mapType === 'roadmap' ? 'Calles' :
+                                    mapType === 'bing' ? 'Bing Sat' : 'Offline'}
+                        </span>
                     </button>
+
+                    {/* Captura de Mapa */}
+                    {onScreenshot && (
+                        <div style={{ pointerEvents: 'auto', display: 'flex', gap: '4px' }}>
+                            <select
+                                value={captureZoom}
+                                onChange={(e) => setCaptureZoom(Number(e.target.value))}
+                                style={{ background: 'rgba(0,0,0,0.8)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '10px', padding: '4px', color: '#fff', fontSize: '10px' }}
+                            >
+                                <option value="15">1:2000</option>
+                                <option value="17">1:1000</option>
+                                <option value="19">1:500</option>
+                                <option value="20">1:250</option>
+                            </select>
+                            <button
+                                onClick={handleCaptureMap}
+                                disabled={isCapturing}
+                                style={{ background: isCapturing ? '#475569' : '#059669', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '14px', padding: '10px', color: '#fff', display: 'flex', alignItems: 'center' }}
+                            >
+                                {isCapturing ? <RefreshCw size={18} style={{ animation: 'spin 1s linear infinite' }} /> : <Camera size={18} />}
+                            </button>
+                        </div>
+                    )}
                 </div>
 
                 {/* ── MAPA ─────────────────────────────────────────────────── */}
@@ -287,6 +366,13 @@ const GeoTracker: React.FC<GeoTrackerProps> = ({ initialCoords, onConfirm, onClo
                 {/* Keyframes para el spin */}
                 <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
             </div>
+
+            {showOfflineManager && (
+                <OfflineMapManager
+                    center={mapCenter}
+                    onClose={() => setShowOfflineManager(false)}
+                />
+            )}
         </div>
     );
 };

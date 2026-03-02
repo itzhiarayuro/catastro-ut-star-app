@@ -8,10 +8,12 @@ export const BingLayer: React.FC<{ active: boolean; defaultType: string }> = ({ 
         if (!map) return;
 
         const BING_ID = 'bing_satellite';
+        const OSM_ID = 'osm_offline';
 
+        // Register Bing
         if (!map.mapTypes.get(BING_ID)) {
             const bingMapType = new google.maps.ImageMapType({
-                getTileUrl: function (coord, zoom) {
+                getTileUrl: (coord, zoom) => {
                     let quadKey = '';
                     for (let i = zoom; i > 0; i--) {
                         let digit = 0;
@@ -30,7 +32,46 @@ export const BingLayer: React.FC<{ active: boolean; defaultType: string }> = ({ 
             map.mapTypes.set(BING_ID, bingMapType);
         }
 
+        // Register OSM (Offline capable)
+        if (!map.mapTypes.get(OSM_ID)) {
+            const osmMapType = new google.maps.ImageMapType({
+                getTileUrl: (coord, zoom) => {
+                    // This is a dummy URL because we will override the tile rendering logic
+                    // logic is handled via custom store
+                    return `https://tile.openstreetmap.org/${zoom}/${coord.x}/${coord.y}.png`;
+                },
+                tileSize: new google.maps.Size(256, 256),
+                maxZoom: 19,
+                minZoom: 1,
+                name: 'Offline'
+            });
+
+            // Override tile loading to check IndexedDB
+            osmMapType.getTile = (coord, zoom, ownerDocument) => {
+                const img = ownerDocument.createElement('img');
+                img.style.width = '256px';
+                img.style.height = '256px';
+
+                const key = `osm_${zoom}_${coord.x}_${coord.y}`;
+                import('./OfflineMapManager').then(m => m.getTile(key)).then(blob => {
+                    if (blob) {
+                        img.src = URL.createObjectURL(blob);
+                    } else {
+                        img.src = `https://tile.openstreetmap.org/${zoom}/${coord.x}/${coord.y}.png`;
+                    }
+                }).catch(() => {
+                    img.src = `https://tile.openstreetmap.org/${zoom}/${coord.x}/${coord.y}.png`;
+                });
+
+                return img;
+            };
+
+            map.mapTypes.set(OSM_ID, osmMapType);
+        }
+
         if (active) {
+            map.setMapTypeId(OSM_ID);
+        } else if (defaultType === 'bing') {
             map.setMapTypeId(BING_ID);
         } else {
             map.setMapTypeId(defaultType);

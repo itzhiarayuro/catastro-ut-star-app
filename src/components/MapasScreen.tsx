@@ -17,9 +17,11 @@ import {
     Search,
     Info,
     MapPin,
-    ChevronLeft
+    ChevronLeft,
+    Download
 } from 'lucide-react';
 import { BingLayer } from './BingLayer';
+import OfflineMapManager from './OfflineMapManager';
 
 // Estilo Premium Dark para Google Maps
 const MAP_ID = import.meta.env.VITE_GOOGLE_MAPS_ID; // ID de estilo personalizado (opcional)
@@ -44,11 +46,12 @@ const MapasScreen: React.FC<{
     const map = useMap();
     const [fichas, setFichas] = useState<FichaMapItem[]>([]);
     const [selectedFicha, setSelectedFicha] = useState<FichaMapItem | null>(null);
-    const [mapType, setMapType] = useState<'hybrid' | 'roadmap' | 'bing'>('hybrid');
+    const [mapType, setMapType] = useState<'hybrid' | 'roadmap' | 'bing' | 'osm'>('hybrid');
     const [center, setCenter] = useState({ lat: 6.244, lng: -75.581 }); // Un centro más neutro si falla (Medellín)
     const [userPos, setUserPos] = useState<{ lat: number; lng: number } | null>(null);
     const [isLocating, setIsLocating] = useState(false);
     const [initialCenterDone, setInitialCenterDone] = useState(false);
+    const [showOfflineManager, setShowOfflineManager] = useState(false);
 
     const [mapReady, setMapReady] = useState(false);
 
@@ -187,11 +190,26 @@ const MapasScreen: React.FC<{
 
                     <div className="flex items-center gap-2">
                         <button
-                            onClick={() => setMapType(t => t === 'hybrid' ? 'roadmap' : t === 'roadmap' ? 'bing' : 'hybrid')}
-                            className="p-2.5 rounded-xl bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 transition-colors shadow-lg flex items-center justify-center min-w-[40px]"
+                            onClick={() => setShowOfflineManager(true)}
+                            className="p-2.5 rounded-xl bg-blue-600/10 border border-blue-600/20 text-blue-400 hover:bg-blue-600/20 transition-colors shadow-lg flex items-center justify-center"
+                            title="Descargar área offline"
+                        >
+                            <Download className="w-4 h-4" />
+                        </button>
+                        <button
+                            onClick={() => {
+                                const types: ('hybrid' | 'roadmap' | 'bing' | 'osm')[] = ['hybrid', 'roadmap', 'bing', 'osm'];
+                                const idx = types.indexOf(mapType);
+                                setMapType(types[(idx + 1) % types.length]);
+                            }}
+                            className="px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 transition-colors shadow-lg flex items-center justify-center gap-2 min-w-[100px]"
                         >
                             <Layers className="w-4 h-4" />
-                            {mapType === 'bing' && <span className="ml-1 text-[10px] font-bold text-blue-400">BING</span>}
+                            <span className="text-[10px] font-bold uppercase tracking-widest">
+                                {mapType === 'hybrid' ? 'Satélite' :
+                                    mapType === 'roadmap' ? 'Calles' :
+                                        mapType === 'bing' ? 'Bing Sat' : 'Offline'}
+                            </span>
                         </button>
                     </div>
                 </div>
@@ -312,6 +330,13 @@ const MapasScreen: React.FC<{
                         </div>
                     </div>
                 </div>
+            )}
+
+            {showOfflineManager && (
+                <OfflineMapManager
+                    center={center}
+                    onClose={() => setShowOfflineManager(false)}
+                />
             )}
         </div>
     );

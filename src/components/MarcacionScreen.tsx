@@ -138,6 +138,16 @@ const MarcacionScreen: React.FC<{
                     <h1 className="text-lg font-bold">Actividad Marcación</h1>
                     <p className="text-[10px] text-blue-400 font-black uppercase tracking-widest">Localización Rápida</p>
                 </div>
+                <button
+                    onClick={() => {
+                        const intent = "intent://#Intent;scheme=akasoGo;package=com.akaso.go;S.browser_fallback_url=https://play.google.com/store/apps/details?id=com.akaso.go;end";
+                        window.location.href = intent;
+                    }}
+                    className="ml-auto flex items-center gap-2 bg-[#FF5722] hover:bg-[#E64A19] text-white text-[10px] font-bold py-1.5 px-3 rounded-full transition-all shadow-lg active:scale-95"
+                >
+                    <Camera size={14} />
+                    Akaso GO
+                </button>
             </div>
 
             {/* Form */}
@@ -272,10 +282,34 @@ const MarcacionScreen: React.FC<{
             {showGeoTracker && (
                 <GeoTracker
                     initialCoords={{ lat: state.gps.lat || 4.908, lng: state.gps.lng || -73.948 }}
+                    pozoId={state.id}
                     onClose={() => setShowGeoTracker(false)}
                     onConfirm={(c) => {
                         setState(prev => ({ ...prev, gps: c }));
                         setShowGeoTracker(false);
+                    }}
+                    onScreenshot={async (foto) => {
+                        // Guardar en marcación local
+                        setState(prev => ({
+                            ...prev,
+                            fotos: {
+                                ...prev.fotos,
+                                ug: foto // Agregamos campo de ubicación general
+                            }
+                        }));
+                        // También guardar en storage para sync de fondo
+                        await savePhotoToStorage({
+                            id: foto.id,
+                            pozoId: state.id,
+                            municipio: state.municipio,
+                            barrio: 'MARCACION',
+                            filename: foto.filename,
+                            blob: foto.blobId,
+                            categoria: 'General',
+                            inspector: state.inspector,
+                            timestamp: Date.now(),
+                            synced: false
+                        });
                     }}
                 />
             )}
