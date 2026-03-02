@@ -1704,8 +1704,8 @@ const App: React.FC = () => {
                 {/* BOTTOM NAV */}
                 <nav className="bottom-nav">
                     <button
-                        className={`nav-btn ${activeScreen === 's0' ? 'active' : ''}`}
-                        onClick={() => setActiveScreen('s0')}
+                        className={`nav-btn ${activeScreen === 'sActivity' || activeScreen === 's0' ? 'active' : ''}`}
+                        onClick={() => setActiveScreen('sActivity')}
                     >
                         <Home size={20} />
                         <span>Inicio</span>
