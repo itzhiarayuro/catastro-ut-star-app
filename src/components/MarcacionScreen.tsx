@@ -128,151 +128,142 @@ const MarcacionScreen: React.FC<{
     };
 
     return (
-        <div className="flex flex-col h-full bg-[#020617] text-white font-inter">
+        <div className="screen active">
             {/* Header */}
-            <div className="p-4 border-b border-white/10 flex items-center gap-3 bg-[#0f172a]/50 backdrop-blur-md">
-                <button onClick={onBack} className="p-2 hover:bg-white/10 rounded-full transition-colors">
-                    <ChevronLeft size={24} />
-                </button>
-                <div>
-                    <h1 className="text-lg font-bold">Actividad Marcación</h1>
-                    <p className="text-[10px] text-blue-400 font-black uppercase tracking-widest">Localización Rápida</p>
+            <header className="app-header">
+                <div className="header-inner">
+                    <button onClick={onBack} style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', display: 'flex' }}>
+                        <ChevronLeft size={24} />
+                    </button>
+                    <div className="header-titles">
+                        <div className="header-title">Actividad Marcación</div>
+                        <div className="header-sub" style={{ color: 'var(--blue)' }}>Localización Rápida</div>
+                    </div>
                 </div>
-                <button
-                    onClick={() => {
-                        const intent = "intent://#Intent;scheme=akasoGo;package=com.akaso.go;S.browser_fallback_url=https://play.google.com/store/apps/details?id=com.akaso.go;end";
-                        window.location.href = intent;
-                    }}
-                    className="ml-auto flex items-center gap-2 bg-[#FF5722] hover:bg-[#E64A19] text-white text-[10px] font-bold py-1.5 px-3 rounded-full transition-all shadow-lg active:scale-95"
-                >
-                    <Camera size={14} />
-                    Akaso GO
-                </button>
-            </div>
+            </header>
 
-            {/* Form */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-6">
+            <div className="content">
+                {/* Botón Akaso Superior */}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
+                    <button
+                        onClick={() => {
+                            const intent = "intent://#Intent;scheme=akasoGo;package=com.akaso.go;S.browser_fallback_url=https://play.google.com/store/apps/details?id=com.akaso.go;end";
+                            window.location.href = intent;
+                        }}
+                        className="btn btn-orange btn-sm"
+                        style={{ padding: '6px 12px', fontSize: '11px' }}
+                    >
+                        <Camera size={14} /> Akaso GO
+                    </button>
+                </div>
 
-                {/* Tipo de Elemento */}
-                <div className="space-y-3">
-                    <label className="text-[10px] text-gray-500 font-black uppercase tracking-widest">Tipo de Elemento</label>
-                    <div className="grid grid-cols-2 gap-2">
+                <div className="card">
+                    <div className="card-title">Tipo de Elemento</div>
+                    <div className="chips-big">
                         {tipos.map(t => (
-                            <button
+                            <div
                                 key={t}
                                 onClick={() => setState(prev => ({ ...prev, tipoElemento: t }))}
-                                className={`p-3 rounded-xl border text-xs font-bold transition-all ${state.tipoElemento === t
-                                    ? 'bg-blue-600 border-blue-400 text-white shadow-lg shadow-blue-600/20'
-                                    : 'bg-[#1e293b]/50 border-white/5 text-gray-400'
-                                    }`}
+                                className={`chip-big ${state.tipoElemento === t ? 'selected' : ''}`}
                             >
                                 {t === 'OTRO' ? 'OTRO...' : t.toUpperCase()}
-                            </button>
+                            </div>
                         ))}
                     </div>
                     {state.tipoElemento === 'OTRO' && (
-                        <input
-                            type="text"
-                            placeholder="Especificar tipo..."
-                            className="w-full bg-[#0d1117] border border-blue-500/30 rounded-xl p-4 text-sm text-white focus:border-blue-500 transition-all"
-                            value={state.otroTipo}
-                            onChange={e => setState(prev => ({ ...prev, otroTipo: e.target.value }))}
-                        />
+                        <div className="field" style={{ marginTop: '12px' }}>
+                            <input
+                                type="text"
+                                placeholder="Especificar tipo..."
+                                value={state.otroTipo}
+                                onChange={e => setState(prev => ({ ...prev, otroTipo: e.target.value }))}
+                            />
+                        </div>
                     )}
                 </div>
 
-                {/* GPS Section */}
-                <div className="space-y-3">
-                    <label className="text-[10px] text-gray-500 font-black uppercase tracking-widest">Georreferenciación</label>
-                    <div
-                        className={`p-4 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-3 transition-all cursor-pointer ${state.gps.lat ? 'bg-green-500/5 border-green-500/20' : 'bg-blue-500/5 border-blue-500/20'
-                            }`}
+                <div className="card">
+                    <div className="card-title" style={{ color: 'var(--green)' }}>
+                        <MapPin size={16} /> Georreferenciación
+                    </div>
+
+                    <button
+                        className={`btn btn-full ${state.gps.lat ? 'btn-ghost' : 'btn-blue'}`}
                         onClick={() => setShowGeoTracker(true)}
+                        style={state.gps.lat ? { borderColor: 'var(--green)', color: 'var(--green)' } : {}}
                     >
-                        <MapPin size={32} className={state.gps.lat ? 'text-green-500' : 'text-blue-500'} />
-                        <div className="text-center">
-                            {state.gps.lat ? (
-                                <>
-                                    <div className="text-sm font-bold text-white">{state.gps.lat.toFixed(7)}, {state.gps.lng?.toFixed(7)}</div>
-                                    <div className="text-[10px] text-green-500 font-black uppercase mt-1 tracking-widest">Precisión: ±{state.gps.precision}m</div>
-                                </>
-                            ) : (
-                                <>
-                                    <div className="text-sm font-bold text-white">Capturar Ubicación</div>
-                                    <div className="text-[10px] text-blue-400 font-black uppercase mt-1 tracking-widest">Toca para abrir mapas</div>
-                                </>
-                            )}
+                        <MapPin size={18} />
+                        {state.gps.lat ? 'Modificar Ubicación' : 'Capturar GPS en Mapa'}
+                    </button>
+
+                    {state.gps.lat && (
+                        <div className="gps-result show" style={{ textAlign: 'center', margin: '12px auto 0' }}>
+                            <div style={{ fontSize: '14px', color: '#fff', marginBottom: '4px' }}>
+                                {state.gps.lat.toFixed(6)}, {state.gps.lng?.toFixed(6)}
+                            </div>
+                            <div>Precisión: ±{state.gps.precision}m</div>
+                        </div>
+                    )}
+                </div>
+
+                <div className="card">
+                    <div className="card-title">Evidencia Fotográfica</div>
+                    <div className="field-row">
+                        <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: '10px', color: 'var(--text3)', fontWeight: 'bold', marginBottom: '6px', textTransform: 'uppercase' }}>Panorámica</div>
+                            <div className="photo-zone" style={{ height: '120px' }}>
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    capture="environment"
+                                    onChange={(e) => handlePhoto(e, 'panoramica')}
+                                    style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', zIndex: 10 }}
+                                />
+                                {state.fotos.panoramica ? (
+                                    <img src={state.fotos.panoramica.blobId} alt="Panorámica" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '8px' }} />
+                                ) : (
+                                    <>
+                                        <div className="pz-icon"><Camera size={24} /></div>
+                                        <div className="pz-label">Tocar</div>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+
+                        <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: '10px', color: 'var(--text3)', fontWeight: 'bold', marginBottom: '6px', textTransform: 'uppercase' }}>F. Tapa</div>
+                            <div className="photo-zone" style={{ height: '120px' }}>
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    capture="environment"
+                                    onChange={(e) => handlePhoto(e, 'tapa')}
+                                    style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', zIndex: 10 }}
+                                />
+                                {state.fotos.tapa ? (
+                                    <img src={state.fotos.tapa.blobId} alt="Tapa" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '8px' }} />
+                                ) : (
+                                    <>
+                                        <div className="pz-icon"><Camera size={24} /></div>
+                                        <div className="pz-label">Tocar</div>
+                                    </>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                {/* Photo Section */}
-                <div className="grid grid-cols-2 gap-4">
-                    {/* Panorámica */}
-                    <div className="space-y-2">
-                        <label className="text-[10px] text-gray-500 font-black uppercase tracking-widest">Panorámica</label>
-                        <div className="relative aspect-square rounded-2xl bg-[#1e293b]/50 border border-white/5 overflow-hidden flex items-center justify-center group">
-                            {state.fotos.panoramica ? (
-                                <img src={state.fotos.panoramica.blobId} className="w-full h-full object-cover" alt="Panorámica" />
-                            ) : (
-                                <Camera size={32} className="text-gray-600" />
-                            )}
-                            <input
-                                type="file"
-                                accept="image/*"
-                                capture="environment"
-                                className="absolute inset-0 opacity-0 cursor-pointer z-10"
-                                onChange={(e) => handlePhoto(e, 'panoramica')}
-                            />
-                            {state.fotos.panoramica && (
-                                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <ImageIcon size={24} />
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Tapa */}
-                    <div className="space-y-2">
-                        <label className="text-[10px] text-gray-500 font-black uppercase tracking-widest">F. Tapa</label>
-                        <div className="relative aspect-square rounded-2xl bg-[#1e293b]/50 border border-white/5 overflow-hidden flex items-center justify-center group">
-                            {state.fotos.tapa ? (
-                                <img src={state.fotos.tapa.blobId} className="w-full h-full object-cover" alt="Tapa" />
-                            ) : (
-                                <Camera size={32} className="text-gray-600" />
-                            )}
-                            <input
-                                type="file"
-                                accept="image/*"
-                                capture="environment"
-                                className="absolute inset-0 opacity-0 cursor-pointer z-10"
-                                onChange={(e) => handlePhoto(e, 'tapa')}
-                            />
-                            {state.fotos.tapa && (
-                                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <ImageIcon size={24} />
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
-
-            </div>
-
-            {/* Footer */}
-            <div className="p-4 border-t border-white/10 bg-[#0f172a]/80 backdrop-blur-md">
                 <button
-                    className={`btn-primary btn-full py-4 rounded-2xl font-black uppercase tracking-widest text-sm flex items-center justify-center gap-3 transition-all ${loading ? 'opacity-50' : 'active:scale-95'
-                        }`}
+                    className="btn btn-green btn-full"
                     onClick={handleSave}
                     disabled={loading}
+                    style={{ marginTop: '20px', marginBottom: '20px' }}
                 >
                     {loading ? (
-                        <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-white"></div>
+                        <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-black" style={{ display: 'inline-block' }}></div>
                     ) : (
                         <>
-                            <Save size={18} />
-                            Guardar Marcación
+                            <Save size={18} /> Guardar Marcación
                         </>
                     )}
                 </button>
