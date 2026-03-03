@@ -147,7 +147,7 @@ const MarcacionScreen: React.FC<{
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
                     <button
                         onClick={() => {
-                            const intent = "intent://#Intent;scheme=akasoGo;package=com.akaso.go;S.browser_fallback_url=https://play.google.com/store/apps/details?id=com.akaso.go;end";
+                            const intent = "intent://#Intent;package=com.cnest.motioncamera;S.browser_fallback_url=https://play.google.com/store/apps/details?id=com.cnest.motioncamera;end";
                             window.location.href = intent;
                         }}
                         className="btn btn-orange btn-sm"

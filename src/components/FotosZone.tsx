@@ -322,7 +322,7 @@ const FotosZone: React.FC<FotosZoneProps> = ({ pozoId, photos, pipes, sums, onAd
                 </div>
                 <button
                     onClick={() => {
-                        const intent = "intent://#Intent;scheme=akasoGo;package=com.akaso.go;S.browser_fallback_url=https://play.google.com/store/apps/details?id=com.akaso.go;end";
+                        const intent = "intent://#Intent;package=com.cnest.motioncamera;S.browser_fallback_url=https://play.google.com/store/apps/details?id=com.cnest.motioncamera;end";
                         window.location.href = intent;
                     }}
                     className="ml-auto flex items-center gap-2 bg-[#FF5722] hover:bg-[#E64A19] text-white text-[10px] font-bold py-1.5 px-3 rounded-full transition-all shadow-lg active:scale-95"
