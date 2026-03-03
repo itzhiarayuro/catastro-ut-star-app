@@ -620,76 +620,88 @@ const App: React.FC = () => {
     ═════════════════════════════════════ */
 
     const renderActivitySelect = () => (
-        <div id="sActivity" className={`screen ${activeScreen === 'sActivity' ? 'active' : ''}`} style={{ background: 'radial-gradient(circle at top right, #0f172a, #020617)' }}>
-            <div className="home-center" style={{ padding: '40px 20px' }}>
-                <div className="home-logo-container" style={{ margin: '0 auto 24px' }}>
-                    <img src="/logo-ut-star.png" alt="UT STAR Logo" className="home-logo-img" />
+        <div id="sActivity" className={`screen ${activeScreen === 'sActivity' ? 'active' : ''}`}
+            style={{
+                background: 'radial-gradient(circle at top right, #0f172a, #020617)',
+                justifyContent: 'center',
+                alignItems: 'center',
+                textAlign: 'center'
+            }}>
+            <div style={{ padding: '40px 20px', width: '100%', maxWidth: '500px', margin: '0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+
+                <div style={{ marginBottom: '24px' }}>
+                    <img src="/logo-ut-star.png" alt="UT STAR Logo" style={{ width: '80px', height: '80px', objectFit: 'contain', borderRadius: '20px', boxShadow: '0 8px 32px rgba(0,132,255,0.3)' }} />
                 </div>
 
-                <h2 className="text-white text-xl font-bold mb-2">Selección de Actividad</h2>
-                <p className="text-gray-400 text-xs mb-8">Selecciona el módulo para iniciar el trabajo de hoy</p>
+                <h2 style={{ color: 'white', fontSize: '22px', fontWeight: '800', marginBottom: '6px', fontFamily: "'Syne', sans-serif" }}>Selección de Actividad</h2>
+                <p style={{ color: 'var(--text3)', fontSize: '12px', marginBottom: '32px' }}>Selecciona el módulo para iniciar el trabajo de hoy</p>
 
-                <div className="grid gap-4 w-full">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', width: '100%' }}>
+                    {/* Investigación */}
                     <button
-                        className="activity-card group"
                         onClick={() => setActiveScreen('s0')}
                         style={{
-                            background: 'rgba(30, 41, 59, 0.5)',
-                            border: '1px solid rgba(255, 255, 255, 0.1)',
-                            borderRadius: '24px',
-                            padding: '24px',
+                            background: 'rgba(30, 41, 59, 0.6)',
+                            border: '1px solid rgba(59, 130, 246, 0.3)',
+                            borderRadius: '20px',
+                            padding: '22px 20px',
                             textAlign: 'left',
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '20px',
-                            transition: '0.3s'
+                            gap: '18px',
+                            cursor: 'pointer',
+                            transition: 'all 0.25s',
+                            boxShadow: '0 4px 24px rgba(59,130,246,0.1)',
+                            width: '100%'
                         }}
+                        onTouchStart={e => (e.currentTarget.style.transform = 'scale(0.97)')}
+                        onTouchEnd={e => (e.currentTarget.style.transform = 'scale(1)')}
                     >
-                        <div style={{ background: 'linear-gradient(135deg, #3b82f6, #2563eb)', padding: '16px', borderRadius: '18px', color: 'white' }}>
-                            <Search size={28} />
+                        <div style={{ background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)', padding: '14px', borderRadius: '14px', color: 'white', flexShrink: 0 }}>
+                            <Search size={26} />
                         </div>
                         <div>
-                            <div className="text-white font-bold text-lg">Actividad Investigación</div>
-                            <div className="text-blue-400 text-[10px] font-black uppercase tracking-widest mt-1">Catastro & Alcantarillado</div>
+                            <div style={{ color: 'white', fontWeight: '700', fontSize: '16px', fontFamily: "'Syne', sans-serif" }}>Actividad Investigación</div>
+                            <div style={{ color: '#60a5fa', fontSize: '10px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '1.5px', marginTop: '4px' }}>Catastro &amp; Alcantarillado</div>
                         </div>
-                        <ChevronRight className="ml-auto text-gray-600 group-hover:text-white transition-colors" />
+                        <ChevronRight style={{ marginLeft: 'auto', color: 'rgba(255,255,255,0.3)' }} />
                     </button>
 
+                    {/* Marcación */}
                     <button
-                        className="activity-card group"
                         onClick={() => setActiveScreen('sMarcacion')}
                         style={{
-                            background: 'rgba(30, 41, 59, 0.5)',
-                            border: '1px solid rgba(255, 255, 255, 0.1)',
-                            borderRadius: '24px',
-                            padding: '24px',
+                            background: 'rgba(30, 41, 59, 0.6)',
+                            border: '1px solid rgba(245, 158, 11, 0.3)',
+                            borderRadius: '20px',
+                            padding: '22px 20px',
                             textAlign: 'left',
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '20px',
-                            transition: '0.3s'
+                            gap: '18px',
+                            cursor: 'pointer',
+                            transition: 'all 0.25s',
+                            boxShadow: '0 4px 24px rgba(245,158,11,0.1)',
+                            width: '100%'
                         }}
+                        onTouchStart={e => (e.currentTarget.style.transform = 'scale(0.97)')}
+                        onTouchEnd={e => (e.currentTarget.style.transform = 'scale(1)')}
                     >
-                        <div style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)', padding: '16px', borderRadius: '18px', color: 'white' }}>
-                            <Flag size={28} />
+                        <div style={{ background: 'linear-gradient(135deg, #f59e0b, #b45309)', padding: '14px', borderRadius: '14px', color: 'white', flexShrink: 0 }}>
+                            <Flag size={26} />
                         </div>
                         <div>
-                            <div className="text-white font-bold text-lg">Actividad Marcación</div>
-                            <div className="text-amber-400 text-[10px] font-black uppercase tracking-widest mt-1">Georreferenciación en Campo</div>
+                            <div style={{ color: 'white', fontWeight: '700', fontSize: '16px', fontFamily: "'Syne', sans-serif" }}>Actividad Marcación</div>
+                            <div style={{ color: '#fbbf24', fontSize: '10px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '1.5px', marginTop: '4px' }}>Georreferenciación en Campo</div>
                         </div>
-                        <ChevronRight className="ml-auto text-gray-600 group-hover:text-white transition-colors" />
+                        <ChevronRight style={{ marginLeft: 'auto', color: 'rgba(255,255,255,0.3)' }} />
                     </button>
                 </div>
 
-                <div className="mt-12 text-[10px] text-gray-500 uppercase font-bold tracking-widest">
-                    Operario: {user?.name}
+                <div style={{ marginTop: '36px', fontSize: '10px', color: 'var(--text3)', textTransform: 'uppercase', fontWeight: '700', letterSpacing: '1.5px' }}>
+                    Operario: {user?.name || user?.email}
                 </div>
             </div>
-
-            <style>{`
-                .activity-card:active { transform: scale(0.98); background: rgba(30, 41, 59, 0.8) !important; }
-                .activity-card:hover { border-color: rgba(255, 255, 255, 0.3) !important; }
-            `}</style>
         </div>
     );
 
