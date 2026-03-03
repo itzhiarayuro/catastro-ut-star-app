@@ -268,7 +268,7 @@ const PhotoSection: React.FC<{
                     <input
                         type="file"
                         accept="image/*"
-                        capture="environment"
+
                         onChange={handleCapture}
                         className="absolute inset-0 opacity-0 cursor-pointer z-10"
                     />

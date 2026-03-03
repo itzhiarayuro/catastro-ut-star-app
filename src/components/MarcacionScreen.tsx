@@ -215,7 +215,7 @@ const MarcacionScreen: React.FC<{
                                 <input
                                     type="file"
                                     accept="image/*"
-                                    capture="environment"
+
                                     onChange={(e) => handlePhoto(e, 'panoramica')}
                                     style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', zIndex: 10 }}
                                 />
@@ -236,7 +236,7 @@ const MarcacionScreen: React.FC<{
                                 <input
                                     type="file"
                                     accept="image/*"
-                                    capture="environment"
+
                                     onChange={(e) => handlePhoto(e, 'tapa')}
                                     style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', zIndex: 10 }}
                                 />

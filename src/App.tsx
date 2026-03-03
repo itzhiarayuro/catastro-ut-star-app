@@ -2190,7 +2190,7 @@ const PhotoZone: React.FC<{ label: string; icon: React.ReactNode; photos: string
                 <span className="text-[9px] text-blue-400 font-mono">Cola Drive: ☁ Sincronizando...</span>
             </div>
             <div className="photo-zone">
-                <input type="file" accept="image/*" capture="environment" onChange={handleFile} />
+                <input type="file" accept="image/*" onChange={handleFile} />
                 <div className="pz-icon">{icon}</div>
                 <div className="pz-label">Tocar para Captura</div>
             </div>
