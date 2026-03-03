@@ -36,118 +36,169 @@ export async function getTile(key: string): Promise<Blob | null> {
     });
 }
 
+const OfflineAreaCard: React.FC<{
+    title: string,
+    desc: string,
+    size: string,
+    icon: string,
+    onClick: () => void,
+    disabled?: boolean
+}> = ({ title, desc, size, icon, onClick, disabled }) => (
+    <button
+        onClick={onClick}
+        disabled={disabled}
+        className={`w-full p-4 rounded-2xl border transition-all text-left flex items-center gap-4 ${disabled ? 'opacity-50 cursor-not-allowed bg-white/5 border-white/5' : 'bg-white/5 border-white/10 hover:border-blue-500/50 hover:bg-white/[0.08] active:scale-[0.98]'
+            }`}
+    >
+        <div className="text-2xl">{icon}</div>
+        <div className="flex-1">
+            <div className="text-white font-bold text-sm tracking-tight">{title}</div>
+            <div className="text-[10px] text-gray-400 mt-0.5 leading-snug">{desc}</div>
+        </div>
+        <div className="text-[10px] font-mono font-bold text-blue-400 bg-blue-400/10 px-2 py-1 rounded-md">{size}</div>
+    </button>
+);
+
 const OfflineMapManager: React.FC<{
     center: { lat: number, lng: number };
     onClose: () => void;
 }> = ({ center, onClose }) => {
     const [status, setStatus] = useState<'idle' | 'downloading' | 'done' | 'error'>('idle');
     const [progress, setProgress] = useState(0);
-    const [total, setTotal] = useState(0);
+    const [currentAction, setCurrentAction] = useState('');
 
-    const downloadArea = async (radiusKm: number) => {
+    const downloadRange = async (rangeType: 'focus' | 'area' | 'urban') => {
         setStatus('downloading');
         setProgress(0);
 
-        // OSM Tiling logic simplified for 1km area at zoom 17-19
-        const zooms = [17, 18, 19];
+        const config = {
+            focus: { zooms: [17, 18, 19], grid: 2, label: 'Foco (Detalle alto)' },
+            area: { zooms: [15, 16, 17, 18], grid: 5, label: 'Área (5km apróx)' },
+            urban: { zooms: [13, 14, 15, 16], grid: 10, label: 'Zona Urbana (Municipio)' }
+        }[rangeType];
+
+        setCurrentAction(config.label);
+
         const tilesToDownload: { z: number, x: number, y: number }[] = [];
 
-        zooms.forEach(z => {
-            const x = Math.floor((center.lng + 180) / 360 * Math.pow(2, z));
-            const y = Math.floor((1 - Math.log(Math.tan(center.lat * Math.PI / 180) + 1 / Math.cos(center.lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, z));
+        config.zooms.forEach(z => {
+            const xCenter = Math.floor((center.lng + 180) / 360 * Math.pow(2, z));
+            const yCenter = Math.floor((1 - Math.log(Math.tan(center.lat * Math.PI / 180) + 1 / Math.cos(center.lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, z));
 
-            // Download a 5x5 grid around center
-            for (let dx = -2; dx <= 2; dx++) {
-                for (let dy = -2; dy <= 2; dy++) {
-                    tilesToDownload.push({ z, x: x + dx, y: y + dy });
+            for (let dx = -config.grid; dx <= config.grid; dx++) {
+                for (let dy = -config.grid; dy <= config.grid; dy++) {
+                    tilesToDownload.push({ z, x: xCenter + dx, y: yCenter + dy });
                 }
             }
         });
 
-        setTotal(tilesToDownload.length);
         let count = 0;
+        const total = tilesToDownload.length;
 
-        for (const tile of tilesToDownload) {
-            const key = `osm_${tile.z}_${tile.x}_${tile.y}`;
-            try {
-                const res = await fetch(`https://tile.openstreetmap.org/${tile.z}/${tile.x}/${tile.y}.png`);
-                if (res.ok) {
-                    const blob = await res.blob();
-                    await saveTile(key, blob);
+        // Download in chunks of 5 to avoid browser throttling
+        const CHUNK_SIZE = 5;
+        for (let i = 0; i < tilesToDownload.length; i += CHUNK_SIZE) {
+            const chunk = tilesToDownload.slice(i, i + CHUNK_SIZE);
+            await Promise.all(chunk.map(async (tile) => {
+                const key = `osm_${tile.z}_${tile.x}_${tile.y}`;
+                try {
+                    const res = await fetch(`https://tile.openstreetmap.org/${tile.z}/${tile.x}/${tile.y}.png`);
+                    if (res.ok) {
+                        const blob = await res.blob();
+                        await saveTile(key, blob);
+                    }
+                } catch (e) {
+                    console.error("Error tile:", tile, e);
                 }
-            } catch (e) {
-                console.error("Error downloading tile", tile, e);
-            }
-            count++;
-            setProgress(Math.round((count / tilesToDownload.length) * 100));
+                count++;
+                setProgress(Math.round((count / total) * 100));
+            }));
         }
 
         setStatus('done');
     };
 
     return (
-        <div className="fixed inset-0 z-[10000] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-[#0d1117] border border-white/10 rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200">
-                <div className="flex justify-between items-center mb-6">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center border border-blue-500/20">
-                            <Download className="text-blue-400" size={20} />
-                        </div>
-                        <h2 className="text-lg font-bold text-white">Descargar Mapa</h2>
+        <div className="fixed inset-0 z-[10000] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+            <div className="bg-[#0d1117] border border-white/10 rounded-[32px] p-8 w-full max-w-sm shadow-2xl relative overflow-hidden">
+                {/* Background Decoration */}
+                <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 blur-3xl rounded-full -mr-16 -mt-16"></div>
+
+                <div className="flex justify-between items-start mb-8 relative z-10">
+                    <div>
+                        <h2 className="text-2xl font-black text-white leading-tight">Mapas<br /><span className="text-blue-500">Offline</span></h2>
+                        <p className="text-gray-500 text-[11px] mt-2 uppercase font-bold tracking-widest">Configuración de zona</p>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-full text-gray-500"><X size={20} /></button>
+                    <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-full text-gray-500 transition-colors">
+                        <X size={24} />
+                    </button>
                 </div>
 
-                <div className="space-y-4">
-                    <p className="text-gray-400 text-xs leading-relaxed">
-                        Se descargarán las capas de calles (**OpenStreetMap**) para el área actual en la que te encuentras ({center.lat.toFixed(4)}, {center.lng.toFixed(4)}).
-                    </p>
-
+                <div className="relative z-10">
                     {status === 'idle' && (
-                        <div className="grid grid-cols-2 gap-3">
-                            <button
-                                onClick={() => downloadArea(1)}
-                                className="p-4 rounded-2xl bg-white/5 border border-white/10 hover:border-blue-500/50 transition-all text-center group"
-                            >
-                                <div className="text-white font-bold text-sm">Área 1km</div>
-                                <div className="text-[9px] text-gray-500 uppercase mt-1">Niveles 17-19</div>
-                            </button>
-                            <button
-                                onClick={onClose}
-                                className="p-4 rounded-2xl bg-[#161b22] border border-white/5 hover:bg-white/5 transition-all text-center"
-                            >
-                                <div className="text-gray-400 font-bold text-sm">Cancelar</div>
-                            </button>
+                        <div className="space-y-3">
+                            <OfflineAreaCard
+                                icon="🎯"
+                                title="Foco Detallado"
+                                desc="Máximo detalle en el punto actual. Ideal para inspección precisa."
+                                size="~5MB"
+                                onClick={() => downloadRange('focus')}
+                            />
+                            <OfflineAreaCard
+                                icon="🗺️"
+                                title="Área de Trabajo"
+                                desc="Cubre unos 5km alrededor. Balance entre peso y cobertura."
+                                size="~25MB"
+                                onClick={() => downloadRange('area')}
+                            />
+                            <OfflineAreaCard
+                                icon="🏙️"
+                                title="Zona Urbana"
+                                desc="Mapa base de gran parte del municipio. Nivel calle general."
+                                size="~60MB"
+                                onClick={() => downloadRange('urban')}
+                            />
+
+                            <div className="mt-8 p-4 bg-amber-500/5 border border-amber-500/10 rounded-2xl flex gap-3">
+                                <ShieldAlert className="text-amber-500 shrink-0" size={18} />
+                                <p className="text-[10px] text-amber-200/60 leading-normal">
+                                    Los mapas permanecerán en el dispositivo incluso sin internet. Recomendado descargar vía Wi-Fi.
+                                </p>
+                            </div>
                         </div>
                     )}
 
                     {status === 'downloading' && (
-                        <div className="space-y-3 py-4">
-                            <div className="flex justify-between text-[10px] font-black uppercase text-blue-400 tracking-widest">
-                                <span>Descargando Tiles...</span>
-                                <span>{progress}%</span>
+                        <div className="py-12 flex flex-col items-center text-center">
+                            <div className="relative w-24 h-24 mb-6">
+                                <svg className="w-full h-full" viewBox="0 0 100 100">
+                                    <circle className="text-white/5 stroke-current" strokeWidth="6" cx="50" cy="50" r="40" fill="transparent"></circle>
+                                    <circle className="text-blue-500 stroke-current transition-all duration-300" strokeWidth="6" strokeLinecap="round" cx="50" cy="50" r="40" fill="transparent"
+                                        strokeDasharray={`${progress * 2.51} 251`}
+                                        transform="rotate(-90 50 50)"
+                                    ></circle>
+                                </svg>
+                                <div className="absolute inset-0 flex items-center justify-center font-black text-white text-lg font-mono">
+                                    {progress}%
+                                </div>
                             </div>
-                            <div className="w-full bg-white/5 h-2 rounded-full overflow-hidden">
-                                <div className="bg-blue-500 h-full transition-all duration-300" style={{ width: `${progress}%` }} />
-                            </div>
-                            <p className="text-[9px] text-gray-500 text-center uppercase tracking-tighter">Guardando en base de datos local (IndexedDB)</p>
+                            <h3 className="text-white font-bold mb-1">Descargando Paquete</h3>
+                            <p className="text-blue-400 text-[10px] font-bold uppercase tracking-widest animate-pulse">{currentAction}</p>
                         </div>
                     )}
 
                     {status === 'done' && (
-                        <div className="flex flex-col items-center gap-3 py-4">
-                            <div className="w-12 h-12 rounded-full bg-green-500/10 flex items-center justify-center border border-green-500/20">
-                                <CheckCircle2 className="text-green-500" size={24} />
+                        <div className="py-8 text-center">
+                            <div className="w-20 h-20 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-6 border border-green-500/20">
+                                <CheckCircle2 className="text-green-500" size={32} />
                             </div>
-                            <div className="text-center">
-                                <div className="text-white font-bold text-sm">Descarga Completada</div>
-                                <p className="text-[10px] text-gray-500 mt-1 uppercase">Mapa offline listo para usar</p>
-                            </div>
+                            <h3 className="text-white font-bold text-lg mb-2">Mapa Listo</h3>
+                            <p className="text-gray-400 text-xs mb-8">La zona ha sido guardada satisfactoriamente en la base de datos local.</p>
                             <button
                                 onClick={onClose}
-                                className="mt-4 w-full py-3 bg-blue-600 rounded-xl text-white font-bold text-xs"
+                                className="w-full py-4 bg-gradient-to-r from-blue-600 to-blue-700 rounded-2xl text-white font-bold shadow-xl shadow-blue-900/20 active:scale-95 transition-all"
                             >
-                                CONTINUAR
+                                CONTINUAR TRABAJO
                             </button>
                         </div>
                     )}
