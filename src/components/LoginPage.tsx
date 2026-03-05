@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../lib/firebase';
-import { Shield, Lock, Mail, ChevronRight, AlertCircle, LogIn } from 'lucide-react';
+import { Shield, Lock, Mail, ChevronRight, AlertCircle, LogIn, Eye, EyeOff } from 'lucide-react';
 
 const LoginPage: React.FC = () => {
     const { login } = useAuth();
@@ -10,6 +10,7 @@ const LoginPage: React.FC = () => {
 
     const [email, setEmail] = useState('');
     const [pin, setPin] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -71,11 +72,20 @@ const LoginPage: React.FC = () => {
                         <div className="input-with-icon">
                             <Lock size={16} />
                             <input
-                                type="password"
+                                type={showPassword ? "text" : "password"}
                                 placeholder="Tu contraseña..."
                                 value={pin}
                                 onChange={(e) => setPin(e.target.value)}
+                                style={{ paddingRight: '44px' }}
                             />
+                            <button
+                                type="button"
+                                className="toggle-password"
+                                onClick={() => setShowPassword(!showPassword)}
+                                tabIndex={-1}
+                            >
+                                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                            </button>
                         </div>
                     </div>
 
@@ -207,6 +217,24 @@ const LoginPage: React.FC = () => {
                 .input-with-icon input:focus {
                     border-color: #3b82f6;
                     background: rgba(15, 23, 42, 0.8);
+                }
+
+                .toggle-password {
+                    position: absolute;
+                    right: 12px;
+                    background: none;
+                    border: none;
+                    color: #64748b;
+                    cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 4px;
+                    transition: 0.2s;
+                }
+
+                .toggle-password:hover {
+                    color: #94a3b8;
                 }
 
                 .btn-primary {

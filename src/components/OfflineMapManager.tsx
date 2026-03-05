@@ -67,14 +67,15 @@ const OfflineMapManager: React.FC<{
     const [progress, setProgress] = useState(0);
     const [currentAction, setCurrentAction] = useState('');
 
-    const downloadRange = async (rangeType: 'focus' | 'area' | 'urban') => {
+    const downloadRange = async (rangeType: 'focus' | 'area' | 'urban' | 'regional') => {
         setStatus('downloading');
         setProgress(0);
 
         const config = {
-            focus: { zooms: [17, 18, 19], grid: 2, label: 'Foco (Detalle alto)' },
-            area: { zooms: [15, 16, 17, 18], grid: 5, label: 'Área (5km apróx)' },
-            urban: { zooms: [13, 14, 15, 16], grid: 10, label: 'Zona Urbana (Municipio)' }
+            focus: { zooms: [17, 18, 19], grid: 2, label: 'FOCO (1km) - Detalle Máximo' },
+            area: { zooms: [15, 16, 17, 18], grid: 6, label: 'ZONA (5-7km) - Detalle Alto' },
+            urban: { zooms: [13, 14, 15, 16], grid: 12, label: 'MUNICIPIO (12-15km) - Nivel Calle' },
+            regional: { zooms: [11, 12, 13, 14, 15], grid: 22, label: 'REGIONAL (20-25km) - Mapa Base' }
         }[rangeType];
 
         setCurrentAction(config.label);
@@ -102,6 +103,13 @@ const OfflineMapManager: React.FC<{
             await Promise.all(chunk.map(async (tile) => {
                 const key = `osm_${tile.z}_${tile.x}_${tile.y}`;
                 try {
+                    // Evitar redundancia
+                    const existing = await getTile(key);
+                    if (existing) {
+                        count++;
+                        return;
+                    }
+
                     const res = await fetch(`https://tile.openstreetmap.org/${tile.z}/${tile.x}/${tile.y}.png`);
                     if (res.ok) {
                         const blob = await res.blob();
@@ -113,6 +121,9 @@ const OfflineMapManager: React.FC<{
                 count++;
                 setProgress(Math.round((count / total) * 100));
             }));
+
+            // Pequeña pausa para UI fluida
+            if (i % (CHUNK_SIZE * 5) === 0) await new Promise(r => setTimeout(r, 40));
         }
 
         setStatus('done');
@@ -124,10 +135,10 @@ const OfflineMapManager: React.FC<{
                 {/* Background Decoration */}
                 <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 blur-3xl rounded-full -mr-16 -mt-16"></div>
 
-                <div className="flex justify-between items-start mb-8 relative z-10">
+                <div className="flex justify-between items-start mb-6 relative z-10">
                     <div>
                         <h2 className="text-2xl font-black text-white leading-tight">Mapas<br /><span className="text-blue-500">Offline</span></h2>
-                        <p className="text-gray-500 text-[11px] mt-2 uppercase font-bold tracking-widest">Configuración de zona</p>
+                        <p className="text-gray-500 text-[10px] mt-2 uppercase font-bold tracking-widest">Preparar carga para el campo</p>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-full text-gray-500 transition-colors">
                         <X size={24} />
@@ -137,32 +148,43 @@ const OfflineMapManager: React.FC<{
                 <div className="relative z-10">
                     {status === 'idle' && (
                         <div className="space-y-3">
+                            <p className="text-[11px] text-blue-300 font-bold mb-4 bg-blue-500/10 p-3 rounded-xl border border-blue-500/20">
+                                ℹ️ El mapa se descargará tomando como centro el punto que estás viendo actualmente.
+                            </p>
+
                             <OfflineAreaCard
                                 icon="🎯"
-                                title="Foco Detallado"
-                                desc="Máximo detalle en el punto actual. Ideal para inspección precisa."
+                                title="Foco (Radio 1km)"
+                                desc="Detalle máximo de todos los pozos y calles. Ideal para una inspección precisa."
                                 size="~5MB"
                                 onClick={() => downloadRange('focus')}
                             />
                             <OfflineAreaCard
                                 icon="🗺️"
-                                title="Área de Trabajo"
-                                desc="Cubre unos 5km alrededor. Balance entre peso y cobertura."
-                                size="~25MB"
+                                title="Área de Trabajo (Radio 5km)"
+                                desc="Cubre el área inmediata con detalle alto. Balance óptimo."
+                                size="~30MB"
                                 onClick={() => downloadRange('area')}
                             />
                             <OfflineAreaCard
                                 icon="🏙️"
-                                title="Zona Urbana"
-                                desc="Mapa base de gran parte del municipio. Nivel calle general."
-                                size="~60MB"
+                                title="Municipio Completo (+12km)"
+                                desc="Toda la zona urbana del municipio con detalle nivel calle."
+                                size="~85MB"
                                 onClick={() => downloadRange('urban')}
+                            />
+                            <OfflineAreaCard
+                                icon="🌎"
+                                title="Mapa Regional (20km+)"
+                                desc="Cubre toda la ciudad y alrededores. Ideal para recorridos largos."
+                                size="~160MB"
+                                onClick={() => downloadRange('regional')}
                             />
 
                             <div className="mt-8 p-4 bg-amber-500/5 border border-amber-500/10 rounded-2xl flex gap-3">
                                 <ShieldAlert className="text-amber-500 shrink-0" size={18} />
                                 <p className="text-[10px] text-amber-200/60 leading-normal">
-                                    Los mapas permanecerán en el dispositivo incluso sin internet. Recomendado descargar vía Wi-Fi.
+                                    Los mapas se guardan localmente para usarse sin internet. Se recomienda descargar vía Wi-Fi.
                                 </p>
                             </div>
                         </div>
@@ -178,12 +200,13 @@ const OfflineMapManager: React.FC<{
                                         transform="rotate(-90 50 50)"
                                     ></circle>
                                 </svg>
-                                <div className="absolute inset-0 flex items-center justify-center font-black text-white text-lg font-mono">
+                                <div className="absolute inset-0 flex items-center justify-center font-black text-white text-base font-mono">
                                     {progress}%
                                 </div>
                             </div>
-                            <h3 className="text-white font-bold mb-1">Descargando Paquete</h3>
+                            <h3 className="text-white font-bold mb-1">Descargando Azulejos</h3>
                             <p className="text-blue-400 text-[10px] font-bold uppercase tracking-widest animate-pulse">{currentAction}</p>
+                            <p className="text-gray-500 text-[9px] mt-4 px-4 leading-relaxed italic">Esto permitirá usar el mapa en zonas sin cobertura 4G.</p>
                         </div>
                     )}
 
@@ -192,13 +215,13 @@ const OfflineMapManager: React.FC<{
                             <div className="w-20 h-20 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-6 border border-green-500/20">
                                 <CheckCircle2 className="text-green-500" size={32} />
                             </div>
-                            <h3 className="text-white font-bold text-lg mb-2">Mapa Listo</h3>
-                            <p className="text-gray-400 text-xs mb-8">La zona ha sido guardada satisfactoriamente en la base de datos local.</p>
+                            <h3 className="text-white font-bold text-lg mb-2">Descarga Exitosa</h3>
+                            <p className="text-gray-400 text-xs mb-8">El área seleccionada ha sido guardada en la base de datos local satisfactoriamente.</p>
                             <button
                                 onClick={onClose}
                                 className="w-full py-4 bg-gradient-to-r from-blue-600 to-blue-700 rounded-2xl text-white font-bold shadow-xl shadow-blue-900/20 active:scale-95 transition-all"
                             >
-                                CONTINUAR TRABAJO
+                                ENTENDIDO
                             </button>
                         </div>
                     )}

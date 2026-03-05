@@ -45,27 +45,55 @@ const MapasScreen: React.FC<{
 }> = ({ onEditFicha, onBack }) => {
     const map = useMap();
     const [fichas, setFichas] = useState<FichaMapItem[]>([]);
+    const [marcaciones, setMarcaciones] = useState<any[]>([]);
+    const [viewMode, setViewMode] = useState<'investigacion' | 'marcacion'>('investigacion');
     const [selectedFicha, setSelectedFicha] = useState<FichaMapItem | null>(null);
     const [mapType, setMapType] = useState<'hybrid' | 'roadmap' | 'bing' | 'osm'>('hybrid');
-    const [center, setCenter] = useState({ lat: 6.244, lng: -75.581 }); // Un centro más neutro si falla (Medellín)
+    const [zoom, setZoom] = useState(15);
+    const [center, setCenter] = useState({ lat: 6.244, lng: -75.581 });
     const [userPos, setUserPos] = useState<{ lat: number; lng: number } | null>(null);
     const [isLocating, setIsLocating] = useState(false);
     const [initialCenterDone, setInitialCenterDone] = useState(false);
     const [showOfflineManager, setShowOfflineManager] = useState(false);
-
     const [mapReady, setMapReady] = useState(false);
 
+    // Simple OSM Layer using Native Google Maps TileLayer
+    const OSMLayer = ({ active }: { active: boolean }) => {
+        const map = useMap();
+        useEffect(() => {
+            if (!map) return;
+            const osmMapType = new google.maps.ImageMapType({
+                getTileUrl: (coord, zoom) => `https://tile.openstreetmap.org/${zoom}/${coord.x}/${coord.y}.png`,
+                tileSize: new google.maps.Size(256, 256),
+                name: 'OpenStreetMap',
+                maxZoom: 19
+            });
+            if (active) {
+                map.overlayMapTypes.insertAt(0, osmMapType);
+            } else {
+                map.overlayMapTypes.forEach((mt, i) => {
+                    if (mt?.name === 'OpenStreetMap') map.overlayMapTypes.removeAt(i);
+                });
+            }
+            return () => {
+                map.overlayMapTypes.forEach((mt, i) => {
+                    if (mt?.name === 'OpenStreetMap') map.overlayMapTypes.removeAt(i);
+                });
+            };
+        }, [map, active]);
+        return null;
+    };
+
     useEffect(() => {
-        const q = query(collection(db, 'fichas'));
-        const unsubscribe = onSnapshot(q, (snapshot) => {
+        // Fetch Fichas
+        const qFichas = query(collection(db, 'fichas'));
+        const unsubFichas = onSnapshot(qFichas, (snapshot) => {
             const items = snapshot.docs
                 .map(doc => {
                     const data = doc.data();
                     const lat = data.gps?.lat || data.header?.gps?.lat;
                     const lng = data.gps?.lng || data.header?.gps?.lng;
-
                     if (!lat || !lng) return null;
-
                     return {
                         id: doc.id,
                         pozo: data.pozo || data.header?.pozoNo || 'S/N',
@@ -77,55 +105,38 @@ const MapasScreen: React.FC<{
                     };
                 })
                 .filter(item => item !== null) as FichaMapItem[];
-
             setFichas(items);
             if (items.length > 0 && !userPos && !initialCenterDone) {
                 setCenter(items[0].gps);
             }
         });
 
-        // Eliminamos el inicio automático del GPS para evitar la violación de "User Gesture"
-        /*
-        let watchId: number;
-        if ("geolocation" in navigator) {
-            setIsLocating(true);
-            watchId = navigator.geolocation.watchPosition(
-                (pos) => {
-                    const newPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-                    setUserPos(newPos);
-                    setIsLocating(false);
-                    if (!initialCenterDone) {
-                        setCenter(newPos);
-                        setInitialCenterDone(true);
-                    }
-                },
-                (err) => {
-                    console.error("Error obteniendo ubicación:", err);
-                    setIsLocating(false);
-                },
-                { enableHighAccuracy: true, maximumAge: 10000, timeout: 10000 }
-            );
-        }
-        */
+        // Fetch Marcaciones
+        const qMarc = query(collection(db, 'marcaciones'));
+        const unsubMarc = onSnapshot(qMarc, (snapshot) => {
+            const items = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+            setMarcaciones(items);
+        });
 
-        // Forzar renderizado
         const timer = setTimeout(() => {
             window.dispatchEvent(new Event('resize'));
             setMapReady(true);
         }, 1500);
 
         return () => {
-            unsubscribe();
-            // if (watchId) navigator.geolocation.clearWatch(watchId);
+            unsubFichas();
+            unsubMarc();
             clearTimeout(timer);
         };
     }, [initialCenterDone]);
 
-    // Efecto para centrar cuando el mapa esté listo
     useEffect(() => {
         if (map && userPos && !initialCenterDone) {
             map.panTo(userPos);
-            map.setZoom(18);
+            setZoom(18);
             setInitialCenterDone(true);
         }
     }, [map, userPos, initialCenterDone]);
@@ -133,7 +144,7 @@ const MapasScreen: React.FC<{
     const handleCenterMap = () => {
         if (userPos && map) {
             map.panTo(userPos);
-            map.setZoom(18);
+            setZoom(18);
         } else {
             setIsLocating(true);
             navigator.geolocation.getCurrentPosition(
@@ -142,7 +153,7 @@ const MapasScreen: React.FC<{
                     setUserPos(newPos);
                     if (map) {
                         map.panTo(newPos);
-                        map.setZoom(18);
+                        setZoom(18);
                     }
                     setIsLocating(false);
                 },
@@ -163,8 +174,7 @@ const MapasScreen: React.FC<{
     };
 
     return (
-        <div
-            style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: '60px', zIndex: 1000, background: '#010409' }}>
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: '60px', zIndex: 1000, background: '#010409' }}>
 
             {/* Header del Mapa */}
             <div className="absolute top-4 left-4 right-4 z-[1010] flex flex-col gap-2">
@@ -176,59 +186,74 @@ const MapasScreen: React.FC<{
                         >
                             <ChevronLeft className="w-4 h-4" />
                         </button>
-                        <div className="w-8 h-8 rounded-xl bg-blue-500/20 flex items-center justify-center border border-blue-500/30">
-                            <MapPin className="w-4 h-4 text-blue-400" />
-                        </div>
                         <div>
-                            <h2 className="text-white text-sm font-bold tracking-tight">Mapa Georeferenciado</h2>
-                            <p className="text-[10px] text-gray-500 uppercase font-black flex items-center gap-1">
+                            <h2 className="text-white text-[13px] font-black tracking-tight uppercase">
+                                {viewMode === 'investigacion' ? 'Mapa Investigación' : 'Mapa Marcación'}
+                            </h2>
+                            <p className="text-[9px] text-gray-500 uppercase font-black flex items-center gap-1">
                                 <span className="w-1 h-1 rounded-full bg-green-500 animate-pulse" />
-                                {fichas.length} Puntos en tiempo real
+                                {viewMode === 'investigacion' ? fichas.length : marcaciones.length} Puntos Activos
                             </p>
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5">
+                        {/* BOTÓN DESCARGA MEJORADO */}
                         <button
                             onClick={() => setShowOfflineManager(true)}
-                            className="p-2.5 rounded-xl bg-blue-600/10 border border-blue-600/20 text-blue-400 hover:bg-blue-600/20 transition-colors shadow-lg flex items-center justify-center"
-                            title="Descargar área offline"
+                            className="flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-600 border border-blue-400 text-white hover:bg-blue-500 transition-all shadow-lg active:scale-95"
                         >
-                            <Download className="w-4 h-4" />
+                            <Download className="w-3.5 h-3.5" />
+                            <span className="text-[10px] font-black uppercase tracking-wider">OFFLINE</span>
                         </button>
+
                         <button
                             onClick={() => {
                                 const types: ('hybrid' | 'roadmap' | 'bing' | 'osm')[] = ['hybrid', 'roadmap', 'bing', 'osm'];
                                 const idx = types.indexOf(mapType);
                                 setMapType(types[(idx + 1) % types.length]);
                             }}
-                            className="px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 transition-colors shadow-lg flex items-center justify-center gap-2 min-w-[100px]"
+                            className="p-2 rounded-xl bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 transition-colors shadow-lg flex items-center justify-center"
                         >
                             <Layers className="w-4 h-4" />
-                            <span className="text-[10px] font-bold uppercase tracking-widest">
-                                {mapType === 'hybrid' ? 'Satélite' :
-                                    mapType === 'roadmap' ? 'Calles' :
-                                        mapType === 'bing' ? 'Bing Sat' : 'Offline'}
-                            </span>
                         </button>
                     </div>
                 </div>
+
+                {/* SELECTOR DE ACTIVIDAD (Uno cada uno) */}
+                <div className="flex bg-[#161b22]/80 backdrop-blur-sm border border-white/5 rounded-xl p-1 self-start ml-1">
+                    <button
+                        onClick={() => setViewMode('investigacion')}
+                        className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${viewMode === 'investigacion' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-500 hover:text-gray-300'}`}
+                    >
+                        Investigación
+                    </button>
+                    <button
+                        onClick={() => setViewMode('marcacion')}
+                        className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${viewMode === 'marcacion' ? 'bg-amber-600 text-white shadow-lg' : 'text-gray-500 hover:text-gray-300'}`}
+                    >
+                        Marcación
+                    </button>
+                </div>
             </div>
+
 
             {/* Google Maps Container - posición absoluta para cubrir todo */}
             <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
                 <Map
                     center={center}
                     onCenterChanged={(ev) => setCenter(ev.detail.center)}
+                    zoom={zoom}
+                    onZoomChanged={(ev) => setZoom(ev.detail.zoom)}
                     onTilesLoaded={() => setMapReady(true)}
-                    defaultZoom={15}
                     mapId={MAP_ID}
-                    mapTypeId={mapType === 'bing' ? 'hybrid' : mapType}
+                    mapTypeId={['hybrid', 'roadmap', 'satellite', 'terrain'].includes(mapType) ? mapType as any : 'roadmap'}
                     disableDefaultUI={true}
                     gestureHandling={'greedy'}
                     style={{ width: '100%', height: '100%' }}
                 >
                     <BingLayer active={mapType === 'bing'} defaultType={mapType === 'bing' ? 'hybrid' : mapType} />
+                    <OSMLayer active={mapType === 'osm'} />
 
                     {/* Marcador de Ubicación del Usuario (Punto Azul) */}
                     {userPos && (
@@ -240,13 +265,13 @@ const MapasScreen: React.FC<{
                         </AdvancedMarker>
                     )}
 
-                    {fichas.map(ficha => (
+                    {/* Marcadores de Investigación (Fichas) */}
+                    {viewMode === 'investigacion' && fichas.map(ficha => (
                         <AdvancedMarker
                             key={ficha.id}
                             position={ficha.gps}
                             onClick={() => setSelectedFicha(ficha)}
                         >
-                            {/* Custom pin marker - avoids deprecated <gmp-pin> element warning */}
                             <div
                                 style={{
                                     width: '30px',
@@ -257,7 +282,6 @@ const MapasScreen: React.FC<{
                                     transform: 'translate(0, -50%)'
                                 }}
                             >
-                                {/* Pin body (SVG) */}
                                 <svg viewBox="0 0 30 42" width="30" height="42" xmlns="http://www.w3.org/2000/svg">
                                     <path
                                         d="M15 0C6.716 0 0 6.716 0 15c0 10.5 15 27 15 27s15-16.5 15-27C30 6.716 23.284 0 15 0z"
@@ -271,7 +295,24 @@ const MapasScreen: React.FC<{
                         </AdvancedMarker>
                     ))}
 
-                    {selectedFicha && (
+                    {/* Marcadores de Marcación Rápida */}
+                    {viewMode === 'marcacion' && marcaciones.map(m => (
+                        <AdvancedMarker
+                            key={m.id}
+                            position={m.gps}
+                        >
+                            <div className="flex flex-col items-center group cursor-pointer">
+                                <div className="bg-amber-600 p-2 rounded-xl border-2 border-white shadow-xl group-hover:scale-110 transition-transform">
+                                    <MapPin size={16} color="white" />
+                                </div>
+                                <div className="mt-1 px-2 py-0.5 bg-black/80 rounded text-[8px] text-white font-black uppercase whitespace-nowrap">
+                                    {m.tipo}
+                                </div>
+                            </div>
+                        </AdvancedMarker>
+                    ))}
+
+                    {selectedFicha && viewMode === 'investigacion' && (
                         <InfoWindow
                             position={selectedFicha.gps}
                             onCloseClick={() => setSelectedFicha(null)}
@@ -315,20 +356,37 @@ const MapasScreen: React.FC<{
             {/* Estadísticas Rápidas Footer */}
             {!selectedFicha && (
                 <div className="absolute bottom-4 left-4 right-4 z-[1010]">
-                    <div className="grid grid-cols-3 gap-2 bg-[#161b22]/90 backdrop-blur-md p-2 rounded-2xl border border-white/5 shadow-2xl">
-                        <div className="bg-blue-500/10 rounded-xl p-2 border border-blue-500/20 text-center">
-                            <p className="text-[8px] text-blue-400 uppercase font-black">Pluvial</p>
-                            <p className="text-sm font-black text-white">{fichas.filter(f => f.sistema === 'PLUVIAL').length}</p>
+                    {viewMode === 'investigacion' ? (
+                        <div className="grid grid-cols-3 gap-2 bg-[#161b22]/90 backdrop-blur-md p-2 rounded-2xl border border-white/5 shadow-2xl">
+                            <div className="bg-blue-500/10 rounded-xl p-2 border border-blue-500/20 text-center">
+                                <p className="text-[8px] text-blue-400 uppercase font-black">Pluvial</p>
+                                <p className="text-sm font-black text-white">{fichas.filter(f => f.sistema === 'PLUVIAL').length}</p>
+                            </div>
+                            <div className="bg-slate-500/10 rounded-xl p-2 border border-slate-500/20 text-center">
+                                <p className="text-[8px] text-slate-400 uppercase font-black">Residual</p>
+                                <p className="text-sm font-black text-white">{fichas.filter(f => f.sistema === 'RESIDUAL').length}</p>
+                            </div>
+                            <div className="bg-purple-500/10 rounded-xl p-2 border border-purple-500/20 text-center">
+                                <p className="text-[8px] text-purple-400 uppercase font-black">Otros</p>
+                                <p className="text-sm font-black text-white">{fichas.filter(f => !['PLUVIAL', 'RESIDUAL'].includes(f.sistema)).length}</p>
+                            </div>
                         </div>
-                        <div className="bg-slate-500/10 rounded-xl p-2 border border-slate-500/20 text-center">
-                            <p className="text-[8px] text-slate-400 uppercase font-black">Residual</p>
-                            <p className="text-sm font-black text-white">{fichas.filter(f => f.sistema === 'RESIDUAL').length}</p>
+                    ) : (
+                        <div className="grid grid-cols-3 gap-2 bg-[#161b22]/90 backdrop-blur-md p-2 rounded-2xl border border-white/5 shadow-2xl">
+                            <div className="bg-amber-500/10 rounded-xl p-2 border border-amber-500/20 text-center">
+                                <p className="text-[8px] text-amber-400 uppercase font-black">Pozos</p>
+                                <p className="text-sm font-black text-white">{marcaciones.filter(m => m.tipo === 'pozo').length}</p>
+                            </div>
+                            <div className="bg-green-500/10 rounded-xl p-2 border border-green-500/20 text-center">
+                                <p className="text-[8px] text-green-400 uppercase font-black">Sumideros</p>
+                                <p className="text-sm font-black text-white">{marcaciones.filter(m => m.tipo === 'sumidero').length}</p>
+                            </div>
+                            <div className="bg-red-500/10 rounded-xl p-2 border border-red-500/20 text-center">
+                                <p className="text-[8px] text-red-400 uppercase font-black">Otros</p>
+                                <p className="text-sm font-black text-white">{marcaciones.filter(m => !['pozo', 'sumidero'].includes(m.tipo)).length}</p>
+                            </div>
                         </div>
-                        <div className="bg-purple-500/10 rounded-xl p-2 border border-purple-500/20 text-center">
-                            <p className="text-[8px] text-purple-400 uppercase font-black">Otros</p>
-                            <p className="text-sm font-black text-white">{fichas.filter(f => !['PLUVIAL', 'RESIDUAL'].includes(f.sistema)).length}</p>
-                        </div>
-                    </div>
+                    )}
                 </div>
             )}
 

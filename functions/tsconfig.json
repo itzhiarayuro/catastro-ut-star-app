@@ -7,9 +7,11 @@
         "removeComments": true,
         "sourceMap": true,
         "target": "es2017",
+        "skipLibCheck": true,
         "lib": [
             "es2017",
-            "esnext.asynciterable"
+            "esnext.asynciterable",
+            "dom"
         ]
     },
     "compileOnSave": true,

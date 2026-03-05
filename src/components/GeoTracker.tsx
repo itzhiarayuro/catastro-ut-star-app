@@ -52,10 +52,22 @@ interface GeoTrackerProps {
     onScreenshot?: (foto: FotoRegistro) => void;
     onClose: () => void;
     pozoId?: string;
+    toast?: (msg: string) => void;
 }
 
 // ── Componente principal ──────────────────────────────────────────────────────
-const GeoTracker: React.FC<GeoTrackerProps> = ({ initialCoords, onConfirm, onScreenshot, onClose, pozoId }) => {
+const GeoTracker: React.FC<GeoTrackerProps> = ({ initialCoords, onConfirm, onScreenshot, onClose, pozoId, toast: parentToast }) => {
+    const map = useMap();
+    const [localToast, setLocalToast] = useState<string | null>(null);
+
+    const toast = (msg: string) => {
+        if (parentToast) {
+            parentToast(msg);
+        } else {
+            setLocalToast(msg);
+            setTimeout(() => setLocalToast(null), 2500);
+        }
+    };
     const hasInitial = !!(initialCoords.lat && initialCoords.lng);
     const defaultPos = hasInitial ? initialCoords : { lat: 6.2442, lng: -75.5812 };
 
@@ -105,32 +117,77 @@ const GeoTracker: React.FC<GeoTrackerProps> = ({ initialCoords, onConfirm, onScr
     const isBadAccuracy = accuracy > 20;
 
     const handleCaptureMap = async () => {
-        if (!onScreenshot) return;
+        if (!onScreenshot || !map) return;
         setIsCapturing(true);
         try {
             const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-            const lat = mapCenter.lat;
-            const lng = mapCenter.lng;
 
-            // Google Static Maps API URL
-            const staticMapUrl = `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=${captureZoom}&size=640x640&scale=2&maptype=${mapType === 'roadmap' ? 'roadmap' : 'hybrid'}&markers=color:blue%7C${lat},${lng}&key=${apiKey}`;
+            // Usar valores REALES del mapa en este instante, no solo el estado
+            const currentZoom = Math.round(map.getZoom() || captureZoom);
+            const currentCenter = map.getCenter();
+            if (!currentCenter) throw new Error("No se pudo obtener el centro del mapa");
+
+            const lat = currentCenter.lat();
+            const lng = currentCenter.lng();
+
+            console.log(`Capturando mapa en Zoom: ${currentZoom}, Lat: ${lat}, Lng: ${lng}`);
+
+            // Google Static Maps API URL - Forzamos parámetros para que el pantallazo sea idéntico
+            const staticMapUrl = `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=${currentZoom}&size=640x640&scale=2&maptype=${mapType === 'roadmap' ? 'roadmap' : 'hybrid'}&markers=color:blue%7C${lat},${lng}&key=${apiKey}`;
 
             const response = await fetch(staticMapUrl);
+            if (!response.ok) throw new Error("Error en la respuesta de Static Maps");
+
             const blob = await response.blob();
+
+            // Creamos un nombre de archivo más descriptivo
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+            const filename = `MAPA-${pozoId || 'P'}-${currentZoom}z-${timestamp}.JPG`;
+
             const reader = new FileReader();
             reader.readAsDataURL(blob);
-            reader.onloadend = () => {
+            reader.onloadend = async () => {
                 const base64data = reader.result as string;
-                const filename = `${pozoId || 'M'}-UG-${captureZoom}.JPG`;
+
+                // TRUCO PARA GALERÍA EN MÓVIL: 
+                // 1. Intentamos el Share API si el navegador lo permite (mejor para Galería)
+                if (navigator.share && (navigator as any).canShare && (navigator as any).canShare({ files: [new File([blob], filename, { type: 'image/jpeg' })] })) {
+                    try {
+                        const file = new File([blob], filename, { type: 'image/jpeg' });
+                        await navigator.share({
+                            files: [file],
+                            title: 'Captura de Mapa',
+                            text: `Ubicación Pozo ${pozoId}`
+                        });
+                    } catch (shareErr) {
+                        // Fallback al link tradicional si el usuario cancela o falla
+                        const link = document.createElement('a');
+                        link.href = base64data;
+                        link.download = filename;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                    }
+                } else {
+                    // Fallback tradicional para navegadores que no soportan Share API con archivos
+                    const link = document.createElement('a');
+                    link.href = base64data;
+                    link.download = filename;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                }
+
                 const newFoto = procesarFoto(filename, pozoId || 'M', base64data);
                 onScreenshot({ ...newFoto, blobId: base64data });
+
                 setIsCapturing(false);
-                alert("📸 Mapa capturado y guardado como foto de ubicación.");
+                toast("📸 Mapa guardado en Galería/Descargas");
             };
         } catch (err) {
             console.error("Error capturando mapa:", err);
             setIsCapturing(false);
-            alert("Error al capturar el mapa.");
+            toast("❌ Error al capturar: Revisa tu conexión");
         }
     };
 
@@ -216,10 +273,13 @@ const GeoTracker: React.FC<GeoTrackerProps> = ({ initialCoords, onConfirm, onScr
                             setMapCenter(ev.detail.center);
                             setIsDragging(true);
                         }}
+                        zoom={captureZoom}
+                        onZoomChanged={(ev) => {
+                            setCaptureZoom(ev.detail.zoom);
+                        }}
                         onDragend={() => setIsDragging(false)}
-                        defaultZoom={20}
                         mapId={MAP_ID}
-                        mapTypeId={mapType === 'bing' ? 'hybrid' : mapType}
+                        mapTypeId={['hybrid', 'roadmap', 'satellite', 'terrain'].includes(mapType) ? mapType as any : 'roadmap'}
                         disableDefaultUI={true}
                         gestureHandling="greedy"
                         style={{ width: '100%', height: '100%' }}
@@ -363,8 +423,23 @@ const GeoTracker: React.FC<GeoTrackerProps> = ({ initialCoords, onConfirm, onScr
                     )}
                 </div>
 
-                {/* Keyframes para el spin */}
-                <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+                {/* Feedback local del toast */}
+                {localToast && (
+                    <div className="fixed bottom-32 left-1/2 -translate-x-1/2 bg-blue-600 text-white px-6 py-3 rounded-full text-xs font-bold shadow-2xl z-[10001] animate-in fade-in slide-in-from-bottom-4 duration-300">
+                        {localToast}
+                    </div>
+                )}
+
+                {/* Flash effect when capturing */}
+                {isCapturing && (
+                    <div style={{ position: 'absolute', inset: 0, background: '#fff', zIndex: 1000, animation: 'flash 0.5s ease-out' }}></div>
+                )}
+
+                {/* Keyframes para el spin y flash */}
+                <style>{`
+                    @keyframes spin { to { transform: rotate(360deg); } }
+                    @keyframes flash { from { opacity: 0.8; } to { opacity: 0; } }
+                `}</style>
             </div>
 
             {showOfflineManager && (

@@ -355,6 +355,17 @@ Prevención:
 - IndexedDB corrupto
 - Errores persistentes después de intentar todo lo demás
 - App completamente inutilizable
+- Necesidad urgente de liberar espacio
+
+**Qué se Elimina:**
+
+| Elemento | Se Elimina | Recuperable |
+|----------|-----------|------------|
+| Fichas locales | ✅ Sí | ✅ Sí (desde nube) |
+| Borradores | ✅ Sí | ❌ No |
+| Configuración | ✅ Sí | ✅ Sí (se reinicia) |
+| Fotos en IndexedDB | ❌ No | - |
+| Datos en Firestore | ❌ No | - |
 
 **Procedimiento:**
 
@@ -365,10 +376,10 @@ Prevención:
    - Descargar fotos de la SD de la cámara
 
 2. Limpiar caché:
-   - Configuración del celular
-   - Aplicaciones → Chrome (o navegador usado)
-   - Almacenamiento → Borrar datos
-   - Confirmar
+   - Ir a Configuración
+   - Presionar "Limpiar Base de Datos Local"
+   - Confirmar: "¿Borrar todo?"
+   - Esperar a que se limpie
 
 3. Reabrir la app:
    - Iniciar sesión nuevamente
@@ -378,6 +389,49 @@ Prevención:
 4. Verificar:
    - Fichas sincronizadas deben aparecer
    - Borradores no sincronizados se habrán perdido
+```
+
+**Alternativa Segura (Recomendada):**
+
+Si no quieres perder datos:
+
+```
+1. Sincronizar todas las fichas
+   - Conectar a WiFi
+   - Conectar cargador
+   - Iniciar "Sincronización Nocturna"
+   - Esperar a que termine
+
+2. Descargar fotos de la SD
+   - Conectar SD a PC
+   - Usar pc_sync.html para subir fotos
+
+3. Hacer backup manual (opcional)
+   - Exportar a Excel
+   - Guardar en PC
+
+4. Ahora sí limpiar
+   - Ir a Configuración
+   - Presionar "Limpiar Base de Datos Local"
+   - Confirmar
+
+5. Restaurar desde nube
+   - Presionar "Restaurar desde nube"
+   - Descargarán todas las fichas sincronizadas
+```
+
+**Recuperación Post-Limpieza:**
+
+Si accidentalmente limpiaste sin sincronizar:
+
+```
+1. ¿Estaban sincronizadas las fichas?
+   - SÍ → Presionar "Restaurar desde nube"
+   - NO → Pérdida irrecuperable
+
+2. ¿Hay fotos en la SD?
+   - SÍ → Usar pc_sync.html para subirlas
+   - NO → Pérdida irrecuperable
 ```
 
 ---

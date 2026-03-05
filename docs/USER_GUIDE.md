@@ -341,6 +341,71 @@ Si falta algo, aparece mensaje: "📁 Guardado como Borrador. Pendiente: [campo]
 
 **⚠️ Nota:** Solo recupera fichas que estaban sincronizadas.
 
+### Limpiar Base de Datos Local
+
+**⚠️ ADVERTENCIA:** Esta acción es destructiva y no se puede deshacer.
+
+**Qué hace:**
+- Elimina todas las fichas guardadas localmente
+- Elimina todos los borradores
+- Limpia la configuración local
+- NO afecta datos en Firestore (nube)
+- NO elimina fotos en IndexedDB
+
+**Cuándo usar:**
+- Como último recurso cuando la app está corrupta
+- Cuando hay errores persistentes
+- Cuando necesitas liberar espacio urgentemente
+
+**Procedimiento:**
+```
+1. Ir a Configuración
+2. Presionar "Limpiar Base de Datos Local"
+3. Confirmar: "¿Borrar todo?"
+4. Presionar "Restaurar desde nube" para recuperar fichas sincronizadas
+```
+
+**Recomendación:**
+Antes de limpiar, sincroniza todas tus fichas y descarga las fotos de la SD.
+
+### Limpiar Base de Datos Local
+
+**⚠️ ADVERTENCIA:** Esta acción es destructiva y no se puede deshacer.
+
+**Cuándo usar:**
+- Cuando la app está muy lenta o corrupta
+- Cuando hay errores persistentes
+- Cuando necesitas liberar espacio urgentemente
+- Como último recurso después de intentar todo lo demás
+
+**Qué elimina:**
+- ✅ Todas las fichas guardadas localmente
+- ✅ Todos los borradores
+- ✅ Configuración local
+- ❌ NO elimina fotos en IndexedDB (se eliminan por separado)
+- ❌ NO afecta datos en Firestore (nube)
+
+**Proceso:**
+```
+1. Ir a Configuración
+2. Presionar "Limpiar Base de Datos Local"
+3. Confirmar en el diálogo: "¿Borrar todo?"
+4. Esperar a que se limpie
+5. Mensaje: "🗑 Memoria limpiada"
+```
+
+**Después de limpiar:**
+1. Presionar "Restaurar desde nube"
+2. Descargarán todas las fichas sincronizadas
+3. La app volverá a funcionar normalmente
+
+**Alternativa Segura:**
+Si no quieres perder datos, antes de limpiar:
+1. Sincronizar todas las fichas
+2. Descargar fotos de la SD
+3. Hacer backup manual si es necesario
+4. Luego limpiar
+
 ---
 
 ## 💡 Consejos y Mejores Prácticas

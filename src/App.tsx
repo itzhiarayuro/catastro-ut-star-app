@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { db, useFirestoreDoc, useAuth } from './lib/firebase';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import LoginPage from './components/LoginPage';
@@ -7,7 +7,8 @@ import {
     ChevronLeft, ChevronRight, Check, Plus, Trash2,
     Wifi, WifiOff, Save, FileJson, FileText, Download,
     Cloud, Globe, Lightbulb, AlertTriangle, Info, Camera,
-    RefreshCw, LogOut, Moon, Navigation, Search, Flag
+    RefreshCw, LogOut, Moon, Navigation, Search, Flag, LogIn,
+    ArrowDown, ArrowUp
 } from 'lucide-react';
 import { FotoRegistro } from './utils/fotoProcessor';
 import FotosZone from './components/FotosZone';
@@ -15,16 +16,16 @@ import SyncScreen from './components/SyncScreen';
 import MapasScreen from './components/MapasScreen';
 import GeoTracker from './components/GeoTracker';
 import MarcacionScreen from './components/MarcacionScreen';
-import { getPendingPhotosCount, checkPendingInList, renamePhotoInStorage } from './utils/storageManager';
+import { getPendingPhotosCount, checkPendingInList, renamePhotoInStorage, savePhotoToStorage } from './utils/storageManager';
 import { Crosshair, LocateFixed, Signal } from 'lucide-react';
 import { APIProvider, Map, AdvancedMarker } from '@vis.gl/react-google-maps';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 
-const APP_VERSION = '1.0.1';
+const APP_VERSION = '1.2.5';
 
-/* ═══════════════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════
    TYPES & INTERFACES
-═══════════════════════════════════════════════════════════ */
+═══════════════════════════════════════════════════════════ */
 
 interface GPSData {
     lat: number | null;
@@ -111,11 +112,11 @@ interface AppState {
     deleted?: boolean;
 }
 
-/* ═══════════════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════
    CONSTANTS
-═══════════════════════════════════════════════════════════ */
+═══════════════════════════════════════════════════════════ */
 
-const MUNICIPIOS = ['Sopó', 'Sibaté', 'Granada'];
+const MUNICIPIOS = ['Sopó', 'Sibaté', 'Granada', 'Marinilla'];
 const SISTEMAS = ['PLUVIAL', 'RESIDUAL', 'COMBINADO', 'OCULTO', 'DESCONOCIDO'];
 const RASANTES = ['AFIRMADO', 'PAV_FLEX', 'PAV_RIG', 'PAV_ART', 'ZONA_VERDE', 'ANDEN', 'DESCONOCIDO', 'OTRO'];
 const ESTADOS_POZO = ['Sin represamiento', 'Inundado', 'Sellado', 'Colmatado', 'Oculto'];
@@ -159,7 +160,7 @@ const INITIAL_STATE: AppState = {
     pendiente: '',
     camara: '',
     tapa: { existe: 'DESCONOCIDO', mat: '', estado: 'desconocido' },
-    cargue: { existe: 'DESCONOCIDO', mat: '', estado: 'desconocido' },
+    cargue: { existe: 'DESCONOCIDO', mat: 'CONCRETO', estado: 'desconocido' },
     cuerpo: { existe: 'DESCONOCIDO', mat: '', estado: 'desconocido' },
     cono: { existe: 'DESCONOCIDO', tipo: '', mat: '', estado: 'desconocido' },
     canu: { existe: 'DESCONOCIDO', mat: '', estado: 'desconocido' },
@@ -180,9 +181,34 @@ const INITIAL_STATE: AppState = {
     deleted: false,
 };
 
-/* ═══════════════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════
    MAIN COMPONENT
-═══════════════════════════════════════════════════════════ */
+═══════════════════════════════════════════════════════════ */
+
+const MODAL_STYLES = `
+    @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+    @keyframes zoomIn {
+        from { opacity: 0; transform: scale(0.95); }
+        to { opacity: 1; transform: scale(1); }
+    }
+    .animate-fadeIn { animation: fadeIn 0.3s ease-out forwards; }
+    .animate-zoomIn { animation: zoomIn 0.2s ease-out forwards; }
+    
+    .spinner-white {
+        width: 18px;
+        height: 18px;
+        border: 2px solid rgba(255,255,255,0.3);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+`;
 
 const App: React.FC = () => {
     const {
@@ -237,7 +263,11 @@ const App: React.FC = () => {
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
     const [showGeoTracker, setShowGeoTracker] = useState(false);
     const [showLogoutModal, setShowLogoutModal] = useState(false);
-    const [logoutConfirmText, setLogoutConfirmText] = useState('');
+    const [loggingOut, setLoggingOut] = useState(false);
+    const [logoutConfirmText, setLogoutConfirmText] = useState(''); // Keep for unauthorized simple modal if needed, but we'll improve it too
+    const [showClearDbModal, setShowClearDbModal] = useState(false);
+    const [clearDbConfirmText, setClearDbConfirmText] = useState('');
+    const [pdfLoading, setPdfLoading] = useState(false);
     const autoSaveTimer = useRef<NodeJS.Timeout | null>(null);
 
     // Persistencia de navegación activa
@@ -266,35 +296,81 @@ const App: React.FC = () => {
     }, []);
 
     const firestorePath = state.pozo && state.municipio
-        ? `fichas/${state.municipio.toUpperCase()}_${state.pozo.replace(/\s+/g, '')}`
+        ? `fichas / ${state.municipio.toUpperCase()}_${state.pozo.replace(/\s+/g, '')} `
         : '';
 
     const { saveData, loading } = useFirestoreDoc(firestorePath);
 
     // Dynamic Imports for Exports
-    const handlePDF = async () => {
-        // Deshabilitado temporalmente para integración con API externa
-        alert("🛠️ Generación de PDF deshabilitada. Estamos integrando este botón con tu nueva API externa.");
+    const forceHardReload = async () => {
+        toast("🧹 Limpiando caché y reiniciando...");
+        if ('serviceWorker' in navigator) {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            for (const registration of registrations) {
+                await registration.unregister();
+            }
+        }
+        if ('caches' in window) {
+            const cacheNames = await caches.keys();
+            for (const name of cacheNames) {
+                await caches.delete(name);
+            }
+        }
+        // Forzamos recarga con un parámetro aleatorio para saltar caché de Chrome
+        window.location.href = window.location.origin + window.location.pathname + '?v=' + Date.now();
+    };
+
+    const handlePDF = async (customPozo?: AppState) => {
+        const pozoToExport = customPozo || state;
+        if (!pozoToExport.id && !pozoToExport.pozo) {
+            toast("❌ No hay ficha cargada para exportar");
+            return;
+        }
+
+        if (pdfLoading) return;
+        setPdfLoading(true);
+        toast("🚀 Conectando con el generador en la nube...");
+
+        try {
+            const { getFunctions, httpsCallable } = await import('firebase/functions');
+            const functions = getFunctions();
+            const generateFichaFn = httpsCallable(functions, 'generateFicha');
+
+            const result = await generateFichaFn({ pozo: pozoToExport });
+            const { downloadUrl } = result.data as { downloadUrl: string };
+
+            if (downloadUrl) {
+                toast("✅ PDF Listo. Abriendo...");
+                window.open(downloadUrl, '_blank');
+            } else {
+                throw new Error("No se recibió URL de descarga");
+            }
+        } catch (error: any) {
+            console.error("Error generando PDF:", error);
+            toast(`❌ Error: ${error.message || "Fallo en la nube"}`);
+        } finally {
+            setPdfLoading(false);
+        }
     };
 
     const handleExcel = async () => {
         const { exportToExcel } = await import('./utils/export');
         exportToExcel(Object.values(fichas));
-        toast("📊 Excel Generado");
+        toast("📝Š Excel Generado");
     };
 
     const restoreFromCloud = async () => {
         if (!navigator.onLine) {
-            toast("❌ Necesitas conexión para restaurar");
+            toast("âŒ Necesitas conexión para restaurar");
             return;
         }
         if (!confirm("⚠️ Esto sobrescribirá tus fichas locales con las descargas de la nube. ¿Continuar?")) return;
 
-        toast("🔄 Descargando desde la nube...");
+        toast("ðŸ”„ Descargando desde la nube...");
         try {
             const operatorId = user?.name || state.elaboro;
             if (!operatorId) {
-                toast("❌ No se encontró nombre de operario para buscar");
+                toast("âŒ No se encontró nombre de operario para buscar");
                 return;
             }
             const q = query(collection(db, 'fichas'), where('elaboro', '==', operatorId));
@@ -305,15 +381,15 @@ const App: React.FC = () => {
                 recovered[doc.id] = { ...data, synced: true };
             });
             if (Object.keys(recovered).length === 0) {
-                toast("ℹ️ No se encontraron fichas tuyas en la nube");
+                toast("â„¹ï¸ No se encontraron fichas tuyas en la nube");
                 return;
             }
             setFichas(recovered);
             localStorage.setItem('fichas_star', JSON.stringify(recovered));
-            toast(`✅ Restauradas ${Object.keys(recovered).length} fichas asignadas a ti`);
+            toast(`âœ… Restauradas ${Object.keys(recovered).length} fichas asignadas a ti`);
         } catch (error) {
             console.error("Error restoring from cloud", error);
-            toast("❌ Error al restaurar desde la nube");
+            toast("âŒ Error al restaurar desde la nube");
         }
     };
 
@@ -338,9 +414,9 @@ const App: React.FC = () => {
         };
     }, []);
 
-    /* ═════════════════════════════════════
+    /* ═════════════════════════════════════
        MOTOR DE REGLAS (Rules Engine)
-       ═════════════════════════════════════ */
+       ═════════════════════════════════════ */
     useEffect(() => {
         let newState = { ...state };
         let changed = false;
@@ -407,17 +483,17 @@ const App: React.FC = () => {
         const needsRename = state.fotoList.some(f => f.idPozo !== newIdPozo);
 
         if (needsRename) {
-            console.log(`Renombrando fotos para el nuevo Pozo: ${newIdPozo}`);
+            console.log(`Renombrando fotos para el nuevo Pozo: ${newIdPozo} `);
 
             const updatedList = state.fotoList.map(foto => {
                 if (foto.idPozo !== newIdPozo) {
                     const oldPrefix = foto.idPozo;
                     // El nuevo nombre mantiene el sufijo (ej: -P.JPG, -E1-T.JPG)
-                    const newFilename = foto.filename.replace(new RegExp(`^${oldPrefix}`, 'i'), newIdPozo);
+                    const newFilename = foto.filename.replace(new RegExp(`^ ${oldPrefix} `, 'i'), newIdPozo);
 
                     // Actualizar en IndexedDB de forma asíncrona
                     renamePhotoInStorage(foto.id, newIdPozo, newFilename).catch(err =>
-                        console.error(`Error renombrando foto ${foto.id} en DB:`, err)
+                        console.error(`Error renombrando foto ${foto.id} en DB: `, err)
                     );
 
                     return { ...foto, idPozo: newIdPozo, filename: newFilename };
@@ -429,9 +505,9 @@ const App: React.FC = () => {
         }
     }, [state.pozo]);
 
-    /* ═════════════════════════════════════
+    /* ═════════════════════════════════════
        HELPERS
-    ═════════════════════════════════════ */
+    ═════════════════════════════════════ */
 
     const toast = (msg: string) => {
         setToastMsg(msg);
@@ -454,6 +530,10 @@ const App: React.FC = () => {
     };
 
     const startNewFicha = () => {
+        // Preservar el municipio y el inspector actual para agilizar el flujo
+        const currentMuni = state.municipio;
+        const currentElaboro = state.elaboro;
+
         // If a draft already exists, ask the user before overwriting it.
         const existingDraft = localStorage.getItem('catastro_draft');
         if (existingDraft) {
@@ -461,13 +541,19 @@ const App: React.FC = () => {
             // Only warn if the draft has some progress (id or pozo)
             if (draftObj.id || draftObj.pozo) {
                 const ok = window.confirm(
-                    `Hay un borrador guardado (Pozo: ${draftObj.pozo || 'S/N'}). Crear una nueva ficha lo sobrescribirá. ¿Continuar?`
+                    `Hay un borrador guardado(Pozo: ${draftObj.pozo || 'S/N'}).Crear una nueva ficha lo sobrescribirá. ¿Continuar ? `
                 );
                 if (!ok) return;
             }
         }
-        const id = `F_${Date.now()}`;
-        const newState = { ...INITIAL_STATE, id, createdAt: new Date().toISOString() };
+        const id = `F_${Date.now()} `;
+        const newState = {
+            ...INITIAL_STATE,
+            id,
+            createdAt: new Date().toISOString(),
+            municipio: currentMuni,
+            elaboro: currentElaboro
+        };
         setState(newState);
         localStorage.setItem('catastro_draft', JSON.stringify(newState));
         setCurrentStep(1);
@@ -484,7 +570,8 @@ const App: React.FC = () => {
                 // Intentamos volver al paso donde estaba, o al 1 por defecto
                 const savedStep = localStorage.getItem('catastro_current_step');
                 setCurrentStep(savedStep ? parseInt(savedStep) : 1);
-                toast("📂 Borrador restaurado");
+                setActiveScreen('sForm');
+                toast("📝 Borrador restaurado");
             } catch (e) {
                 toast("❌ Error al cargar borrador");
             }
@@ -498,13 +585,20 @@ const App: React.FC = () => {
         localStorage.setItem('catastro_draft', JSON.stringify(safeData));
         setActiveScreen('sForm');
         setCurrentStep(1);
-        toast("✏️ Editando Ficha de Mapa...");
+        toast("📝 Editando Ficha de Mapa...");
     };
 
     const saveFicha = async () => {
-        const id = state.id || `F_${Date.now()}`;
+        const id = state.id || `F_${Date.now()} `;
         const now = new Date().toISOString();
-        const finalData = { ...state, id, savedAt: now, synced: false };
+
+        // REGLA DE COMPATIBILIDAD: pipes[].es debe ser minúsculas ("entrada"/"salida")
+        const normalizedPipes = state.pipes.map(p => ({
+            ...p,
+            es: p.es.toLowerCase() as any
+        }));
+
+        const finalData = { ...state, pipes: normalizedPipes, id, savedAt: now, synced: false };
 
         // FIRST: Always save locally (Emergency Save / Auto-Draft)
         const updatedFichas = { ...fichas, [id]: finalData };
@@ -537,7 +631,7 @@ const App: React.FC = () => {
         });
 
         if (missingFields.length > 0) {
-            toast(`📁 Guardado como Borrador. Pendiente: ${missingFields[0]}...`);
+            toast(`📝 Guardado como Borrador.Pendiente: ${missingFields[0]}...`);
             // We DON'T return, we stay in the form so they can fix it, but now it's in the list!
             setActiveScreen('sFichas');
             return;
@@ -587,12 +681,12 @@ const App: React.FC = () => {
         setFichas(updated);
         localStorage.setItem('fichas_star', JSON.stringify(updated));
         setDeleteId(null);
-        toast("🗑 Ficha movida a papelera (Soft Delete)");
+        toast("🗑️ Ficha movida a papelera (Soft Delete)");
     };
 
     const captureGPS = () => {
         if (!navigator.geolocation) return toast("❌ GPS no soportado");
-        toast("📍 Capturando GPS...");
+        toast("📝 Capturando GPS...");
         navigator.geolocation.getCurrentPosition(
             (pos) => {
                 updateState({
@@ -609,18 +703,18 @@ const App: React.FC = () => {
                 const lat = (4.908 + (Math.random() - 0.5) * 0.001).toFixed(7);
                 const lng = (-73.948 + (Math.random() - 0.5) * 0.001).toFixed(7);
                 updateState({ gps: { lat: parseFloat(lat), lng: parseFloat(lng), precision: 5.4 } });
-                toast("📍 GPS Simulado (Sopó)");
+                toast("📝 GPS Simulado (Sopó)");
             },
             { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
         );
     };
 
-    /* ═════════════════════════════════════
+    /* ═════════════════════════════════════
        RENDER LOGIC
-    ═════════════════════════════════════ */
+    ═════════════════════════════════════ */
 
     const renderActivitySelect = () => (
-        <div id="sActivity" className={`screen ${activeScreen === 'sActivity' ? 'active' : ''}`}
+        <div id="sActivity" className={`screen ${activeScreen === 'sActivity' ? 'active' : ''} `}
             style={{
                 background: 'radial-gradient(circle at top right, #0f172a, #020617)',
                 justifyContent: 'center',
@@ -706,7 +800,7 @@ const App: React.FC = () => {
     );
 
     const renderMarcacionPlaceholder = () => (
-        <div id="sMarcacion" className={`screen ${activeScreen === 'sMarcacion' ? 'active' : ''}`}>
+        <div id="sMarcacion" className={`screen ${activeScreen === 'sMarcacion' ? 'active' : ''} `}>
             <div className="app-header">
                 <div className="header-inner">
                     <button onClick={() => setActiveScreen('sActivity')} className="btn-ghost" style={{ padding: '8px', border: 'none' }}>
@@ -741,7 +835,7 @@ const App: React.FC = () => {
         const syncedFichas = totalFichas - pendingFichas;
 
         return (
-            <div id="s0" className={`screen ${activeScreen === 's0' ? 'active' : ''}`}>
+            <div id="s0" className={`screen ${activeScreen === 's0' ? 'active' : ''} `}>
                 <div className="home-center">
                     <div className="home-logo-container">
                         <img src="/logo-ut-star.png" alt="UT STAR Logo" className="home-logo-img" />
@@ -754,8 +848,8 @@ const App: React.FC = () => {
                     <div className="sync-summary-card">
                         <div className="flex justify-between items-center mb-3">
                             <span className="text-[10px] font-black uppercase tracking-widest text-blue-400">Resumen de Hoy</span>
-                            <div className={`flex items-center gap-1 text-[9px] font-bold ${isOnline ? 'text-green-500' : 'text-amber-500'}`}>
-                                <div className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-green-500' : 'bg-amber-500 animate-pulse'}`}></div>
+                            <div className={`flex items-center gap-1 text - [9px] font-bold ${isOnline ? 'text-green-500' : 'text-amber-500'} `}>
+                                <div className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-green-500' : 'bg-amber-500 animate-pulse'} `}></div>
                                 {isOnline ? 'CONECTADO' : 'MODO OFFLINE'}
                             </div>
                         </div>
@@ -778,7 +872,11 @@ const App: React.FC = () => {
 
                     <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         {state.id && (
-                            <button className="btn btn-yellow btn-full py-4 text-sm" onClick={continueDraft} style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)', border: 'none' }}>
+                            <button
+                                className="btn btn-yellow btn-full py-4 text-sm"
+                                onClick={() => setActiveScreen('sForm')}
+                                style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)', border: 'none' }}
+                            >
                                 <Save size={18} />
                                 Continuar Borrador ({state.pozo || 'Sin Nombre'})
                             </button>
@@ -823,7 +921,7 @@ const App: React.FC = () => {
         const list = Object.values(fichas).filter(f => !f.deleted).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
 
         return (
-            <div id="sFichas" className={`screen ${activeScreen === 'sFichas' ? 'active' : ''}`}>
+            <div id="sFichas" className={`screen ${activeScreen === 'sFichas' ? 'active' : ''} `}>
                 <div className="app-header">
                     <div className="header-inner">
                         <button onClick={() => setActiveScreen('s0')} className="btn-ghost" style={{ padding: '8px', border: 'none' }}>
@@ -838,7 +936,7 @@ const App: React.FC = () => {
                 <div className="content">
                     {list.length === 0 ? (
                         <div className="empty-state">
-                            <div className="empty-icon">📂</div>
+                            <div className="empty-icon">📝</div>
                             <p>No hay fichas guardadas aún.</p>
                         </div>
                     ) : (
@@ -853,6 +951,8 @@ const App: React.FC = () => {
                                     setCurrentStep(1);
                                 }}
                                 onDelete={() => deleteFicha(f.id!)}
+                                onPDF={() => handlePDF(f)}
+                                pdfLoading={pdfLoading}
                             />
                         ))
                     )}
@@ -884,7 +984,7 @@ const App: React.FC = () => {
     };
 
     const renderConfig = () => (
-        <div id="sConfig" className={`screen ${activeScreen === 'sConfig' ? 'active' : ''}`}>
+        <div id="sConfig" className={`screen ${activeScreen === 'sConfig' ? 'active' : ''} `}>
             <div className="app-header">
                 <div className="header-inner">
                     <button onClick={() => setActiveScreen('s0')} className="btn-ghost" style={{ padding: '8px', border: 'none' }}>
@@ -892,7 +992,7 @@ const App: React.FC = () => {
                     </button>
                     <div className="header-titles">
                         <div className="header-title">Configuración</div>
-                        <div className="header-sub">UT STAR · V2.0</div>
+                        <div className="header-sub">UT STAR · V{APP_VERSION}</div>
                     </div>
                 </div>
             </div>
@@ -903,7 +1003,7 @@ const App: React.FC = () => {
                         {MUNICIPIOS.map(m => (
                             <div
                                 key={m}
-                                className={`chip ${state.municipio === m ? 'selected' : ''}`}
+                                className={`chip ${state.municipio === m ? 'selected' : ''} `}
                                 onClick={() => updateState({ municipio: m })}
                             >
                                 {m}
@@ -943,7 +1043,7 @@ const App: React.FC = () => {
 
                 <button
                     className="btn btn-danger btn-full"
-                    onClick={() => { if (confirm("¿Borrar todo?")) { localStorage.removeItem('fichas_star'); setFichas({}); toast("🗑 Memoria limpiada"); } }}
+                    onClick={() => { setClearDbConfirmText(''); setShowClearDbModal(true); }}
                     style={{ marginBottom: '12px' }}
                 >
                     <Trash2 size={16} /> Limpiar Base de Datos Local
@@ -960,8 +1060,12 @@ const App: React.FC = () => {
                             <div style={{ fontSize: '11px', color: '#64748b' }}>{user?.email}</div>
                         </div>
                     </div>
-                    <button className="btn btn-ghost btn-full" onClick={() => { setLogoutConfirmText(''); setShowLogoutModal(true); }}>
-                        <LogOut size={16} /> Cerrar Sesión
+                    <button
+                        className="btn btn-danger-light btn-full"
+                        onClick={() => { setShowLogoutModal(true); }}
+                        style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)' }}
+                    >
+                        <LogOut size={16} /> Cerrar Sesión del Usuario
                     </button>
                 </div>
 
@@ -969,7 +1073,7 @@ const App: React.FC = () => {
                     <div style={{ fontSize: '9px', fontWeight: 'bold', letterSpacing: '2px' }}>UT STAR Catastro v{APP_VERSION}</div>
                     <div style={{ fontSize: '7px', marginTop: '4px' }}>© 2026 • SOPÓ, COLOMBIA</div>
                     <button
-                        onClick={() => window.location.reload()}
+                        onClick={forceHardReload}
                         style={{ background: 'none', border: 'none', color: 'inherit', fontSize: '8px', textDecoration: 'underline', marginTop: '10px', cursor: 'pointer' }}
                     >
                         Forzar recarga de sistema
@@ -980,9 +1084,9 @@ const App: React.FC = () => {
         </div>
     );
 
-    /* ═════════════════════════════════════
+    /* ═════════════════════════════════════
        FORM STEPS
-    ═════════════════════════════════════ */
+    ═════════════════════════════════════ */
 
     const renderForm = () => {
         const steps = [
@@ -991,7 +1095,7 @@ const App: React.FC = () => {
         const stepTitle = steps[currentStep - 1];
 
         return (
-            <div id="sForm" className={`screen ${activeScreen === 'sForm' ? 'active' : ''}`}>
+            <div id="sForm" className={`screen ${activeScreen === 'sForm' ? 'active' : ''} `}>
                 <div className="app-header">
                     <div className="header-inner">
                         <button onClick={() => { if (confirm("¿Salir?")) setActiveScreen('s0'); }} className="btn-ghost" style={{ padding: '8px', border: 'none' }}>
@@ -1011,7 +1115,7 @@ const App: React.FC = () => {
                     <>
                         <div className="progress-wrap">
                             <div className="progress-bar-track">
-                                <div className="progress-bar-fill" style={{ width: `${(currentStep / 5) * 100}%` }}></div>
+                                <div className="progress-bar-fill" style={{ width: `${(currentStep / 5) * 100}% ` }}></div>
                             </div>
                             <div className="progress-label">
                                 <span>{stepTitle}</span>
@@ -1023,7 +1127,7 @@ const App: React.FC = () => {
                             {['ID', 'POZO', 'COMP', 'TUB', 'FOT'].map((s, i) => (
                                 <div
                                     key={s}
-                                    className={`step-chip ${currentStep === i + 1 ? 'active' : ''} ${currentStep > i + 1 ? 'done' : ''}`}
+                                    className={`step-chip ${currentStep === i + 1 ? 'active' : ''} ${currentStep > i + 1 ? 'done' : ''} `}
                                     onClick={() => setCurrentStep(i + 1)}
                                 >
                                     {i + 1}·{s}
@@ -1040,19 +1144,31 @@ const App: React.FC = () => {
                                 <div className="card-title">Identificación del Pozo</div>
                                 <div className="field-row">
                                     <div className="field">
-                                        <label>Pozo No.* <span style={{ fontSize: '9px', color: '#64748b' }}>(Prefijo {POZO_PREFIX} automático)</span></label>
+                                        <label>Pozo No.*
+                                            {state.municipio !== 'Marinilla' && (
+                                                <span style={{ fontSize: '9px', color: '#64748b' }}> (Prefijo {POZO_PREFIX} automático)</span>
+                                            )}
+                                        </label>
                                         <div style={{ position: 'relative' }}>
-                                            <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#3b82f6', fontWeight: 'bold', fontSize: '14px', fontFamily: 'DM Mono', pointerEvents: 'none' }}>{POZO_PREFIX}</span>
+                                            {state.municipio !== 'Marinilla' && (
+                                                <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#3b82f6', fontWeight: 'bold', fontSize: '14px', fontFamily: 'DM Mono', pointerEvents: 'none' }}>{POZO_PREFIX}</span>
+                                            )}
                                             <input
                                                 type="text"
-                                                inputMode="numeric"
-                                                value={state.pozo.startsWith(POZO_PREFIX) ? state.pozo.slice(POZO_PREFIX.length) : state.pozo}
+                                                inputMode={state.municipio === 'Marinilla' ? 'text' : 'numeric'}
+                                                value={state.municipio === 'Marinilla' ? state.pozo : (state.pozo.startsWith(POZO_PREFIX) ? state.pozo.slice(POZO_PREFIX.length) : state.pozo)}
                                                 onChange={e => {
-                                                    const num = e.target.value.replace(/[^0-9]/g, '');
-                                                    updateState({ pozo: num ? POZO_PREFIX + num : '' });
+                                                    const isMarinilla = state.municipio === 'Marinilla';
+                                                    if (isMarinilla) {
+                                                        const val = e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+                                                        updateState({ pozo: val });
+                                                    } else {
+                                                        const val = e.target.value.replace(/[^0-9]/g, '');
+                                                        updateState({ pozo: val ? POZO_PREFIX + val : '' });
+                                                    }
                                                 }}
-                                                placeholder="001"
-                                                style={{ paddingLeft: '28px' }}
+                                                placeholder={state.municipio === 'Marinilla' ? "Ej: M071" : "001"}
+                                                style={{ paddingLeft: state.municipio === 'Marinilla' ? '12px' : '28px' }}
                                             />
                                         </div>
                                     </div>
@@ -1092,7 +1208,7 @@ const App: React.FC = () => {
                                     {SISTEMAS.map(s => (
                                         <div
                                             key={s}
-                                            className={`chip-big ${state.sistema === s ? 'selected' : ''}`}
+                                            className={`chip-big ${state.sistema === s ? 'selected' : ''} `}
                                             onClick={() => updateState({ sistema: s })}
                                         >
                                             {s}
@@ -1154,11 +1270,11 @@ const App: React.FC = () => {
                                                 onClick={() => window.open(`https://www.google.com/maps?q=${state.gps.lat},${state.gps.lng}`, '_blank')}
                                             >
                                                 <Globe size={14} /> Ver en Full Google Maps
-                                            </button>
+                                            </button >
                                         </>
                                     )}
-                                </div>
-                            </div>
+                                </div >
+                            </div >
 
                             <div className="btn-row">
                                 <button className="btn btn-green btn-full" onClick={() => {
@@ -1169,304 +1285,312 @@ const App: React.FC = () => {
                                     setCurrentStep(2);
                                 }}>Siguiente <ChevronRight size={16} /></button>
                             </div>
-                        </div>
+                        </div >
                     )}
 
-                    {currentStep === 2 && (
-                        <div className="animate-in slide-in-from-right duration-300">
-                            <div className="card">
-                                <div className="card-title">Dimensiones (m)</div>
-                                <div className="well-diagram">
-                                    <WellDiagram diam={state.diam} altura={state.altura} pipes={state.pipes} />
-                                </div>
-                                <div className="field-row">
-                                    <div className="field">
-                                        <label>Diámetro Cuerpo <span style={{ fontSize: '9px', color: '#64748b' }}>m</span></label>
-                                        <input
-                                            type="number"
-                                            step="0.05"
-                                            value={state.diam}
-                                            onFocus={numFocus}
-                                            onChange={e => updateState({ diam: parseFloat(e.target.value) || 0 })}
-                                            onBlur={e => { if (!e.target.value) updateState({ diam: 0.9 }); }}
-                                            placeholder="0.90 m"
-                                        />
-                                    </div>
-                                    <div className="field">
-                                        <label>Altura Total <span style={{ fontSize: '9px', color: '#64748b' }}>m</span></label>
-                                        <input
-                                            type="number"
-                                            step="0.05"
-                                            value={state.altura}
-                                            onFocus={numFocus}
-                                            onChange={e => updateState({ altura: parseFloat(e.target.value) || 0 })}
-                                            onBlur={e => { if (!e.target.value) updateState({ altura: 1.2 }); }}
-                                            placeholder="1.20 m"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="card">
-                                <div className="card-title">Tipo de Cámara</div>
-                                <div className="chips">
-                                    {TIPOS_CAMARA.map(t => (
-                                        <div key={t} className={`chip ${(state.camara === t && t !== 'OTRO') || (t === 'OTRO' && state.camara && !TIPOS_CAMARA.includes(state.camara)) || (state.camara === 'OTRO' && t === 'OTRO') ? 'selected' : ''}`} onClick={() => updateState({ camara: t })}>
-                                            {t.replace(/_/g, ' ')}
-                                        </div>
-                                    ))}
-                                </div>
-                                {((state.camara && !TIPOS_CAMARA.includes(state.camara)) || state.camara === 'OTRO') && (
-                                    <input
-                                        type="text"
-                                        maxLength={60}
-                                        value={state.camara === 'OTRO' ? '' : state.camara}
-                                        onChange={e => updateState({ camara: e.target.value.toUpperCase() })}
-                                        placeholder="Especifique tipo de cámara..."
-                                        style={{ marginTop: '10px', width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)' }}
-                                    />
-                                )}
-                            </div>
-
-                            <div className="card">
-                                <div className="card-title">Rasante</div>
-                                <div className="chips">
-                                    {RASANTES.map(r => (
-                                        <div key={r} className={`chip ${(state.rasante === r && r !== 'OTRO') || (r === 'OTRO' && state.rasante && !RASANTES.includes(state.rasante)) || (state.rasante === 'OTRO' && r === 'OTRO') ? 'selected' : ''}`} onClick={() => updateState({ rasante: r })}>
-                                            {r.replace(/_/g, ' ')}
-                                        </div>
-                                    ))}
-                                </div>
-                                {((state.rasante && !RASANTES.includes(state.rasante)) || state.rasante === 'OTRO') && (
-                                    <input
-                                        type="text"
-                                        maxLength={60}
-                                        value={state.rasante === 'OTRO' ? '' : state.rasante}
-                                        onChange={e => updateState({ rasante: e.target.value.toUpperCase() })}
-                                        placeholder="Especifique la rasante..."
-                                        style={{ marginTop: '10px', width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)' }}
-                                    />
-                                )}
-                            </div>
-
-                            <div className="card" style={{ background: state.contingencia ? 'rgba(255, 107, 53, 0.1)' : 'var(--bg3)', borderColor: state.contingencia ? 'var(--orange)' : 'var(--border)' }}>
-                                <div className="card-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                    <span>⚠️ Modo Contingencia</span>
-                                    <label className="switch">
-                                        <input
-                                            type="checkbox"
-                                            checked={!!state.contingencia}
-                                            onChange={(e) => updateState({ contingencia: e.target.checked, contingenciaMotivo: e.target.checked ? state.contingenciaMotivo : '' })}
-                                        />
-                                        <span className="slider round"></span>
-                                    </label>
-                                </div>
-                                <p style={{ fontSize: '11px', color: 'var(--text3)', marginTop: '4px', lineHeight: '1.4' }}>
-                                    Habilita esto si es <strong>imposible</strong> medir el pozo (ej. está pavimentado/sellado). Levantará una bandera para revisión en oficina.
-                                </p>
-                                {state.contingencia && (
-                                    <input
-                                        type="text"
-                                        maxLength={100}
-                                        value={state.contingenciaMotivo || ''}
-                                        onChange={e => updateState({ contingenciaMotivo: e.target.value })}
-                                        placeholder="Ej: Pozo sellado bajo pavimento profundo..."
-                                        style={{ marginTop: '10px', width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid var(--orange)', background: '#1c1713', color: 'var(--text)' }}
-                                    />
-                                )}
-                            </div>
-
-                            <div className="btn-row">
-                                <button className="btn btn-ghost" onClick={() => setCurrentStep(1)}><ChevronLeft size={16} /> Volver</button>
-                                <button className="btn btn-green" onClick={() => {
-                                    const isOtroCamara = (state.camara === 'OTRO' || (state.camara && !TIPOS_CAMARA.includes(state.camara)));
-                                    const isOtroRasante = (state.rasante === 'OTRO' || (state.rasante && !RASANTES.includes(state.rasante)));
-
-                                    if (state.contingencia) {
-                                        if (!state.contingenciaMotivo || state.contingenciaMotivo.trim().length < 5) {
-                                            toast("⚠️ Por favor, explica brevemente el motivo de la contingencia.");
-                                            return;
-                                        }
-                                    } else {
-                                        // Validaciones Normales
-                                        if (!state.diam || state.diam <= 0 || !state.altura || state.altura <= 0) {
-                                            toast("⚠️ El Diámetro y la Altura deben ser mayores a 0.");
-                                            return;
-                                        }
-                                        if (!state.camara || (isOtroCamara && state.camara === 'OTRO')) {
-                                            toast("⚠️ Selecciona o escribe un Tipo de Cámara.");
-                                            return;
-                                        }
-                                        if (!state.rasante || (isOtroRasante && state.rasante === 'OTRO')) {
-                                            toast("⚠️ Selecciona o escribe una Rasante.");
-                                            return;
-                                        }
-                                    }
-                                    setCurrentStep(3);
-                                }}>Siguiente <ChevronRight size={16} /></button>
-                            </div>
-                        </div>
-                    )}
-
-                    {currentStep === 3 && (
-                        <div className="animate-in slide-in-from-right duration-300">
-                            <ComponentEditor
-                                label="Tapa"
-                                data={state.tapa}
-                                onChange={(v) => updateState({ tapa: { ...state.tapa, ...v } })}
-                                materials={['CONCRETO', 'FERROCONCRETO', 'METAL', 'POLIPROPILENO', 'PVC', 'OTRO']}
-                            />
-                            <ComponentEditor
-                                label="Cargue"
-                                data={state.cargue}
-                                onChange={(v) => updateState({ cargue: { ...state.cargue, ...v } })}
-                                materials={['CONCRETO', 'FERROCONCRETO', 'METAL', 'POLIPROPILENO', 'PVC', 'OTRO']}
-                            />
-                            <ComponentEditor
-                                label="Cuerpo"
-                                data={state.cuerpo}
-                                onChange={(v) => updateState({ cuerpo: { ...state.cuerpo, ...v } })}
-                                materials={['MAMPOSTERIA', 'CONCRETO', 'PVC', 'GRP', 'OTRO']}
-                            />
-                            <ComponentEditor
-                                label="Cono"
-                                data={state.cono}
-                                onChange={(v) => updateState({ cono: { ...state.cono, ...v } })}
-                                materials={['CONCENTRICO', 'EXCENTRICO', 'OTRO']}
-                                isCono
-                            />
-                            <ComponentEditor
-                                label="Cañuela"
-                                data={state.canu}
-                                onChange={(v) => updateState({ canu: { ...state.canu, ...v } })}
-                                materials={['MAMPOSTERIA', 'CONCRETO', 'PVC', 'OTRO']}
-                            />
-                            <ComponentEditor
-                                label="Peldaños"
-                                data={state.peld}
-                                onChange={(v) => updateState({ peld: { ...state.peld, ...v } })}
-                                materials={['METAL', 'POLIPROPILENO', 'NO_TIENE']}
-                            />
-
-                            <div className="btn-row">
-                                <button className="btn btn-ghost" onClick={() => setCurrentStep(2)}><ChevronLeft size={16} /> Volver</button>
-                                <button className="btn btn-green" onClick={() => setCurrentStep(4)}>Siguiente <ChevronRight size={16} /></button>
-                            </div>
-                        </div>
-                    )}
-
-                    {currentStep === 4 && (
-                        <div className="animate-in slide-in-from-right duration-300">
-                            <div className="card">
-                                <div className="card-title">Tuberías (E1-7 / S1-2)</div>
-                                <div className="space-y-4">
-                                    {state.pipes.map((p, idx) => (
-                                        <PipeCard
-                                            key={p.id}
-                                            pipe={p}
-                                            index={idx}
-                                            onUpdate={(upd) => {
-                                                const newPipes = [...state.pipes];
-                                                newPipes[idx] = { ...p, ...upd };
-                                                updateState({ pipes: newPipes });
-                                            }}
-                                            onDelete={() => {
-                                                updateState({ pipes: state.pipes.filter((_, i) => i !== idx) });
-                                            }}
-                                        />
-                                    ))}
-                                    <button className="btn btn-blue btn-full btn-sm" onClick={() => {
-                                        const id = `P_${Date.now()}`;
-                                        updateState({ pipes: [...state.pipes, { id, es: 'ENTRADA', deA: '', diam: '', mat: '', estado: '', cotaZ: '', pendiente: '', emboq: 'NO' }] });
-                                    }}>
-                                        <Plus size={14} /> Agregar Tubería
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div className="card mt-4">
-                                <div className="card-title">Sumideros (1-6)</div>
-                                <div className="space-y-4">
-                                    {state.sums.map((s, idx) => (
-                                        <SumideroCard
-                                            key={s.id}
-                                            sum={s}
-                                            index={idx}
-                                            onUpdate={(upd) => {
-                                                const newSums = [...state.sums];
-                                                newSums[idx] = { ...s, ...upd };
-                                                updateState({ sums: newSums });
-                                            }}
-                                            onDelete={() => {
-                                                updateState({ sums: state.sums.filter((_, i) => i !== idx) });
-                                            }}
-                                        />
-                                    ))}
-                                    <button className="btn btn-orange btn-full btn-sm" onClick={() => {
-                                        const id = `S_${Date.now()}`;
-                                        updateState({ sums: [...state.sums, { id, tipo: '', matRejilla: '', matCaja: '', hSalida: '', hLlegada: '', estado: '', codEsquema: `S-${state.sums.length + 1}`, diamTub: '', matTub: '' }] });
-                                    }}>
-                                        <Plus size={14} /> Agregar Sumidero
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div className="btn-row">
-                                <button className="btn btn-ghost" onClick={() => setCurrentStep(3)}><ChevronLeft size={16} /> Volver</button>
-                                <button className="btn btn-green" onClick={() => setCurrentStep(5)}>Siguiente <ChevronRight size={16} /></button>
-                            </div>
-                        </div>
-                    )}
-
-                    {currentStep === 5 && (
-                        <div className="animate-in slide-in-from-right duration-300">
-                            <div className="card">
-                                <div className="card-title">Registro Fotográfico (Max 4/zona)</div>
+                    {
+                        currentStep === 2 && (
+                            <div className="animate-in slide-in-from-right duration-300">
                                 <div className="card">
-                                    <FotosZone
-                                        pozoId={state.pozo || 'S/N'}
-                                        photos={state.fotoList}
-                                        pipes={state.pipes}
-                                        sums={state.sums}
-                                        onAddPhoto={(foto) => updateState({ fotoList: [...state.fotoList, foto] })}
-                                        onDeletePhoto={(id) => updateState({ fotoList: state.fotoList.filter(f => f.id !== id) })}
-                                    />
+                                    <div className="card-title">Dimensiones (m)</div>
+                                    <div className="well-diagram">
+                                        <WellDiagram diam={state.diam} altura={state.altura} pipes={state.pipes} />
+                                    </div>
+                                    <div className="field-row">
+                                        <div className="field">
+                                            <label>Diámetro Cuerpo <span style={{ fontSize: '9px', color: '#64748b' }}>m</span></label>
+                                            <input
+                                                type="number"
+                                                step="0.05"
+                                                value={state.diam}
+                                                onFocus={numFocus}
+                                                onChange={e => updateState({ diam: parseFloat(e.target.value) || 0 })}
+                                                onBlur={e => { if (!e.target.value) updateState({ diam: 0.9 }); }}
+                                                placeholder="0.90 m"
+                                            />
+                                        </div>
+                                        <div className="field">
+                                            <label>Altura Total <span style={{ fontSize: '9px', color: '#64748b' }}>m</span></label>
+                                            <input
+                                                type="number"
+                                                step="0.05"
+                                                value={state.altura}
+                                                onFocus={numFocus}
+                                                onChange={e => updateState({ altura: parseFloat(e.target.value) || 0 })}
+                                                onBlur={e => { if (!e.target.value) updateState({ altura: 1.2 }); }}
+                                                placeholder="1.20 m"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="card">
+                                    <div className="card-title">Tipo de Cámara</div>
+                                    <div className="chips">
+                                        {TIPOS_CAMARA.map(t => (
+                                            <div key={t} className={`chip ${(state.camara === t && t !== 'OTRO') || (t === 'OTRO' && state.camara && !TIPOS_CAMARA.includes(state.camara)) || (state.camara === 'OTRO' && t === 'OTRO') ? 'selected' : ''}`} onClick={() => updateState({ camara: t })}>
+                                                {t.replace(/_/g, ' ')}
+                                            </div>
+                                        ))}
+                                    </div>
+                                    {((state.camara && !TIPOS_CAMARA.includes(state.camara)) || state.camara === 'OTRO') && (
+                                        <input
+                                            type="text"
+                                            maxLength={60}
+                                            value={state.camara === 'OTRO' ? '' : state.camara}
+                                            onChange={e => updateState({ camara: e.target.value.toUpperCase() })}
+                                            placeholder="Especifique tipo de cámara..."
+                                            style={{ marginTop: '10px', width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)' }}
+                                        />
+                                    )}
+                                </div>
+
+                                <div className="card">
+                                    <div className="card-title">Rasante</div>
+                                    <div className="chips">
+                                        {RASANTES.map(r => (
+                                            <div key={r} className={`chip ${(state.rasante === r && r !== 'OTRO') || (r === 'OTRO' && state.rasante && !RASANTES.includes(state.rasante)) || (state.rasante === 'OTRO' && r === 'OTRO') ? 'selected' : ''}`} onClick={() => updateState({ rasante: r })}>
+                                                {r.replace(/_/g, ' ')}
+                                            </div>
+                                        ))}
+                                    </div>
+                                    {((state.rasante && !RASANTES.includes(state.rasante)) || state.rasante === 'OTRO') && (
+                                        <input
+                                            type="text"
+                                            maxLength={60}
+                                            value={state.rasante === 'OTRO' ? '' : state.rasante}
+                                            onChange={e => updateState({ rasante: e.target.value.toUpperCase() })}
+                                            placeholder="Especifique la rasante..."
+                                            style={{ marginTop: '10px', width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)' }}
+                                        />
+                                    )}
+                                </div>
+
+                                <div className="card" style={{ background: state.contingencia ? 'rgba(255, 107, 53, 0.1)' : 'var(--bg3)', borderColor: state.contingencia ? 'var(--orange)' : 'var(--border)' }}>
+                                    <div className="card-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                        <span>⚠️ Modo Contingencia</span>
+                                        <label className="switch">
+                                            <input
+                                                type="checkbox"
+                                                checked={!!state.contingencia}
+                                                onChange={(e) => updateState({ contingencia: e.target.checked, contingenciaMotivo: e.target.checked ? state.contingenciaMotivo : '' })}
+                                            />
+                                            <span className="slider round"></span>
+                                        </label>
+                                    </div>
+                                    <p style={{ fontSize: '11px', color: 'var(--text3)', marginTop: '4px', lineHeight: '1.4' }}>
+                                        Habilita esto si es <strong>imposible</strong> medir el pozo (ej. está pavimentado/sellado). Levantará una bandera para revisión en oficina.
+                                    </p>
+                                    {state.contingencia && (
+                                        <input
+                                            type="text"
+                                            maxLength={100}
+                                            value={state.contingenciaMotivo || ''}
+                                            onChange={e => updateState({ contingenciaMotivo: e.target.value })}
+                                            placeholder="Ej: Pozo sellado bajo pavimento profundo..."
+                                            style={{ marginTop: '10px', width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid var(--orange)', background: '#1c1713', color: 'var(--text)' }}
+                                        />
+                                    )}
+                                </div>
+
+                                <div className="btn-row">
+                                    <button className="btn btn-ghost" onClick={() => setCurrentStep(1)}><ChevronLeft size={16} /> Volver</button>
+                                    <button className="btn btn-green" onClick={() => {
+                                        const isOtroCamara = (state.camara === 'OTRO' || (state.camara && !TIPOS_CAMARA.includes(state.camara)));
+                                        const isOtroRasante = (state.rasante === 'OTRO' || (state.rasante && !RASANTES.includes(state.rasante)));
+
+                                        if (state.contingencia) {
+                                            if (!state.contingenciaMotivo || state.contingenciaMotivo.trim().length < 5) {
+                                                toast("⚠️ Por favor, explica brevemente el motivo de la contingencia.");
+                                                return;
+                                            }
+                                        } else {
+                                            // Validaciones Normales
+                                            if (!state.diam || state.diam <= 0 || !state.altura || state.altura <= 0) {
+                                                toast("⚠️ El Diámetro y la Altura deben ser mayores a 0.");
+                                                return;
+                                            }
+                                            if (!state.camara || (isOtroCamara && state.camara === 'OTRO')) {
+                                                toast("⚠️ Selecciona o escribe un Tipo de Cámara.");
+                                                return;
+                                            }
+                                            if (!state.rasante || (isOtroRasante && state.rasante === 'OTRO')) {
+                                                toast("⚠️ Selecciona o escribe una Rasante.");
+                                                return;
+                                            }
+                                        }
+                                        setCurrentStep(3);
+                                    }}>Siguiente <ChevronRight size={16} /></button>
                                 </div>
                             </div>
+                        )
+                    }
 
-                            <div className="card">
-                                <div className="card-title">Observaciones y Cierre</div>
-                                <div className="field">
-                                    <div className="flex justify-between items-end mb-1">
-                                        <label className="mb-0">Observaciones</label>
-                                        <button
-                                            className="bg-white/5 hover:bg-white/10 text-[10px] py-1 px-2 rounded-md flex items-center gap-1 transition-all"
-                                            onClick={() => {
-                                                const bullet = "• ";
-                                                updateState({ obs: state.obs + (state.obs.endsWith('\n') || state.obs === '' ? '' : '\n') + bullet });
-                                            }}
-                                        >
-                                            <List size={12} /> Añadir Viñeta
+                    {
+                        currentStep === 3 && (
+                            <div className="animate-in slide-in-from-right duration-300">
+                                <ComponentEditor
+                                    label="Tapa"
+                                    data={state.tapa}
+                                    onChange={(v) => updateState({ tapa: { ...state.tapa, ...v } })}
+                                    materials={['CONCRETO', 'FERROCONCRETO', 'METAL', 'PLÁSTICO REFORZADO', 'PVC', 'OTRO']}
+                                />
+                                <ComponentEditor
+                                    label="Cargue"
+                                    data={state.cargue}
+                                    onChange={(v) => updateState({ cargue: { ...state.cargue, ...v } })}
+                                    materials={['CONCRETO']}
+                                />
+                                <ComponentEditor
+                                    label="Cuerpo"
+                                    data={state.cuerpo}
+                                    onChange={(v) => updateState({ cuerpo: { ...state.cuerpo, ...v } })}
+                                    materials={['MAMPOSTERIA', 'CONCRETO', 'PVC', 'GRP', 'OTRO']}
+                                />
+                                <ComponentEditor
+                                    label="Cono"
+                                    data={state.cono}
+                                    onChange={(v) => updateState({ cono: { ...state.cono, ...v } })}
+                                    materials={['CONCENTRICO', 'EXCENTRICO', 'OTRO']}
+                                    isCono
+                                />
+                                <ComponentEditor
+                                    label="Cañuela"
+                                    data={state.canu}
+                                    onChange={(v) => updateState({ canu: { ...state.canu, ...v } })}
+                                    materials={['MAMPOSTERIA', 'CONCRETO', 'PVC', 'OTRO']}
+                                />
+                                <ComponentEditor
+                                    label="Peldaños"
+                                    data={state.peld}
+                                    onChange={(v) => updateState({ peld: { ...state.peld, ...v } })}
+                                    materials={['METAL', 'PLÁSTICO REFORZADO', 'NO_TIENE']}
+                                />
+
+                                <div className="btn-row">
+                                    <button className="btn btn-ghost" onClick={() => setCurrentStep(2)}><ChevronLeft size={16} /> Volver</button>
+                                    <button className="btn btn-green" onClick={() => setCurrentStep(4)}>Siguiente <ChevronRight size={16} /></button>
+                                </div>
+                            </div>
+                        )
+                    }
+
+                    {
+                        currentStep === 4 && (
+                            <div className="animate-in slide-in-from-right duration-300">
+                                <div className="card">
+                                    <div className="card-title">Tuberías (E1-7 / S1-2)</div>
+                                    <div className="space-y-4">
+                                        {state.pipes.map((p, idx) => (
+                                            <PipeCard
+                                                key={p.id}
+                                                pipe={p}
+                                                index={idx}
+                                                onUpdate={(upd) => {
+                                                    const newPipes = [...state.pipes];
+                                                    newPipes[idx] = { ...p, ...upd };
+                                                    updateState({ pipes: newPipes });
+                                                }}
+                                                onDelete={() => {
+                                                    updateState({ pipes: state.pipes.filter((_, i) => i !== idx) });
+                                                }}
+                                            />
+                                        ))}
+                                        <button className="btn btn-blue btn-full btn-sm" onClick={() => {
+                                            const id = `P_${Date.now()}`;
+                                            updateState({ pipes: [...state.pipes, { id, es: 'ENTRADA', deA: '', diam: '', mat: '', estado: '', cotaZ: '', pendiente: '', emboq: 'NO' }] });
+                                        }}>
+                                            <Plus size={14} /> Agregar Tubería
                                         </button>
                                     </div>
-                                    <textarea
-                                        value={state.obs}
-                                        onChange={e => updateState({ obs: e.target.value })}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter') {
-                                                const lines = state.obs.split('\n');
-                                                const lastLine = lines[lines.length - 1];
-                                                if (lastLine.trim().startsWith('•')) {
-                                                    // Continue bullet list if last line had one
-                                                    e.preventDefault();
-                                                    updateState({ obs: state.obs + '\n• ' });
-                                                }
-                                            }
-                                        }}
-                                        rows={6}
-                                        placeholder="Ej: • Tapa fisurada..."
-                                    />
                                 </div>
+
+                                <div className="card mt-4">
+                                    <div className="card-title">Sumideros (1-6)</div>
+                                    <div className="space-y-4">
+                                        {state.sums.map((s, idx) => (
+                                            <SumideroCard
+                                                key={s.id}
+                                                sum={s}
+                                                index={idx}
+                                                onUpdate={(upd) => {
+                                                    const newSums = [...state.sums];
+                                                    newSums[idx] = { ...s, ...upd };
+                                                    updateState({ sums: newSums });
+                                                }}
+                                                onDelete={() => {
+                                                    updateState({ sums: state.sums.filter((_, i) => i !== idx) });
+                                                }}
+                                            />
+                                        ))}
+                                        <button className="btn btn-orange btn-full btn-sm" onClick={() => {
+                                            const id = `S_${Date.now()}`;
+                                            updateState({ sums: [...state.sums, { id, tipo: '', matRejilla: '', matCaja: '', hSalida: '', hLlegada: '', estado: '', codEsquema: `S-${state.sums.length + 1}`, diamTub: '', matTub: '' }] });
+                                        }}>
+                                            <Plus size={14} /> Agregar Sumidero
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="btn-row">
+                                    <button className="btn btn-ghost" onClick={() => setCurrentStep(3)}><ChevronLeft size={16} /> Volver</button>
+                                    <button className="btn btn-green" onClick={() => setCurrentStep(5)}>Siguiente <ChevronRight size={16} /></button>
+                                </div>
+                            </div>
+                        )
+                    }
+
+                    {
+                        currentStep === 5 && (
+                            <div className="animate-in slide-in-from-right duration-300">
+                                <div className="card">
+                                    <div className="card-title">Registro Fotográfico (Max 4/zona)</div>
+                                    <div className="card">
+                                        <FotosZone
+                                            pozoId={state.pozo || 'S/N'}
+                                            photos={state.fotoList}
+                                            pipes={state.pipes}
+                                            sums={state.sums}
+                                            onAddPhoto={(foto) => updateState({ fotoList: [...state.fotoList, foto] })}
+                                            onDeletePhoto={(id) => updateState({ fotoList: state.fotoList.filter(f => f.id !== id) })}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="card">
+                                    <div className="card-title">Observaciones y Cierre</div>
+                                    <div className="field">
+                                        <div className="flex justify-between items-end mb-1">
+                                            <label className="mb-0">Observaciones</label>
+                                            <button
+                                                className="bg-white/5 hover:bg-white/10 text-[10px] py-1 px-2 rounded-md flex items-center gap-1 transition-all"
+                                                onClick={() => {
+                                                    const bullet = "• ";
+                                                    updateState({ obs: state.obs + (state.obs.endsWith('\n') || state.obs === '' ? '' : '\n') + bullet });
+                                                }}
+                                            >
+                                                <List size={12} /> Añadir Viñeta
+                                            </button>
+                                        </div>
+                                        <textarea
+                                            value={state.obs}
+                                            onChange={e => updateState({ obs: e.target.value })}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    const lines = state.obs.split('\n');
+                                                    const lastLine = lines[lines.length - 1];
+                                                    if (lastLine.trim().startsWith('•')) {
+                                                        // Continue bullet list if last line had one
+                                                        e.preventDefault();
+                                                        updateState({ obs: state.obs + '\n• ' });
+                                                    }
+                                                }
+                                            }}
+                                            rows={6}
+                                            placeholder="Ej: • Tapa fisurada..."
+                                        />
+                                    </div>
+                                    {/* 
                                 <div className="field-row">
                                     <div className="field">
                                         <label>Revisó</label>
@@ -1477,70 +1601,77 @@ const App: React.FC = () => {
                                         <input type="text" value={state.aprobo} onChange={e => updateState({ aprobo: e.target.value })} />
                                     </div>
                                 </div>
-                            </div>
-
-                            <div className="btn-row">
-                                <button className="btn btn-ghost" onClick={() => setCurrentStep(4)}><ChevronLeft size={16} /> Volver</button>
-                                <button className="btn btn-green" onClick={() => setCurrentStep(6)}>Finalizar <Check size={16} /></button>
-                            </div>
-                        </div>
-                    )}
-
-                    {currentStep === 6 && (
-                        <div className="animate-in zoom-in duration-500">
-                            <div className="summary-check">
-                                <div className="check-circle">
-                                    <Check color="var(--green)" size={32} strokeWidth={3} />
+                                */}
                                 </div>
-                            </div>
-                            <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-                                <div style={{ fontFamily: 'Syne', fontWeight: 800, fontSize: '20px', color: 'var(--green)' }}>¡Ficha Completa!</div>
-                                <div style={{ fontSize: '12px', color: 'var(--text3)', marginTop: '4px' }}>Pozo {state.pozo} · {state.barrio}</div>
-                            </div>
 
-                            <div className="summary-grid">
-                                <SummaryItem label="Pozo No." val={state.pozo} />
-                                <SummaryItem label="Estado" val={state.estadoPozo} />
-                                <SummaryItem label="Sistema" val={state.sistema} />
-                                <SummaryItem label="GPS" val={state.gps.lat ? `${state.gps.lat}, ${state.gps.lng}` : 'No'} />
-                                <SummaryItem label="Altura Total" val={`${state.altura} m`} />
-                                <SummaryItem label="Ø Cuerpo" val={`${state.diam} m`} />
-                                <SummaryItem label="Tuberías" val={state.pipes.length.toString()} />
-                                <SummaryItem label="Pendientes" val={state.pipes.some(p => p.pendiente) ? 'Registradas' : 'No'} />
-                                <SummaryItem label="Fotos" val={state.fotoList.length.toString()} />
-                            </div>
-
-                            <div className="space-y-3 mt-6">
-                                <div className="flex gap-3">
-                                    <button className="btn btn-ghost flex-1 py-3" onClick={() => setCurrentStep(5)}>
-                                        <ChevronLeft size={16} /> Volver
-                                    </button>
-                                    <button className="btn btn-green flex-[2] py-3" onClick={saveFicha}>
-                                        <Save size={16} /> Finalizar y Guardar
-                                    </button>
-                                </div>
-                                <button className="btn btn-blue btn-full" onClick={handleExcel}>
-                                    <FileJson size={16} /> Exportar Reporte XLSX
-                                </button>
                                 <div className="btn-row">
-                                    <button className="btn btn-yellow" onClick={handleExcel}><Download size={14} /> Excel Global</button>
-                                    <button className="btn btn-orange" onClick={handlePDF}><FileText size={14} /> PDF Ficha</button>
+                                    <button className="btn btn-ghost" onClick={() => setCurrentStep(4)}><ChevronLeft size={16} /> Volver</button>
+                                    <button className="btn btn-green" onClick={() => setCurrentStep(6)}>Finalizar <Check size={16} /></button>
                                 </div>
-                                <button className="btn btn-ghost btn-full" onClick={() => {
-                                    if (isOnline) {
-                                        saveFicha();
-                                    } else {
-                                        toast("⚠️ Modo Offline: No se pudo testear sync");
-                                    }
-                                }}>
-                                    <RefreshCw size={16} /> Test Sync Cel2 (Forzar Nube)
-                                </button>
-                                <button className="btn btn-ghost btn-full" onClick={startNewFicha}>
-                                    <Plus size={16} /> Nueva Ficha
-                                </button>
                             </div>
-                        </div>
-                    )}
+                        )
+                    }
+
+                    {
+                        currentStep === 6 && (
+                            <div className="animate-in zoom-in duration-500">
+                                <div className="summary-check">
+                                    <div className="check-circle">
+                                        <Check color="var(--green)" size={32} strokeWidth={3} />
+                                    </div>
+                                </div>
+                                <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+                                    <div style={{ fontFamily: 'Syne', fontWeight: 800, fontSize: '20px', color: 'var(--green)' }}>¡Ficha Completa!</div>
+                                    <div style={{ fontSize: '12px', color: 'var(--text3)', marginTop: '4px' }}>Pozo {state.pozo} · {state.barrio}</div>
+                                </div>
+
+                                <div className="summary-grid">
+                                    <SummaryItem label="Pozo No." val={state.pozo} />
+                                    <SummaryItem label="Estado" val={state.estadoPozo} />
+                                    <SummaryItem label="Sistema" val={state.sistema} />
+                                    <SummaryItem label="GPS" val={state.gps.lat ? `${state.gps.lat}, ${state.gps.lng}` : 'No'} />
+                                    <SummaryItem label="Altura Total" val={`${state.altura} m`} />
+                                    <SummaryItem label="Ø Cuerpo" val={`${state.diam} m`} />
+                                    <SummaryItem label="Tuberías" val={state.pipes.length.toString()} />
+                                    <SummaryItem label="Pendientes" val={state.pipes.some(p => p.pendiente) ? 'Registradas' : 'No'} />
+                                    <SummaryItem label="Fotos" val={state.fotoList.length.toString()} />
+                                </div>
+
+                                <div className="space-y-3 mt-6">
+                                    <div className="flex gap-3">
+                                        <button className="btn btn-ghost flex-1 py-3" onClick={() => setCurrentStep(5)}>
+                                            <ChevronLeft size={16} /> Volver
+                                        </button>
+                                        <button className="btn btn-green flex-[2] py-3" onClick={saveFicha}>
+                                            <Save size={16} /> Finalizar y Guardar
+                                        </button>
+                                    </div>
+                                    <button className="btn btn-blue btn-full" onClick={handleExcel}>
+                                        <FileJson size={16} /> Exportar Reporte XLSX
+                                    </button>
+                                    <div className="btn-row">
+                                        <button className="btn btn-yellow" onClick={handleExcel}><Download size={14} /> Excel Global</button>
+                                        <button className="btn btn-orange" onClick={() => handlePDF()} disabled={pdfLoading}>
+                                            {pdfLoading ? <span className="spinner-white mr-2"></span> : <FileText size={14} />}
+                                            {pdfLoading ? 'GENERANDO...' : 'PDF Ficha'}
+                                        </button>
+                                    </div>
+                                    <button className="btn btn-ghost btn-full" onClick={() => {
+                                        if (isOnline) {
+                                            saveFicha();
+                                        } else {
+                                            toast("⚠️ Modo Offline: No se pudo testear sync");
+                                        }
+                                    }}>
+                                        <RefreshCw size={16} /> Test Sync Cel2 (Forzar Nube)
+                                    </button>
+                                    <button className="btn btn-ghost btn-full" onClick={startNewFicha}>
+                                        <Plus size={16} /> Nueva Ficha
+                                    </button>
+                                </div>
+                            </div>
+                        )
+                    }
                 </div>
             </div>
         );
@@ -1563,32 +1694,35 @@ const App: React.FC = () => {
 
             {/* Modal de Cierre de Sesión para no autorizados */}
             {showLogoutModal && (
-                <div className="fixed inset-0 z-[10000] bg-black/90 backdrop-blur-sm flex items-center justify-center p-6">
-                    <div className="bg-[#1c2230] border border-[#2d3748] p-6 rounded-2xl w-full max-w-xs shadow-2xl text-center">
-                        <LogOut size={40} className="text-amber-500 mx-auto mb-4" />
-                        <h3 className="text-lg font-bold text-white mb-2">Cerrar Sesión</h3>
-                        <p className="text-gray-400 text-[11px] mb-6">Si cierras sesión sin internet no podrás volver a entrar. Escribe <span className="text-white font-bold">cerrar sesion</span> para confirmar:</p>
-                        <input
-                            type="text"
-                            className="w-full bg-[#0f172a] border border-[#334155] rounded-xl p-3 text-center text-white font-bold mb-6"
-                            value={logoutConfirmText}
-                            onChange={e => setLogoutConfirmText(e.target.value)}
-                            placeholder="..."
-                        />
-                        <div className="flex gap-3">
-                            <button className="btn btn-ghost flex-1 py-3" onClick={() => setShowLogoutModal(false)}>Cancelar</button>
+                <div className="fixed inset-0 z-[10000] bg-black/95 backdrop-blur-md flex items-center justify-center p-6 animate-fadeIn" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div className="bg-[#1c2230] border border-red-500/20 p-8 rounded-[2rem] w-full max-w-sm shadow-2xl text-center animate-zoomIn">
+                        <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-6 border border-red-500/20">
+                            <LogOut size={40} className="text-red-500" />
+                        </div>
+                        <h3 className="text-2xl font-black text-white mb-2 uppercase tracking-tight">Cerrar Sesión</h3>
+                        <p className="text-gray-400 text-xs mb-8 leading-relaxed">
+                            Estás intentando salir de una cuenta <span className="text-red-400">no autorizada</span>.
+                        </p>
+
+                        <div className="flex flex-col gap-3">
                             <button
-                                className="btn btn-danger flex-1 py-3"
-                                onClick={() => {
-                                    if (logoutConfirmText === 'cerrar sesion') {
-                                        logout();
-                                        setShowLogoutModal(false);
-                                    } else {
-                                        toast("❌ Escribe exactamente 'cerrar sesion'");
-                                    }
+                                className="w-full p-4 bg-red-600 hover:bg-red-700 text-white font-bold rounded-2xl transition-all active:scale-95 flex items-center justify-center gap-2"
+                                onClick={async () => {
+                                    setLoggingOut(true);
+                                    await logout();
+                                    setShowLogoutModal(false);
+                                    setLoggingOut(false);
                                 }}
+                                disabled={loggingOut}
                             >
-                                Salir
+                                {loggingOut ? <span className="spinner-white"></span> : <>SALIR AHORA <LogIn size={18} /></>}
+                            </button>
+                            <button
+                                className="w-full p-4 bg-white/5 hover:bg-white/10 text-gray-400 font-bold rounded-2xl transition-all"
+                                onClick={() => setShowLogoutModal(false)}
+                                disabled={loggingOut}
+                            >
+                                CANCELAR
                             </button>
                         </div>
                     </div>
@@ -1600,6 +1734,7 @@ const App: React.FC = () => {
     return (
         <APIProvider apiKey={import.meta.env.VITE_FIREBASE_API_KEY} libraries={['marker']}>
             <div className="app-container">
+                <style>{MODAL_STYLES}</style>
                 {/* PWA Update Prompt was unified below near Toast */}
 
                 {activeScreen === 'sActivity' && renderActivitySelect()}
@@ -1631,51 +1766,258 @@ const App: React.FC = () => {
                     <GeoTracker
                         initialCoords={{ lat: state.gps.lat || 4.908, lng: state.gps.lng || -73.948 }}
                         onClose={() => setShowGeoTracker(false)}
+                        pozoId={state.pozo}
                         onConfirm={(c) => {
                             updateState({ gps: c });
                             setShowGeoTracker(false);
                             toast("🎯 Punto Exacto Fijado");
+                        }}
+                        onScreenshot={async (foto) => {
+                            // Agregar a la lista de fotos de la ficha
+                            updateState({ fotoList: [...state.fotoList, foto] });
+
+                            // Guardar en storage local para sync de fondo
+                            await savePhotoToStorage({
+                                id: foto.id,
+                                pozoId: state.pozo || 'S/N',
+                                municipio: state.municipio,
+                                barrio: state.barrio,
+                                filename: foto.filename,
+                                blob: foto.blobId!,
+                                categoria: 'General',
+                                inspector: user?.name || 'Desconocido',
+                                timestamp: Date.now(),
+                                synced: false
+                            });
                         }}
                     />
                 )}
 
                 {/* MODAL CERRAR SESIÓN (Global) */}
                 {showLogoutModal && isAuthorized && (
-                    <div className="fixed inset-0 z-[10000] bg-black/90 backdrop-blur-sm flex items-center justify-center p-6">
-                        <div className="bg-[#1c2230] border border-[#2d3748] p-6 rounded-2xl w-full max-w-xs shadow-2xl text-center">
-                            <div className="bg-amber-500/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 border border-amber-500/20">
-                                <LogOut size={32} className="text-amber-500" />
+                    <div className="fixed inset-0 z-[10000] bg-black/95 backdrop-blur-md flex items-center justify-center p-6 animate-fadeIn" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <div className="bg-[#1c2230] border border-amber-500/20 p-8 rounded-[2.5rem] w-full max-w-sm shadow-2xl text-center animate-zoomIn">
+                            <div className="w-20 h-20 bg-amber-500/10 rounded-full flex items-center justify-center mx-auto mb-6 border border-amber-500/20">
+                                <LogOut size={36} className="text-amber-500" />
                             </div>
-                            <h3 className="text-lg font-bold text-white mb-2">Seguridad de Acceso</h3>
-                            <p className="text-gray-400 text-[11px] mb-6 leading-relaxed">
-                                <span className="text-amber-500 font-bold">⚠️ ADVERTENCIA:</span> Si cierras sesión y estás en una zona sin internet, <span className="text-white">no podrás volver a entrar</span> hasta tener señal.
-                                <br /><br />
-                                Escribe <span className="text-white font-bold">cerrar sesion</span> para confirmar:
-                            </p>
-                            <input
-                                type="text"
-                                className="w-full bg-[#0f172a] border border-[#334155] rounded-xl p-3 text-center text-white font-bold mb-6 focus:border-blue-500 outline-none transition-all"
-                                value={logoutConfirmText}
-                                onChange={e => setLogoutConfirmText(e.target.value)}
-                                placeholder="Escribe aquí..."
-                            />
-                            <div className="flex gap-3">
-                                <button className="btn btn-ghost flex-1 py-3 text-xs" onClick={() => setShowLogoutModal(false)}>CANCELAR</button>
+
+                            <h3 className="text-2xl font-black text-white mb-2 uppercase tracking-tighter">Cerrar Sesión</h3>
+                            <p className="text-gray-400 text-[10px] mb-6 uppercase tracking-widest">{user?.name} ({user?.email})</p>
+
+                            <div className="space-y-3 mb-8">
+                                <div className="bg-amber-500/5 border border-amber-500/10 rounded-2xl p-4">
+                                    <p className="text-gray-300 text-[11px] leading-relaxed">
+                                        <span className="text-amber-500 font-black">⚠️ SEÑAL REQUERIDA:</span> Si sales en zona sin señal, <span className="text-white font-bold">no podrás entrar</span> hasta volver a tener internet.
+                                    </p>
+                                </div>
+
+                                {pendingCount > 0 && (
+                                    <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4">
+                                        <p className="text-red-400 text-[11px] font-bold leading-relaxed">
+                                            ⚠️ TIENES {pendingCount} FOTOS SIN SUBIR. <br />
+                                            Sincroniza antes de salir para evitar pérdida de datos.
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="flex flex-col gap-3">
                                 <button
-                                    className="btn btn-danger flex-1 py-3 text-xs"
+                                    className="w-full p-5 bg-amber-600 hover:bg-amber-700 text-white font-black rounded-2xl shadow-xl shadow-amber-900/20 active:scale-95 transition-all flex items-center justify-center gap-3"
+                                    onClick={async () => {
+                                        setLoggingOut(true);
+                                        localStorage.removeItem('catastro_active_screen');
+                                        setActiveScreen('sActivity');
+                                        await logout();
+                                        setShowLogoutModal(false);
+                                        setLoggingOut(false);
+                                    }}
+                                    disabled={loggingOut}
+                                >
+                                    {loggingOut ? (
+                                        <span className="flex items-center gap-2">
+                                            <span className="spinner-white"></span>
+                                            CERRANDO...
+                                        </span>
+                                    ) : (
+                                        <>CERRAR SESIÓN AHORA <LogOut size={20} /></>
+                                    )}
+                                </button>
+
+                                <button
+                                    className="w-full p-4 bg-white/5 hover:bg-white/10 text-gray-500 font-bold rounded-2xl transition-all"
+                                    onClick={() => setShowLogoutModal(false)}
+                                    disabled={loggingOut}
+                                >
+                                    CANCELAR
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* MODAL PELIGRO: LIMPIAR BASE DE DATOS LOCAL */}
+                {showClearDbModal && (
+                    <div style={{
+                        position: 'fixed',
+                        inset: 0,
+                        zIndex: 20000,
+                        backgroundColor: 'rgba(0, 0, 0, 0.9)',
+                        backdropFilter: 'blur(12px)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '20px',
+                        animation: 'fadeIn 0.3s ease-out'
+                    }}>
+                        <div style={{
+                            backgroundColor: '#161b22',
+                            border: '1px solid rgba(255, 69, 96, 0.3)',
+                            borderRadius: '28px',
+                            padding: '32px 24px',
+                            width: '100%',
+                            maxWidth: '360px',
+                            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 40px rgba(255, 69, 96, 0.1)',
+                            textAlign: 'center',
+                            position: 'relative',
+                            maxHeight: '90vh',
+                            overflowY: 'auto'
+                        }}>
+                            <div style={{
+                                width: '64px',
+                                height: '64px',
+                                background: 'rgba(255, 69, 96, 0.1)',
+                                borderRadius: '20px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                margin: '0 auto 20px',
+                                border: '1px solid rgba(255, 69, 96, 0.2)'
+                            }}>
+                                <AlertTriangle size={32} color="#FF4560" />
+                            </div>
+
+                            <h3 style={{
+                                color: 'white',
+                                fontSize: '20px',
+                                fontWeight: '900',
+                                marginBottom: '8px',
+                                textTransform: 'uppercase',
+                                letterSpacing: '-0.5px'
+                            }}>Limpieza Crítica</h3>
+
+                            <p style={{
+                                color: '#64748b',
+                                fontSize: '10px',
+                                fontWeight: 'bold',
+                                textTransform: 'uppercase',
+                                letterSpacing: '1px',
+                                marginBottom: '24px'
+                            }}>Base de Datos Local</p>
+
+                            <div style={{
+                                background: 'rgba(255, 69, 96, 0.05)',
+                                border: '1px solid rgba(255, 69, 96, 0.1)',
+                                borderRadius: '16px',
+                                padding: '16px',
+                                marginBottom: '24px'
+                            }}>
+                                <p style={{
+                                    color: '#fca5a5',
+                                    fontSize: '10px',
+                                    fontWeight: '800',
+                                    textTransform: 'uppercase',
+                                    lineHeight: '1.6',
+                                    margin: 0
+                                }}>
+                                    ⚠️ ¡ELIMINACIÓN TOTAL! <br />
+                                    <span style={{ opacity: 0.6, fontWeight: '400' }}>BORRARÁ FICHAS NO SINCRONIZADAS Y FOTOS. NO SE PUEDE REVERTIR.</span>
+                                </p>
+                            </div>
+
+                            <div style={{ marginBottom: '24px' }}>
+                                <p style={{
+                                    color: '#64748b',
+                                    fontSize: '9px',
+                                    fontWeight: '900',
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.5px',
+                                    marginBottom: '10px'
+                                }}>ESCRIBE <span style={{ color: 'white', fontWeight: 'bold' }}>ELIMINAR</span> PARA CONFIRMAR:</p>
+
+                                <input
+                                    type="text"
+                                    style={{
+                                        width: '100%',
+                                        background: '#0d1117',
+                                        border: '1px solid rgba(255, 255, 255, 0.05)',
+                                        borderRadius: '16px',
+                                        padding: '14px',
+                                        color: 'white',
+                                        textAlign: 'center',
+                                        fontSize: '14px',
+                                        fontFamily: 'monospace',
+                                        outline: 'none',
+                                        transition: 'border-color 0.2s',
+                                        textTransform: 'uppercase'
+                                    }}
+                                    value={clearDbConfirmText}
+                                    onChange={e => setClearDbConfirmText(e.target.value)}
+                                    placeholder="ELIMINAR"
+                                />
+                            </div>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                <button
+                                    style={{
+                                        width: '100%',
+                                        padding: '16px',
+                                        background: '#FF4560',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '16px',
+                                        fontSize: '12px',
+                                        fontWeight: '900',
+                                        textTransform: 'uppercase',
+                                        cursor: 'pointer',
+                                        boxShadow: '0 8px 16px rgba(255, 69, 96, 0.3)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '8px',
+                                        transition: 'transform 0.1s active'
+                                    }}
                                     onClick={() => {
-                                        if (logoutConfirmText.toLowerCase() === 'cerrar sesion') {
-                                            // Resetear estado de navegacion pero MANTENER borradores (fichas_star, catastro_draft)
-                                            localStorage.removeItem('catastro_active_screen');
-                                            setActiveScreen('sActivity');
-                                            logout();
-                                            setShowLogoutModal(false);
+                                        if (clearDbConfirmText.toLowerCase() === 'eliminar') {
+                                            localStorage.removeItem('fichas_star');
+                                            localStorage.removeItem('catastro_draft');
+                                            setFichas({});
+                                            setShowClearDbModal(false);
+                                            toast("🗑️ Memoria local totalmente limpia");
                                         } else {
-                                            toast("❌ Escribe exactamente 'cerrar sesion'");
+                                            toast("❌ Escribe exactamente 'eliminar'");
                                         }
                                     }}
                                 >
-                                    CERRAR SESIÓN
+                                    SÍ, ELIMINAR TODO <Trash2 size={16} />
+                                </button>
+
+                                <button
+                                    style={{
+                                        width: '100%',
+                                        padding: '14px',
+                                        background: 'rgba(255, 255, 255, 0.05)',
+                                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                                        color: '#94a3b8',
+                                        borderRadius: '16px',
+                                        fontSize: '12px',
+                                        fontWeight: '800',
+                                        textTransform: 'uppercase',
+                                        cursor: 'pointer'
+                                    }}
+                                    onClick={() => setShowClearDbModal(false)}
+                                >
+                                    CANCELAR Y REGRESAR
                                 </button>
                             </div>
                         </div>
@@ -1740,11 +2082,11 @@ const App: React.FC = () => {
     );
 };
 
-/* ═══════════════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════
    SUB-COMPONENTS
-═══════════════════════════════════════════════════════════ */
+═══════════════════════════════════════════════════════════ */
 
-const FichaItemRow: React.FC<{ f: AppState; onEdit: () => void; onDelete: () => void }> = ({ f, onEdit, onDelete }) => {
+const FichaItemRow: React.FC<{ f: AppState; onEdit: () => void; onDelete: () => void; onPDF: () => void; pdfLoading: boolean }> = ({ f, onEdit, onDelete, onPDF, pdfLoading }) => {
     const [pendingPhotos, setPendingPhotos] = useState<string[]>([]);
     const [checking, setChecking] = useState(true);
 
@@ -1769,7 +2111,7 @@ const FichaItemRow: React.FC<{ f: AppState; onEdit: () => void; onDelete: () => 
         <div className="ficha-item" onClick={onEdit}>
             <div className="ficha-item-title">
                 <span className="flex items-center gap-2">
-                    Pozo {f.pozo || '—'}
+                    Pozo {f.pozo || '-'}
                     {f.synced ? (
                         <Cloud size={14} className="text-green-500" />
                     ) : (
@@ -1792,8 +2134,16 @@ const FichaItemRow: React.FC<{ f: AppState; onEdit: () => void; onDelete: () => 
                 </span>
 
                 <button
+                    onClick={(e) => { e.stopPropagation(); onPDF(); }}
+                    disabled={pdfLoading}
+                    className="p-2 text-orange-500 hover:bg-orange-500/10 rounded-lg transition-colors flex items-center justify-center min-w-[36px]"
+                >
+                    {pdfLoading ? <div className="spinner-white" style={{ width: '12px', height: '12px', borderWidth: '1px' }}></div> : <FileText size={16} />}
+                </button>
+
+                <button
                     onClick={(e) => { e.stopPropagation(); onDelete(); }}
-                    className="ml-auto p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
+                    className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
                 >
                     <Trash2 size={16} />
                 </button>
@@ -1805,7 +2155,7 @@ const FichaItemRow: React.FC<{ f: AppState; onEdit: () => void; onDelete: () => 
 const SummaryItem: React.FC<{ label: string; val: string }> = ({ label, val }) => (
     <div className="summary-cell">
         <div className="summary-cell-label">{label}</div>
-        <div className="summary-cell-val">{val || '—'}</div>
+        <div className="summary-cell-val">{val || '-'}</div>
     </div>
 );
 
@@ -1864,7 +2214,7 @@ const WellDiagram: React.FC<{ diam: number; altura: number; pipes?: Pipe[] }> = 
                 );
             })}
 
-            <text x={cx} y={bodyTop + bodyH + 18} fontFamily="DM Mono" fontSize="8" fill="#00C896" textAnchor="middle">ø{diam.toFixed(2)}m</text>
+            <text x={cx} y={bodyTop + bodyH + 18} fontFamily="DM Mono" fontSize="8" fill="#00C896" textAnchor="middle">Ø{diam.toFixed(2)}m</text>
             <text x={cx - bodyW / 2 - 10} y={bodyTop + bodyH / 2} fontFamily="DM Mono" fontSize="8" fill="#0084FF" textAnchor="end">{altura.toFixed(2)}m</text>
         </svg>
     );
@@ -1883,7 +2233,7 @@ const ComponentEditor: React.FC<{
             <div className="flex justify-between items-center">
                 <span className="comp-label">Existe</span>
                 <div className="toggle3 w-32">
-                    <button className={`t-si ${data.existe === 'SI' ? 'active-si' : ''}`} onClick={() => onChange({ existe: 'SI' })}>SI</button>
+                    <button className={`t-si ${data.existe === 'SI' ? 'active-si' : ''}`} onClick={() => onChange({ existe: 'SI', mat: (data.mat === '-' || !data.mat) ? (materials[0] || '') : data.mat })}>SI</button>
                     <button className={`t-no ${data.existe === 'NO' ? 'active-no' : ''}`} onClick={() => onChange({ existe: 'NO', mat: '-', estado: '-' })}>NO</button>
                     <button className={`t-dk ${data.existe === 'DESCONOCIDO' ? 'active-dk' : ''}`} onClick={() => onChange({ existe: 'DESCONOCIDO', mat: '-', estado: '-' })}>DESC.</button>
                 </div>
@@ -1900,7 +2250,7 @@ const ComponentEditor: React.FC<{
                                 </div>
                             ))}
                         </div>
-                        {((data.mat && !materials.includes(data.mat as string)) || data.mat === 'OTRO') && (
+                        {((data.mat && !materials.includes(data.mat as string)) || data.mat === 'OTRO') && label !== 'Cargue' && (
                             <input
                                 type="text"
                                 maxLength={60}
@@ -1963,8 +2313,8 @@ const PipeCard: React.FC<{ pipe: Pipe; index: number; onUpdate: (u: Partial<Pipe
             </div>
             <div className={`pipe-body ${isOpen ? 'open' : ''}`}>
                 <div className="pipe-toggle">
-                    <button className={pipe.es === 'ENTRADA' ? 'e-active' : ''} onClick={() => onUpdate({ es: 'ENTRADA' })}>⬇ ENTRADA</button>
-                    <button className={pipe.es === 'SALIDA' ? 's-active' : ''} onClick={() => onUpdate({ es: 'SALIDA' })}>⬆ SALIDA</button>
+                    <button className={pipe.es === 'ENTRADA' ? 'e-active' : ''} onClick={() => onUpdate({ es: 'ENTRADA' })}><ArrowDown size={14} /> ENTRADA</button>
+                    <button className={pipe.es === 'SALIDA' ? 's-active' : ''} onClick={() => onUpdate({ es: 'SALIDA' })}><ArrowUp size={14} /> SALIDA</button>
                 </div>
                 <div className="field-row">
                     <div className="field" style={{ flex: 2 }}><label>De/Hasta</label><input type="text" value={pipe.deA} onChange={e => onUpdate({ deA: e.target.value })} placeholder="Ej: P-002" /></div>
@@ -2032,7 +2382,7 @@ const PipeCard: React.FC<{ pipe: Pipe; index: number; onUpdate: (u: Partial<Pipe
                     <div className="field">
                         <label>Emboquillado</label>
                         <select value={pipe.emboq} onChange={e => onUpdate({ emboq: e.target.value })}>
-                            <option value="">—</option>
+                            <option value="">-</option>
                             <option value="SI">SI</option>
                             <option value="NO">NO</option>
                             <option value="DESC">DESC</option>
@@ -2041,14 +2391,14 @@ const PipeCard: React.FC<{ pipe: Pipe; index: number; onUpdate: (u: Partial<Pipe
                 </div>
                 <div className="field-row">
                     <div className="field">
-                        <label>Cota Batea Z <span style={{ fontSize: '9px', color: '#64748b' }}>m</span></label>
+                        <label>Cota Clave Z <span style={{ fontSize: '9px', color: '#64748b' }}>m</span></label>
                         <input type="number" step="0.01" value={pipe.cotaZ}
                             onFocus={numFocus}
                             onChange={e => onUpdate({ cotaZ: e.target.value })}
                             placeholder="0.00 m" className="bg-gray-800 text-green-400 font-mono" />
                     </div>
                     <div className="field">
-                        <label>Cota Clave Z+Ø <span style={{ fontSize: '9px', color: '#64748b' }}>m</span></label>
+                        <label>Cota Batea Z+ø <span style={{ fontSize: '9px', color: '#64748b' }}>m</span></label>
                         <input
                             type="text"
                             readOnly
@@ -2065,7 +2415,7 @@ const PipeCard: React.FC<{ pipe: Pipe; index: number; onUpdate: (u: Partial<Pipe
                 </div>
                 <div className="field">
                     <label>Pendiente (%)</label>
-                    <input type="text" value={pipe.pendiente} onChange={e => onUpdate({ pendiente: e.target.value })} placeholder="0.0%" className="bg-gray-800 text-yellow-400 font-mono text-center" />
+                    <input type="number" step="0.1" value={pipe.pendiente} onChange={e => onUpdate({ pendiente: e.target.value })} placeholder="0.0" className="bg-gray-800 text-yellow-400 font-mono text-center" />
                 </div>
             </div>
         </div>
@@ -2082,7 +2432,7 @@ const SumideroCard: React.FC<{ sum: Sumidero; index: number; onUpdate: (u: Parti
             <div className="field">
                 <label>Tipo Sumidero</label>
                 <select value={['COMBINADO O MIXTO', 'VENTANA O LATERAL', 'REJILLA', 'RANURADOS', 'TRANSVERSAL'].includes(sum.tipo) ? sum.tipo : sum.tipo ? 'OTRO' : ''} onChange={e => onUpdate({ tipo: e.target.value === 'OTRO' ? 'OTRO' : e.target.value })}>
-                    <option value="">—</option>
+                    <option value="">-</option>
                     <option>COMBINADO O MIXTO</option>
                     <option>VENTANA O LATERAL</option>
                     <option>REJILLA</option>
@@ -2113,15 +2463,15 @@ const SumideroCard: React.FC<{ sum: Sumidero; index: number; onUpdate: (u: Parti
             </div>
             <div className="field">
                 <label>Mat. Rejilla</label>
-                <select value={['DESCONOCIDO', 'CONCRETO', 'METAL DÚCTIL', 'POLIPROPILENO'].includes(sum.matRejilla) ? sum.matRejilla : sum.matRejilla ? 'OTRO' : ''} onChange={e => onUpdate({ matRejilla: e.target.value === 'OTRO' ? 'OTRO' : e.target.value })}>
+                <select value={['DESCONOCIDO', 'CONCRETO', 'METAL DÚCTIL', 'PLÁSTICO REFORZADO'].includes(sum.matRejilla) ? sum.matRejilla : sum.matRejilla ? 'OTRO' : ''} onChange={e => onUpdate({ matRejilla: e.target.value === 'OTRO' ? 'OTRO' : e.target.value })}>
                     <option value="">—</option>
                     <option>DESCONOCIDO</option>
                     <option>CONCRETO</option>
                     <option>METAL DÚCTIL</option>
-                    <option>POLIPROPILENO</option>
+                    <option>PLÁSTICO REFORZADO</option>
                     <option>OTRO</option>
                 </select>
-                {(!['DESCONOCIDO', 'CONCRETO', 'METAL DÚCTIL', 'POLIPROPILENO', ''].includes(sum.matRejilla) || sum.matRejilla === 'OTRO') && (
+                {(!['DESCONOCIDO', 'CONCRETO', 'METAL DÚCTIL', 'PLÁSTICO REFORZADO', ''].includes(sum.matRejilla) || sum.matRejilla === 'OTRO') && (
                     <input type="text" maxLength={60} value={sum.matRejilla === 'OTRO' ? '' : sum.matRejilla} onChange={e => onUpdate({ matRejilla: e.target.value.toUpperCase() })} className="mt-1 text-xs" placeholder="Especifique..." />
                 )}
             </div>
@@ -2187,12 +2537,12 @@ const PhotoZone: React.FC<{ label: string; icon: React.ReactNode; photos: string
         <div className="mb-6">
             <div className="flex justify-between items-center mb-2">
                 <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">{label}</span>
-                <span className="text-[9px] text-blue-400 font-mono">Cola Drive: ☁ Sincronizando...</span>
+                <span className="text-[9px] text-blue-400 font-mono">Cola Drive: ☁️ Sincronizando...</span>
             </div>
             <div className="photo-zone">
                 <input type="file" accept="image/*" onChange={handleFile} />
                 <div className="pz-icon">{icon}</div>
-                <div className="pz-label">Tocar para Captura</div>
+                <div className="pz-label">Tocar para Galería</div>
             </div>
             <div className="photo-thumbs">
                 {photos.map((p, i) => (

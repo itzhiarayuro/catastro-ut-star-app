@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Camera, Trash2, MapPin, Clock, CloudOff, Info, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Camera, Trash2, MapPin, Clock, CloudOff, Info, CheckCircle2, AlertTriangle, Image as ImageIcon } from 'lucide-react';
+import FotoAkasoAutomatica from './FotoAkasoAutomatica';
 import { procesarFoto, FotoRegistro, resizeImage } from '../utils/fotoProcessor';
 import { savePhotoToStorage, getHybridModeStatus } from '../utils/storageManager';
 
@@ -115,6 +116,17 @@ const PhotoSection: React.FC<{
 
     const lastPhoto = photos[photos.length - 1];
 
+    // Cálculo dinámico del nombre para Akaso
+    const akasoFilename = (() => {
+        let p = [pozoId];
+        if (isMedicion) p.push(medType);
+        else if (type === "general") p.push("P");
+        else if (type === "tapa" || type === "interior") p.push(type === "tapa" ? "T" : "I");
+        else if (type === "entrada" || type === "salida") p.push(`${index}-${extraType}`);
+        if (sumidero) p.push(sumidero.toUpperCase().startsWith('SUM') ? sumidero.toUpperCase() : `SUM${sumidero.toUpperCase()}`);
+        return `${p.join('-').toUpperCase()}.JPG`;
+    })();
+
     const handleCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (isLocked) {
             alert("⚠️ No hay espacio suficiente en el dispositivo.");
@@ -189,6 +201,15 @@ const PhotoSection: React.FC<{
                         <CheckCircle2 size={12} /> {photos.length} FOTO{photos.length > 1 ? 'S' : ''}
                     </span>
                 )}
+                <FotoAkasoAutomatica
+                    pozoId={pozoId}
+                    filename={akasoFilename}
+                    categoria={
+                        type === 'general' ? 'General' :
+                            type === 'tapa' || type === 'interior' ? 'Interior' : 'Tuberia'
+                    }
+                    onSuccess={(f) => onAdd(f)}
+                />
             </div>
 
             <div className="flex gap-2">
@@ -260,15 +281,14 @@ const PhotoSection: React.FC<{
                 </div>
             )}
 
-            {/* Premium Capture Button */}
+            {/* Premium Selector Button */}
             <button className={`btn-premium-capture ${isLocked ? 'grayscale opacity-50 cursor-not-allowed' : ''}`}>
-                <Camera size={16} />
-                {lastPhoto ? 'AÑADIR OTRA FOTO' : 'TOMAR FOTO'}
+                <ImageIcon size={16} />
+                {lastPhoto ? 'AÑADIR DESDE GALERÍA' : 'SELECCIONAR FOTO'}
                 {!isLocked && (
                     <input
                         type="file"
                         accept="image/*"
-
                         onChange={handleCapture}
                         className="absolute inset-0 opacity-0 cursor-pointer z-10"
                     />
@@ -320,16 +340,6 @@ const FotosZone: React.FC<FotosZoneProps> = ({ pozoId, photos, pipes, sums, onAd
                     <h2 className="text-lg font-bold">Registro Fotográfico</h2>
                     <p className="text-[10px] text-gray-500 uppercase tracking-widest">Nomenclatura Automática: {pozoId}-...</p>
                 </div>
-                <button
-                    onClick={() => {
-                        const intent = "intent://#Intent;package=com.cnest.motioncamera;S.browser_fallback_url=https://play.google.com/store/apps/details?id=com.cnest.motioncamera;end";
-                        window.location.href = intent;
-                    }}
-                    className="ml-auto flex items-center gap-2 bg-[#FF5722] hover:bg-[#E64A19] text-white text-[10px] font-bold py-1.5 px-3 rounded-full transition-all shadow-lg active:scale-95"
-                >
-                    <Camera size={14} />
-                    Abrir Akaso GO
-                </button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -419,26 +429,28 @@ const FotosZone: React.FC<FotosZoneProps> = ({ pozoId, photos, pipes, sums, onAd
             </div>
 
             {/* Photo Preview Modal */}
-            {previewPhoto && (
-                <div
-                    className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-md flex flex-col p-4 animate-in fade-in duration-300"
-                    onClick={() => setPreviewPhoto(null)}
-                >
-                    <div className="flex justify-between items-center mb-4 pt-2">
-                        <div className="flex flex-col">
-                            <span className="text-white font-bold text-sm tracking-tight">{previewPhoto.filename}</span>
-                            <span className="text-gray-500 text-[10px] uppercase">{previewPhoto.tipo} · Pozo {pozoId}</span>
+            {
+                previewPhoto && (
+                    <div
+                        className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-md flex flex-col p-4 animate-in fade-in duration-300"
+                        onClick={() => setPreviewPhoto(null)}
+                    >
+                        <div className="flex justify-between items-center mb-4 pt-2">
+                            <div className="flex flex-col">
+                                <span className="text-white font-bold text-sm tracking-tight">{previewPhoto.filename}</span>
+                                <span className="text-gray-500 text-[10px] uppercase">{previewPhoto.tipo} · Pozo {pozoId}</span>
+                            </div>
+                            <button className="bg-white/10 hover:bg-white/20 text-white p-2 rounded-full transition-colors">
+                                <Trash2 size={24} onClick={() => { onDeletePhoto(previewPhoto.id); setPreviewPhoto(null); }} />
+                            </button>
                         </div>
-                        <button className="bg-white/10 hover:bg-white/20 text-white p-2 rounded-full transition-colors">
-                            <Trash2 size={24} onClick={() => { onDeletePhoto(previewPhoto.id); setPreviewPhoto(null); }} />
-                        </button>
+                        <div className="flex-1 flex items-center justify-center overflow-hidden rounded-2xl border border-white/10">
+                            <img src={previewPhoto.blobId} className="max-w-full max-h-full object-contain shadow-2xl" alt="Preview" />
+                        </div>
+                        <p className="text-center text-gray-400 text-[10px] mt-4 uppercase tracking-[0.2em]">Toca el fondo para cerrar</p>
                     </div>
-                    <div className="flex-1 flex items-center justify-center overflow-hidden rounded-2xl border border-white/10">
-                        <img src={previewPhoto.blobId} className="max-w-full max-h-full object-contain shadow-2xl" alt="Preview" />
-                    </div>
-                    <p className="text-center text-gray-400 text-[10px] mt-4 uppercase tracking-[0.2em]">Toca el fondo para cerrar</p>
-                </div>
-            )}
+                )
+            }
 
             <div className={`p-3 border rounded-xl flex items-center justify-between transition-all ${isLocked ? 'bg-red-500/10 border-red-500/20' : 'bg-blue-500/10 border-blue-500/20'}`}>
                 <div className="flex items-center gap-2">
@@ -460,10 +472,12 @@ const FotosZone: React.FC<FotosZoneProps> = ({ pozoId, photos, pipes, sums, onAd
                     </div>
                 )}
             </div>
-            {storageInfo.info && (
-                <p className="text-[9px] text-center text-gray-500 italic px-2">{storageInfo.info}</p>
-            )}
-        </div>
+            {
+                storageInfo.info && (
+                    <p className="text-[9px] text-center text-gray-500 italic px-2">{storageInfo.info}</p>
+                )
+            }
+        </div >
     );
 };
 
