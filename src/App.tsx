@@ -301,7 +301,7 @@ const App: React.FC = () => {
     }, []);
 
     const firestorePath = state.pozo && state.municipio
-        ? `fichas / ${state.municipio.toUpperCase()}_${state.pozo.replace(/\s+/g, '')} `
+        ? `fichas/${state.municipio.toUpperCase()}_${state.pozo.replace(/\s+/g, '')}`
         : '';
 
     const { saveData, loading } = useFirestoreDoc(firestorePath);
@@ -551,7 +551,7 @@ const App: React.FC = () => {
                 if (!ok) return;
             }
         }
-        const id = `F_${Date.now()} `;
+        const id = `F_${Date.now()}`;
         const newState = {
             ...INITIAL_STATE,
             id,
@@ -594,7 +594,7 @@ const App: React.FC = () => {
     };
 
     const saveFicha = async () => {
-        const id = state.id || `F_${Date.now()} `;
+        const id = state.id || `F_${Date.now()}`;
         const now = new Date().toISOString();
 
         // REGLA DE COMPATIBILIDAD: pipes[].es debe ser minúsculas ("entrada"/"salida")
