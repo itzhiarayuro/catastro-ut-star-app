@@ -27,6 +27,8 @@ interface SavedMarcacion {
         panoramica: any | null;
         tapa: any | null;
         batea?: any | null;
+        medidaAT?: any | null;
+        puntoGPS?: any | null;
     };
 }
 
@@ -36,7 +38,7 @@ interface FormState {
     otroTipo: string;
     municipio: string;
     gps: { lat: number | null; lng: number | null; precision: number | null };
-    fotos: { panoramica: any | null; tapa: any | null; batea?: any | null };
+    fotos: { panoramica: any | null; tapa: any | null; batea?: any | null; medidaAT?: any | null; puntoGPS?: any | null };
     obs: string;
 }
 
@@ -46,7 +48,7 @@ const EMPTY_FORM = (municipio: string): FormState => ({
     otroTipo: '',
     municipio,
     gps: { lat: null, lng: null, precision: null },
-    fotos: { panoramica: null, tapa: null, batea: null },
+    fotos: { panoramica: null, tapa: null, batea: null, medidaAT: null, puntoGPS: null },
     obs: '',
 });
 
@@ -120,19 +122,20 @@ const MarcacionScreen: React.FC<{
     /* ── Captura foto ── */
     const isSumidero = form.tipoElemento === 'sumidero';
 
-    const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>, category: 'panoramica' | 'tapa' | 'batea') => {
+    const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>, category: 'panoramica' | 'tapa' | 'batea' | 'medidaAT' | 'puntoGPS') => {
         const file = e.target.files?.[0];
         if (!file) return;
         const rawCodigo = form.codigo.trim().toUpperCase().replace(/\s+/g, '');
-        const prefix = category === 'panoramica' ? 'P' : category === 'tapa' ? 'T' : 'BE';
+        const prefix = category === 'panoramica' ? 'P' : category === 'tapa' ? 'T' : category === 'batea' ? 'BE' : category === 'medidaAT' ? 'AT' : 'GPS';
         const filename = rawCodigo ? `${rawCodigo}-${prefix}.JPG` : `MARC-${Date.now()}-${prefix}.JPG`;
         try {
             const base64 = await resizeImage(file, 1600, 1600, 0.7);
             const newFoto = procesarFoto(filename, rawCodigo || 'MARC', base64);
+            const catString = category === 'panoramica' ? 'General' : category === 'tapa' ? 'Interior' : category === 'puntoGPS' ? 'Plano/Mapa' as any : category === 'batea' ? 'Sumidero' : 'General';
             await savePhotoToStorage({
                 id: newFoto.id, pozoId: rawCodigo || 'MARC', municipio: form.municipio,
                 barrio: 'MARCACION', filename, blob: base64,
-                categoria: category === 'panoramica' ? 'General' : category === 'tapa' ? 'Interior' : 'Sumidero',
+                categoria: catString,
                 inspector: user?.name || 'Desconocido', timestamp: Date.now(), synced: false
             });
             updateForm({ fotos: { ...form.fotos, [category]: { ...newFoto, blobId: base64 } } });
@@ -142,7 +145,7 @@ const MarcacionScreen: React.FC<{
         }
     };
 
-    const handleAkasoSuccess = (cat: 'panoramica' | 'tapa' | 'batea', foto: any) => {
+    const handleAkasoSuccess = (cat: 'panoramica' | 'tapa' | 'batea' | 'medidaAT' | 'puntoGPS', foto: any) => {
         updateForm({ fotos: { ...form.fotos, [cat]: foto } });
     };
 
@@ -302,12 +305,18 @@ const MarcacionScreen: React.FC<{
                                                     {r.gps.lat.toFixed(5)}, {r.gps.lng?.toFixed(5)}
                                                 </div>
                                             )}
-                                            <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
+                                            <div style={{ display: 'flex', gap: '6px', marginTop: '6px', flexWrap: 'wrap' }}>
                                                 {r.fotos?.panoramica && (
                                                     <span style={{ fontSize: '9px', background: 'rgba(0,132,255,0.15)', color: '#60a5fa', borderRadius: '4px', padding: '2px 6px', fontFamily: 'monospace', fontWeight: '700' }}>-P ✓</span>
                                                 )}
                                                 {r.fotos?.tapa && (
                                                     <span style={{ fontSize: '9px', background: 'rgba(0,200,150,0.15)', color: 'var(--green)', borderRadius: '4px', padding: '2px 6px', fontFamily: 'monospace', fontWeight: '700' }}>-T ✓</span>
+                                                )}
+                                                {r.fotos?.medidaAT && (
+                                                    <span style={{ fontSize: '9px', background: 'rgba(167,139,250,0.15)', color: '#a78bfa', borderRadius: '4px', padding: '2px 6px', fontFamily: 'monospace', fontWeight: '700' }}>-AT ✓</span>
+                                                )}
+                                                {r.fotos?.puntoGPS && (
+                                                    <span style={{ fontSize: '9px', background: 'rgba(255,165,0,0.15)', color: 'orange', borderRadius: '4px', padding: '2px 6px', fontFamily: 'monospace', fontWeight: '700' }}>-GPS ✓</span>
                                                 )}
                                             </div>
                                         </div>
@@ -415,8 +424,8 @@ const MarcacionScreen: React.FC<{
 
                     {/* 5. Fotos */}
                     <div className="card">
-                        <div className="card-title">Evidencia Fotográfica</div>
-                        <div className="field-row" style={{ gap: '16px' }}>
+                        <div className="card-title">Evidencia Básica</div>
+                        <div className="field-row" style={{ gap: '16px', marginBottom: '16px' }}>
                             {(['panoramica', 'tapa'] as const).map(cat => {
                                 const label = cat === 'panoramica' ? 'Panorámica' : 'Foto Tapa';
                                 const suffix = cat === 'panoramica' ? '-P' : '-T';
@@ -430,6 +439,38 @@ const MarcacionScreen: React.FC<{
                                                 pozoId={form.codigo.trim().toUpperCase() || 'MARC'}
                                                 filename={form.codigo.trim() ? `${form.codigo.trim().toUpperCase()}${suffix}.JPG` : `MARC-${Date.now()}${suffix}.JPG`}
                                                 categoria={cat === 'panoramica' ? 'General' : 'Interior'}
+                                                onSuccess={(f) => handleAkasoSuccess(cat, f)}
+                                            />
+                                        </div>
+                                        <div className="photo-zone" style={{ height: '120px', position: 'relative' }}>
+                                            <input type="file" accept="image/*" onChange={e => handlePhoto(e, cat)}
+                                                style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', zIndex: 10 }} />
+                                            {foto ? (
+                                                <img src={foto.blobId} alt={label} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '8px' }} />
+                                            ) : (
+                                                <><div className="pz-icon"><ImageIcon size={24} /></div><div className="pz-label">Galería</div></>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        <div className="card-title" style={{ marginTop: '16px', borderTop: '1px dashed var(--border)', paddingTop: '16px' }}>Evidencia Opcional</div>
+                        <div className="field-row" style={{ gap: '16px' }}>
+                            {(['medidaAT', 'puntoGPS'] as const).map(cat => {
+                                const label = cat === 'medidaAT' ? 'Medida (AT)' : 'Punto GPS';
+                                const suffix = cat === 'medidaAT' ? '-AT' : '-GPS';
+                                const foto = form.fotos[cat];
+                                return (
+                                    <div key={cat} style={{ flex: 1, textAlign: 'center' }}>
+                                        <div style={{ fontSize: '10px', fontWeight: '800', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '1px', color: foto ? 'var(--green)' : 'var(--text3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                                            {label} <span style={{ fontFamily: 'monospace', color: '#60a5fa' }}>{suffix}</span>
+                                            {foto && <CheckCircle2 size={12} style={{ display: 'inline', color: 'var(--green)' }} />}
+                                            <FotoAkasoAutomatica
+                                                pozoId={form.codigo.trim().toUpperCase() || 'MARC'}
+                                                filename={form.codigo.trim() ? `${form.codigo.trim().toUpperCase()}${suffix}.JPG` : `MARC-${Date.now()}${suffix}.JPG`}
+                                                categoria={cat === 'medidaAT' ? 'General' : 'General'}
                                                 onSuccess={(f) => handleAkasoSuccess(cat, f)}
                                             />
                                         </div>
