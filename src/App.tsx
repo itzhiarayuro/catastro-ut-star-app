@@ -22,7 +22,7 @@ import { Crosshair, LocateFixed, Signal } from 'lucide-react';
 import { APIProvider, Map, AdvancedMarker } from '@vis.gl/react-google-maps';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 
-const APP_VERSION = '1.2.9';
+const APP_VERSION = '1.3.0';
 
 /* ═══════════════════════════════════════════════════════════
    TYPES & INTERFACES

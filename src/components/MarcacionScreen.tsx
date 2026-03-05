@@ -27,7 +27,6 @@ interface SavedMarcacion {
         panoramica: any | null;
         tapa: any | null;
         batea?: any | null;
-        medidaAT?: any | null;
         puntoGPS?: any | null;
     };
 }
@@ -38,7 +37,7 @@ interface FormState {
     otroTipo: string;
     municipio: string;
     gps: { lat: number | null; lng: number | null; precision: number | null };
-    fotos: { panoramica: any | null; tapa: any | null; batea?: any | null; medidaAT?: any | null; puntoGPS?: any | null };
+    fotos: { panoramica: any | null; tapa: any | null; batea?: any | null; puntoGPS?: any | null };
     obs: string;
 }
 
@@ -48,7 +47,7 @@ const EMPTY_FORM = (municipio: string): FormState => ({
     otroTipo: '',
     municipio,
     gps: { lat: null, lng: null, precision: null },
-    fotos: { panoramica: null, tapa: null, batea: null, medidaAT: null, puntoGPS: null },
+    fotos: { panoramica: null, tapa: null, batea: null, puntoGPS: null },
     obs: '',
 });
 
@@ -327,9 +326,6 @@ const MarcacionScreen: React.FC<{
                                                 {r.fotos?.tapa && (
                                                     <span style={{ fontSize: '9px', background: 'rgba(0,200,150,0.15)', color: 'var(--green)', borderRadius: '4px', padding: '2px 6px', fontFamily: 'monospace', fontWeight: '700' }}>-T ✓</span>
                                                 )}
-                                                {r.fotos?.medidaAT && (
-                                                    <span style={{ fontSize: '9px', background: 'rgba(167,139,250,0.15)', color: '#a78bfa', borderRadius: '4px', padding: '2px 6px', fontFamily: 'monospace', fontWeight: '700' }}>-AT ✓</span>
-                                                )}
                                                 {r.fotos?.puntoGPS && (
                                                     <span style={{ fontSize: '9px', background: 'rgba(255,165,0,0.15)', color: 'orange', borderRadius: '4px', padding: '2px 6px', fontFamily: 'monospace', fontWeight: '700' }}>-GPS ✓</span>
                                                 )}
@@ -473,9 +469,9 @@ const MarcacionScreen: React.FC<{
 
                         <div className="card-title" style={{ marginTop: '16px', borderTop: '1px dashed var(--border)', paddingTop: '16px' }}>Evidencia Opcional</div>
                         <div className="field-row" style={{ gap: '16px' }}>
-                            {(['medidaAT', 'puntoGPS'] as const).map(cat => {
-                                const label = cat === 'medidaAT' ? 'Medida (AT)' : 'Punto GPS';
-                                const suffix = cat === 'medidaAT' ? '-AT' : '-GPS';
+                            {(['puntoGPS'] as const).map(cat => {
+                                const label = 'Punto GPS';
+                                const suffix = '-GPS';
                                 const foto = form.fotos[cat];
                                 return (
                                     <div key={cat} style={{ flex: 1, textAlign: 'center' }}>
@@ -485,7 +481,7 @@ const MarcacionScreen: React.FC<{
                                             <FotoAkasoAutomatica
                                                 pozoId={form.codigo.trim().toUpperCase() || 'MARC'}
                                                 filename={form.codigo.trim() ? `${form.codigo.trim().toUpperCase()}${suffix}.JPG` : `MARC-${Date.now()}${suffix}.JPG`}
-                                                categoria={cat === 'medidaAT' ? 'General' : 'General'}
+                                                categoria="General"
                                                 onSuccess={(f) => handleAkasoSuccess(cat, f)}
                                             />
                                         </div>
@@ -550,10 +546,39 @@ const MarcacionScreen: React.FC<{
 
                     {/* 6. Observaciones */}
                     <div className="card">
-                        <div className="card-title">Observaciones (opcional)</div>
-                        <textarea rows={3} placeholder="Notas sobre el elemento..." value={form.obs}
+                        <div className="flex justify-between items-center mb-2">
+                            <div className="card-title" style={{ margin: 0 }}>Observaciones (opcional)</div>
+                            <button
+                                className="bg-white/5 hover:bg-white/10 text-[10px] py-1 px-2 rounded-md flex items-center gap-1 transition-all text-blue-400"
+                                onClick={() => {
+                                    const bullet = "• ";
+                                    updateForm({ obs: form.obs + (form.obs.endsWith('\n') || form.obs === '' ? '' : '\n') + bullet });
+                                }}
+                            >
+                                <List size={12} /> Añadir Viñeta
+                            </button>
+                        </div>
+                        <textarea
+                            rows={4}
+                            placeholder="Ej: • Tapa fisurada..."
+                            value={form.obs}
                             onChange={e => updateForm({ obs: e.target.value })}
-                            style={{ width: '100%', background: 'var(--bg3)', border: '1.5px solid var(--border2)', borderRadius: '10px', color: 'var(--text1)', padding: '10px 12px', fontSize: '13px', resize: 'none', fontFamily: "'DM Sans', sans-serif", boxSizing: 'border-box' }} />
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    const lines = form.obs.split('\n');
+                                    const lastLine = lines[lines.length - 1];
+                                    if (lastLine.trim().startsWith('•')) {
+                                        e.preventDefault();
+                                        updateForm({ obs: form.obs + '\n• ' });
+                                    }
+                                }
+                            }}
+                            style={{
+                                width: '100%', background: 'var(--bg3)', border: '1.5px solid var(--border2)',
+                                borderRadius: '10px', color: 'var(--text1)', padding: '10px 12px',
+                                fontSize: '13px', resize: 'none', fontFamily: "'DM Sans', sans-serif", boxSizing: 'border-box'
+                            }}
+                        />
                     </div>
 
                     {/* Errores */}
