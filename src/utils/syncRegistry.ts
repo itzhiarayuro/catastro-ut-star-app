@@ -36,7 +36,7 @@ export const syncFichasToFirestore = async (
     for (const ficha of fichasArr) {
         current++;
         if (onProgress) {
-            onProgress({ total, current, msg: `Subiendo ${ficha.pozo}...` });
+            onProgress({ total, current: current, msg: `Subiendo ${ficha.pozo}...` });
         }
 
         try {
@@ -54,4 +54,35 @@ export const syncFichasToFirestore = async (
     }
 
     return updatedFichas;
+};
+
+export const syncMarcacionesToFirestore = async (
+    onProgress?: (progress: { total: number; current: number; msg: string }) => void
+): Promise<void> => {
+    const existing: any[] = JSON.parse(localStorage.getItem('marcaciones_star') || '[]');
+    const pending = existing.filter(m => !m.synced && !m.deleted);
+    const total = pending.length;
+    let current = 0;
+
+    for (const Marc of pending) {
+        current++;
+        if (onProgress) {
+            onProgress({ total, current, msg: `Sincronizando Marcación ${Marc.codigo}...` });
+        }
+
+        try {
+            const path = `marcaciones/${Marc.municipio.toUpperCase()}_${Marc.codigo}`;
+            await setDoc(doc(db, path), { ...Marc, synced: true, lastSync: new Date().toISOString() });
+
+            // Actualizar en localStorage
+            const updated = JSON.parse(localStorage.getItem('marcaciones_star') || '[]');
+            const idx = updated.findIndex((m: any) => m.codigo === Marc.codigo && m.municipio === Marc.municipio);
+            if (idx >= 0) {
+                updated[idx].synced = true;
+                localStorage.setItem('marcaciones_star', JSON.stringify(updated));
+            }
+        } catch (err) {
+            console.error(`Error sincronizando marcación ${Marc.codigo}:`, err);
+        }
+    }
 };

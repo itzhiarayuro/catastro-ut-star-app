@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Cloud, Wifi, Battery, Moon, Sun, ArrowLeft, RefreshCw, CheckCircle, AlertTriangle, Info } from 'lucide-react';
+import { Cloud, Wifi, Battery, Moon, Sun, ArrowLeft, RefreshCw, CheckCircle, AlertTriangle, Info, MapPin, Camera } from 'lucide-react';
 import { syncPhotosToDrive } from '../utils/driveSync';
-import { syncFichasToFirestore, validateFicha } from '../utils/syncRegistry';
+import { syncFichasToFirestore, syncMarcacionesToFirestore, validateFicha } from '../utils/syncRegistry';
+import { getPendingPhotosCount } from '../utils/storageManager';
 
 interface SyncScreenProps {
     fichas: Record<string, any>;
@@ -12,6 +13,8 @@ interface SyncScreenProps {
 const SyncScreen: React.FC<SyncScreenProps> = ({ fichas, onFichasUpdated, onClose }) => {
     const [status, setStatus] = useState<'IDLE' | 'SYNCING' | 'COMPLETED' | 'ERROR'>('IDLE');
     const [progress, setProgress] = useState({ total: 0, synced: 0, currentFile: '', error: null as string | null });
+    const [pendingPhotos, setPendingPhotos] = useState(0);
+    const [pendingMarcaciones, setPendingMarcaciones] = useState(0);
 
     // Conteo de fichas por estado
     const fichasArr = Object.values(fichas);
@@ -19,6 +22,19 @@ const SyncScreen: React.FC<SyncScreenProps> = ({ fichas, onFichasUpdated, onClos
     const incomplete = fichasArr.filter(f => !f.synced && !validateFicha(f));
     const alreadySynced = fichasArr.filter(f => f.synced);
     const [wakeLock, setWakeLock] = useState<any>(null);
+
+    // Cargar conteos al inicio
+    useEffect(() => {
+        const loadCounts = async () => {
+            const photoCount = await getPendingPhotosCount();
+            setPendingPhotos(photoCount);
+
+            const savedMarc = JSON.parse(localStorage.getItem('marcaciones_star') || '[]');
+            const pendingM = (savedMarc as any[]).filter(m => !m.synced && !m.deleted).length;
+            setPendingMarcaciones(pendingM);
+        };
+        loadCounts();
+    }, []);
 
     // Request Wake Lock to prevent screen sleep
     useEffect(() => {
@@ -58,6 +74,16 @@ const SyncScreen: React.FC<SyncScreenProps> = ({ fichas, onFichasUpdated, onClos
                 });
             });
             onFichasUpdated(updatedFichas);
+
+            // 1.b Sincronizar Marcaciones a Firestore
+            await syncMarcacionesToFirestore((p) => {
+                setProgress({
+                    total: p.total,
+                    synced: p.current - 1,
+                    currentFile: p.msg,
+                    error: null
+                });
+            });
 
             // 2. Sincronizar Fotos a Drive
             await syncPhotosToDrive((p) => {
@@ -112,6 +138,22 @@ const SyncScreen: React.FC<SyncScreenProps> = ({ fichas, onFichasUpdated, onClos
                                 <span className="text-xl font-black text-blue-400">{readyToSync.length}</span>
                             </div>
 
+                            <div className="flex justify-between items-center bg-cyan-500/10 p-3 rounded-xl border border-cyan-500/20">
+                                <div className="flex items-center gap-2">
+                                    <MapPin size={14} className="text-cyan-400" />
+                                    <span className="text-xs text-cyan-300 font-bold uppercase">Marcaciones</span>
+                                </div>
+                                <span className="text-xl font-black text-cyan-400">{pendingMarcaciones}</span>
+                            </div>
+
+                            <div className="flex justify-between items-center bg-purple-500/10 p-3 rounded-xl border border-purple-500/20 text-purple-300">
+                                <div className="flex items-center gap-2">
+                                    <Camera size={14} className="text-purple-400" />
+                                    <span className="text-xs font-bold uppercase">Fotos Drive</span>
+                                </div>
+                                <span className="text-xl font-black text-purple-400">{pendingPhotos}</span>
+                            </div>
+
                             {incomplete.length > 0 && (
                                 <div className="flex justify-between items-center bg-red-500/10 p-3 rounded-xl border border-red-500/20">
                                     <div className="flex flex-col">
@@ -128,7 +170,7 @@ const SyncScreen: React.FC<SyncScreenProps> = ({ fichas, onFichasUpdated, onClos
                             </div>
                         </div>
 
-                        {readyToSync.length > 0 ? (
+                        {readyToSync.length > 0 || pendingPhotos > 0 || pendingMarcaciones > 0 ? (
                             <>
                                 <p className="text-slate-400 text-sm max-w-xs mb-8">
                                     Conecta el cargador y mantén la pantalla encendida para una subida segura a Google Drive.

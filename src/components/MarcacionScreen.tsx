@@ -83,8 +83,9 @@ const trySyncFirestore = async (data: SavedMarcacion) => {
 const MarcacionScreen: React.FC<{
     user: any;
     onBack: () => void;
+    onSync: () => void;
     onSuccess: (msg: string) => void;
-}> = ({ user, onBack, onSuccess }) => {
+}> = ({ user, onBack, onSync, onSuccess }) => {
     const defaultMun = (window as any).CURRENT_MUNICIPIO || 'Sopó';
     const [view, setView] = useState<'list' | 'form'>('list');
     const [form, setForm] = useState<FormState>(EMPTY_FORM(defaultMun));
@@ -225,13 +226,27 @@ const MarcacionScreen: React.FC<{
                         </div>
                     </div>
                     {view === 'list' ? (
-                        <button
-                            onClick={() => { setForm(EMPTY_FORM(defaultMun)); setErrors([]); setView('form'); }}
-                            className="btn btn-blue btn-sm"
-                            style={{ padding: '8px 14px', fontSize: '12px', marginLeft: 'auto' }}
-                        >
-                            <Plus size={15} /> Nuevo
-                        </button>
+                        <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
+                            <button
+                                onClick={onSync}
+                                className="btn btn-blue btn-sm"
+                                style={{
+                                    padding: '8px 14px',
+                                    fontSize: '12px',
+                                    background: 'linear-gradient(135deg, #2563eb, #7c3aed)',
+                                    border: 'none'
+                                }}
+                            >
+                                <Cloud size={15} /> Sincronizar
+                            </button>
+                            <button
+                                onClick={() => { setForm(EMPTY_FORM(defaultMun)); setErrors([]); setView('form'); }}
+                                className="btn btn-blue btn-sm"
+                                style={{ padding: '8px 14px', fontSize: '12px' }}
+                            >
+                                <Plus size={15} /> Nuevo
+                            </button>
+                        </div>
                     ) : (
                         <button
                             onClick={() => setView('list')}

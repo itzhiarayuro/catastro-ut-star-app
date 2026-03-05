@@ -22,7 +22,7 @@ import { Crosshair, LocateFixed, Signal } from 'lucide-react';
 import { APIProvider, Map, AdvancedMarker } from '@vis.gl/react-google-maps';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 
-const APP_VERSION = '1.2.8';
+const APP_VERSION = '1.2.9';
 
 /* ═══════════════════════════════════════════════════════════
    TYPES & INTERFACES
@@ -264,6 +264,7 @@ const App: React.FC = () => {
     const [showToast, setShowToast] = useState(false);
     const [showSyncScreen, setShowSyncScreen] = useState(false);
     const [pendingCount, setPendingCount] = useState(0);
+    const [pendingMarcaciones, setPendingMarcaciones] = useState(0);
     const [deleteId, setDeleteId] = useState<string | null>(null);
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
     const [showGeoTracker, setShowGeoTracker] = useState(false);
@@ -294,6 +295,10 @@ const App: React.FC = () => {
         const checkPending = async () => {
             const count = await getPendingPhotosCount();
             setPendingCount(count);
+
+            const savedMarc = JSON.parse(localStorage.getItem('marcaciones_star') || '[]');
+            const pendingM = (savedMarc as any[]).filter(m => !m.synced && !m.deleted).length;
+            setPendingMarcaciones(pendingM);
         };
         const interval = setInterval(checkPending, 30000); // Check every 30s
         checkPending();
@@ -892,13 +897,13 @@ const App: React.FC = () => {
                             Nueva Inspección
                         </button>
 
-                        {(pendingCount > 0 || pendingFichas > 0) && (
+                        {(pendingCount > 0 || pendingFichas > 0 || pendingMarcaciones > 0) && (
                             <button className="btn btn-blue btn-full relative py-4 group overflow-hidden" onClick={() => setShowSyncScreen(true)} style={{ background: 'linear-gradient(135deg, #2563eb, #7c3aed)', border: 'none' }}>
                                 <div className="absolute inset-0 bg-white/10 translate-y-full group-hover:translate-y-0 transition-transform"></div>
                                 <Cloud size={16} className="z-10" />
                                 <span className="z-10">Sincronización Nocturna</span>
                                 <span className="absolute -top-1 -right-1 bg-red-500 text-[9px] w-5 h-5 rounded-full flex items-center justify-center border-2 border-[#020617] font-black z-20">
-                                    {pendingCount + pendingFichas}
+                                    {pendingCount + pendingFichas + pendingMarcaciones}
                                 </span>
                             </button>
                         )}
@@ -1781,7 +1786,8 @@ const App: React.FC = () => {
                     <MarcacionScreen
                         user={user}
                         onBack={() => setActiveScreen('sActivity')}
-                        onSuccess={(msg) => toast(msg)}
+                        onSync={() => { setShowSyncScreen(true); }}
+                        onSuccess={(m) => toast(m)}
                     />
                 )}
                 {activeScreen === 's0' && renderHome()}
