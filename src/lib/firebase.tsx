@@ -112,8 +112,16 @@ export const persistFicha = async (ficha: any) => {
     const timestamp = Date.now();
     const historyPath = `historial_fichas/${mun}_${pozoId}_${timestamp}`;
 
+    const currentUser = auth.currentUser;
+    const auditoria = currentUser ? {
+        createdBy: currentUser.uid,
+        creatorEmail: currentUser.email || '',
+        creatorDisplayName: currentUser.displayName || (currentUser.email ? currentUser.email.split('@')[0] : 'Desconocido')
+    } : {};
+
     const dataToSave = {
         ...ficha,
+        ...auditoria,
         lastSync: new Date().toISOString()
     };
 

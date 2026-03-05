@@ -112,6 +112,9 @@ interface AppState {
     contingencia?: boolean;
     contingenciaMotivo?: string;
     deleted?: boolean;
+    createdBy?: string;
+    creatorEmail?: string;
+    creatorDisplayName?: string;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -2184,6 +2187,16 @@ const FichaItemRow: React.FC<{ f: AppState; onEdit: () => void; onDelete: () => 
                     <Trash2 size={16} />
                 </button>
             </div>
+            {f.creatorEmail && (
+                <div className="mt-2 pt-2 border-t border-white/5 flex items-center gap-2">
+                    <div className="w-4 h-4 rounded-full bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
+                        <Plus size={8} className="text-blue-400" />
+                    </div>
+                    <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider">
+                        Creador: <span className="text-blue-400/80">{f.creatorEmail}</span>
+                    </span>
+                </div>
+            )}
         </div>
     );
 };
