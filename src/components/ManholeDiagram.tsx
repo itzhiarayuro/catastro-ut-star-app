@@ -99,7 +99,7 @@ function PipeTube({ angle, pipe, selected, tipColor, onClick }: PipeTubeProps) {
 
       {/* deHasta Label inside cap */}
       {has && pipe.deHasta && (
-        <text x={ex} y={ey + 4} textAnchor="middle" fill="#fff" fontSize="12" fontWeight="900" className="font-mono">
+        <text x={ex} y={ey + 5} textAnchor="middle" fill="#fff" fontSize="16" fontWeight="900" className="font-mono">
           {pipe.deHasta}
         </text>
       )}
@@ -149,12 +149,12 @@ function ManholeBody({ pozoId }: { pozoId: string }) {
       ))}
       <circle cx={CX} cy={CY} r={7} fill="var(--bg2)" stroke="var(--border)" strokeWidth="1" />
       <text x={CX} y={CY - 4} textAnchor="middle"
-        fill="var(--blue)" fontSize={pozoId && pozoId.length > 5 ? 9 : 11}
+        fill="var(--blue)" fontSize={pozoId && pozoId.length > 5 ? 12 : 15}
         fontWeight="800" className="font-mono" letterSpacing="1">
         {pozoId || "—"}
       </text>
-      <text x={CX} y={CY + 8} textAnchor="middle"
-        fill="var(--text3)" fontSize="7" className="font-mono" letterSpacing="1">
+      <text x={CX} y={CY + 10} textAnchor="middle"
+        fill="var(--text3)" fontSize="9" className="font-mono" letterSpacing="1">
         POZO
       </text>
     </g>
@@ -346,10 +346,11 @@ function PipeForm({ slotIndex, angle, pipe, pozoId, onSave, onCancel, onDelete }
 interface ManholeDiagramProps {
   pozoId: string;
   pipes: any[];
-  onPipesChange: (pipes: any[]) => void;
+  onPipesChange?: (pipes: any[]) => void;
+  isReadOnly?: boolean;
 }
 
-export default function ManholeDiagram({ pozoId, pipes: systemPipes, onPipesChange }: ManholeDiagramProps) {
+export default function ManholeDiagram({ pozoId, pipes: systemPipes, onPipesChange, isReadOnly = false }: ManholeDiagramProps) {
   const [activeSlot, setActiveSlot] = useState<number | null>(null);
 
   const pipeMap: Record<number, PipeData> = {};
@@ -359,6 +360,7 @@ export default function ManholeDiagram({ pozoId, pipes: systemPipes, onPipesChan
   });
 
   function handleSave(updatedPipe: any) {
+    if (isReadOnly || !onPipesChange) return;
     const newPipes = [...systemPipes];
     const idx = newPipes.findIndex(p => p.angle === activeSlot);
 
@@ -373,6 +375,7 @@ export default function ManholeDiagram({ pozoId, pipes: systemPipes, onPipesChan
   }
 
   function handleDelete() {
+    if (isReadOnly || !onPipesChange) return;
     const newPipes = systemPipes.filter(p => p.angle !== activeSlot);
     onPipesChange(newPipes);
     setActiveSlot(null);
@@ -419,15 +422,17 @@ export default function ManholeDiagram({ pozoId, pipes: systemPipes, onPipesChan
             {SLOT_ANGLES.map((angle, i) => (
               <PipeTube key={angle} angle={angle}
                 pipe={pipeMap[angle]} selected={activeSlot === angle}
-                tipColor={TIP_COLORS[i]} onClick={() => setActiveSlot(angle)} />
+                tipColor={TIP_COLORS[i]} onClick={() => !isReadOnly && setActiveSlot(angle)} />
             ))}
             <g filter="url(#dropshadow)">
               <ManholeBody pozoId={pozoId} />
             </g>
           </svg>
-          <div style={{ textAlign: "center", fontSize: 8, color: "var(--text3)", marginTop: 10, letterSpacing: 2 }}>
-            TOCA CUALQUIER RAMAL PARA ASIGNAR INFORMACIÓN
-          </div>
+          {!isReadOnly && (
+            <div style={{ textAlign: "center", fontSize: 8, color: "var(--text3)", marginTop: 10, letterSpacing: 2 }}>
+              TOCA CUALQUIER RAMAL PARA ASIGNAR INFORMACIÓN
+            </div>
+          )}
         </div>
       ) : (
         <div style={{ width: "100%", maxWidth: 420, margin: "0 auto" }}>

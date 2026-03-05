@@ -22,7 +22,7 @@ import { Crosshair, LocateFixed, Signal } from 'lucide-react';
 import { APIProvider, Map, AdvancedMarker } from '@vis.gl/react-google-maps';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 
-const APP_VERSION = '1.2.5';
+const APP_VERSION = '1.2.7';
 
 /* ═══════════════════════════════════════════════════════════
    TYPES & INTERFACES
@@ -912,8 +912,15 @@ const App: React.FC = () => {
                     </div>
 
                     <div className="mt-6 opacity-30 text-[9px] uppercase tracking-widest font-bold">
-                        PDA-C-570-2025 · UT STAR
+                        PDA-C-570-2025 · UT STAR · v{APP_VERSION}
                     </div>
+
+                    <button
+                        onClick={forceHardReload}
+                        style={{ marginTop: '20px', fontSize: '9px', color: '#64748b', background: 'none', border: 'none', textDecoration: 'underline', cursor: 'pointer', opacity: 0.6 }}
+                    >
+                        ¿No ves los cambios? Forzar Recarga y Limpiar Caché
+                    </button>
                 </div>
             </div>
         );
@@ -1296,7 +1303,15 @@ const App: React.FC = () => {
                                 <div className="card">
                                     <div className="card-title">Dimensiones (m)</div>
                                     <div className="well-diagram">
-                                        <WellDiagram diam={state.diam} altura={state.altura} pipes={state.pipes} />
+                                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                                            <div style={{ flex: 1.2 }}>
+                                                <WellDiagram diam={state.diam} altura={state.altura} pipes={state.pipes} />
+                                            </div>
+                                            <div style={{ flex: 1, background: 'rgba(0,0,0,0.1)', borderRadius: '12px', padding: '8px' }}>
+                                                <div style={{ fontSize: '7px', color: 'var(--text3)', textAlign: 'center', marginBottom: '4px', opacity: 0.6 }}>PLANTA (ESQUEMA)</div>
+                                                <ManholeDiagram pozoId={state.pozo} pipes={state.pipes} isReadOnly />
+                                            </div>
+                                        </div>
                                     </div>
                                     <div className="field-row">
                                         <div className="field">
@@ -1556,6 +1571,17 @@ const App: React.FC = () => {
                     {
                         currentStep === 5 && (
                             <div className="animate-in slide-in-from-right duration-300">
+                                <div className="card mb-2" style={{ padding: '8px', background: 'var(--bg2)' }}>
+                                    <div className="flex justify-between items-center mb-1">
+                                        <span style={{ fontSize: '9px', fontWeight: 'bold', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Esquema de Referencia</span>
+                                        <span style={{ fontSize: '8px', color: 'var(--blue)' }}>{state.pipes.length} Ramales</span>
+                                    </div>
+                                    <div style={{ height: '140px', overflow: 'hidden', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                                        <div style={{ transform: 'scale(0.55)', transformOrigin: 'center' }}>
+                                            <ManholeDiagram pozoId={state.pozo} pipes={state.pipes} isReadOnly />
+                                        </div>
+                                    </div>
+                                </div>
                                 <div className="p-2">
                                     <FotosZone
                                         pozoId={state.pozo || 'P000'}
