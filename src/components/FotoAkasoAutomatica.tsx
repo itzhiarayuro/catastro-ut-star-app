@@ -32,8 +32,6 @@ const FotoAkasoAutomatica: React.FC<FotoAkasoAutomaticaProps> = ({ pozoId, filen
 
     const detectarUltimaFoto = async () => {
         try {
-            // Intentamos acceder a los archivos recientes si el navegador lo permite (experimental)
-            // Fallback: Abrimos el selector de archivos pero orientado a la cámara/recientes
             const input = document.createElement('input');
             input.type = 'file';
             input.accept = 'image/*';
@@ -89,32 +87,54 @@ const FotoAkasoAutomatica: React.FC<FotoAkasoAutomaticaProps> = ({ pozoId, filen
         <button
             onClick={abrirAkaso}
             disabled={estado === 'abriendo' || estado === 'detectando'}
-            className="flex items-center gap-2 bg-[#FF5722] hover:bg-[#E64A19] text-white text-[10px] font-bold py-1.5 px-3 rounded-full transition-all shadow-lg active:scale-95 disabled:opacity-50"
+            style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: 'white',
+                border: '1px solid #ddd',
+                borderRadius: '4px',
+                color: 'black',
+                fontSize: '9px',
+                fontWeight: '900',
+                padding: '4px 10px',
+                cursor: 'pointer',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                transition: 'all 0.2s',
+                opacity: (estado === 'abriendo' || estado === 'detectando') ? 0.5 : 1,
+                textTransform: 'uppercase'
+            }}
         >
             {estado === 'lista' && (
                 <>
-                    <Camera size={14} />
+                    <Camera size={12} />
                     AKASO AUTO
                 </>
             )}
             {estado === 'abriendo' && (
                 <>
-                    <RefreshCw size={14} className="animate-spin" />
+                    <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} />
                     ABRIENDO...
                 </>
             )}
             {estado === 'detectando' && (
                 <>
-                    <RefreshCw size={14} className="animate-spin" />
+                    <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} />
                     DETECTANDO...
                 </>
             )}
             {estado === 'completado' && (
                 <>
-                    <CheckCircle2 size={14} />
+                    <CheckCircle2 size={12} />
                     ¡CARGADA!
                 </>
             )}
+            <style>{`
+                @keyframes spin {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
+                }
+            `}</style>
         </button>
     );
 };

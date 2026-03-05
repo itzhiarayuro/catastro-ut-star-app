@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { FotoRegistro } from './utils/fotoProcessor';
 import FotosZone from './components/FotosZone';
+import ManholeDiagram from './components/ManholeDiagram';
 import SyncScreen from './components/SyncScreen';
 import MapasScreen from './components/MapasScreen';
 import GeoTracker from './components/GeoTracker';
@@ -43,7 +44,7 @@ interface ComponentState {
 
 interface Pipe {
     id: string;
-    es: 'ENTRADA' | 'SALIDA';
+    es: 'ENTRADA' | 'SALIDA' | 'SUMIDERO';
     deA: string;
     diam: string;
     mat: string;
@@ -52,6 +53,7 @@ interface Pipe {
     pendiente: string;
     emboq: string;
     unit?: 'mm' | 'in';
+    angle?: number;
 }
 
 interface Sumidero {
@@ -1479,29 +1481,40 @@ const App: React.FC = () => {
                         currentStep === 4 && (
                             <div className="animate-in slide-in-from-right duration-300">
                                 <div className="card">
-                                    <div className="card-title">Tuberías (E1-7 / S1-2)</div>
-                                    <div className="space-y-4">
-                                        {state.pipes.map((p, idx) => (
-                                            <PipeCard
-                                                key={p.id}
-                                                pipe={p}
-                                                index={idx}
-                                                onUpdate={(upd) => {
-                                                    const newPipes = [...state.pipes];
-                                                    newPipes[idx] = { ...p, ...upd };
-                                                    updateState({ pipes: newPipes });
-                                                }}
-                                                onDelete={() => {
-                                                    updateState({ pipes: state.pipes.filter((_, i) => i !== idx) });
-                                                }}
-                                            />
-                                        ))}
-                                        <button className="btn btn-blue btn-full btn-sm" onClick={() => {
-                                            const id = `P_${Date.now()}`;
-                                            updateState({ pipes: [...state.pipes, { id, es: 'ENTRADA', deA: '', diam: '', mat: '', estado: '', cotaZ: '', pendiente: '', emboq: 'NO' }] });
-                                        }}>
-                                            <Plus size={14} /> Agregar Tubería
-                                        </button>
+                                    <div className="card-title">Esquema de Tuberías (E1-7 / S1-2)</div>
+                                    <div className="p-2">
+                                        <ManholeDiagram
+                                            pozoId={state.pozo || 'S/N'}
+                                            pipes={state.pipes}
+                                            onPipesChange={(newPipes) => updateState({ pipes: newPipes })}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="card mt-4">
+                                    <div className="card-title">Resumen de Ramales</div>
+                                    <div className="space-y-3">
+                                        {state.pipes.length === 0 ? (
+                                            <div className="text-center py-6 opacity-40 italic text-xs">
+                                                No hay ramales configurados. Toca el diagrama arriba para agregar.
+                                            </div>
+                                        ) : (
+                                            state.pipes.map((p, idx) => (
+                                                <PipeCard
+                                                    key={p.id}
+                                                    pipe={p}
+                                                    index={idx}
+                                                    onUpdate={(upd) => {
+                                                        const newPipes = [...state.pipes];
+                                                        newPipes[idx] = { ...p, ...upd };
+                                                        updateState({ pipes: newPipes });
+                                                    }}
+                                                    onDelete={() => {
+                                                        updateState({ pipes: state.pipes.filter((_, i) => i !== idx) });
+                                                    }}
+                                                />
+                                            ))
+                                        )}
                                     </div>
                                 </div>
 
@@ -1543,18 +1556,15 @@ const App: React.FC = () => {
                     {
                         currentStep === 5 && (
                             <div className="animate-in slide-in-from-right duration-300">
-                                <div className="card">
-                                    <div className="card-title">Registro Fotográfico (Max 4/zona)</div>
-                                    <div className="card">
-                                        <FotosZone
-                                            pozoId={state.pozo || 'S/N'}
-                                            photos={state.fotoList}
-                                            pipes={state.pipes}
-                                            sums={state.sums}
-                                            onAddPhoto={(foto) => updateState({ fotoList: [...state.fotoList, foto] })}
-                                            onDeletePhoto={(id) => updateState({ fotoList: state.fotoList.filter(f => f.id !== id) })}
-                                        />
-                                    </div>
+                                <div className="p-2">
+                                    <FotosZone
+                                        pozoId={state.pozo || 'P000'}
+                                        photos={state.fotoList}
+                                        pipes={state.pipes}
+                                        sums={state.sums}
+                                        onAddPhoto={(foto: FotoRegistro) => updateState({ fotoList: [...state.fotoList, foto] })}
+                                        onDeletePhoto={(id: string) => updateState({ fotoList: state.fotoList.filter(f => f.id !== id) })}
+                                    />
                                 </div>
 
                                 <div className="card">

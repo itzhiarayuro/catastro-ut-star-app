@@ -1,305 +1,291 @@
 import React, { useState, useEffect } from 'react';
-import { Camera, Trash2, MapPin, Clock, CloudOff, Info, CheckCircle2, AlertTriangle, Image as ImageIcon } from 'lucide-react';
-import FotoAkasoAutomatica from './FotoAkasoAutomatica';
-import { procesarFoto, FotoRegistro, resizeImage } from '../utils/fotoProcessor';
+import { Camera, Trash2, CheckCircle2, Image as ImageIcon, AlertCircle } from 'lucide-react';
+import { procesarFoto, FotoRegistro } from '../utils/fotoProcessor';
 import { savePhotoToStorage, getHybridModeStatus } from '../utils/storageManager';
+import FotoAkasoAutomatica from './FotoAkasoAutomatica';
+
+// ─── Tipos ────────────────────────────────────────────────────────────────────
+interface Pipe {
+    id: string;
+    es: 'ENTRADA' | 'SALIDA' | 'SUMIDERO';
+    deA: string;
+    diam: string;
+    mat: string;
+    estado: string;
+    cotaZ: string;
+    pendiente: string;
+    emboq: string;
+    unit?: 'mm' | 'in';
+    angle?: number;
+}
+
+interface Sumidero {
+    id: string;
+    tipo: string;
+    matRejilla: string;
+    matCaja: string;
+    hSalida: string;
+    hLlegada: string;
+    estado: string;
+    codEsquema: string;
+    diamTub: string;
+    matTub: string;
+    unitTub?: 'mm' | 'in';
+}
 
 interface FotosZoneProps {
     pozoId: string;
     photos: FotoRegistro[];
-    pipes: any[];
-    sums: any[];
+    pipes: Pipe[];
+    sums: Sumidero[];
     onAddPhoto: (foto: FotoRegistro) => void;
     onDeletePhoto: (id: string) => void;
 }
 
-const PhotoThumb: React.FC<{ photo: FotoRegistro; onDelete: (id: string) => void; onClick: () => void }> = ({ photo, onDelete, onClick }) => (
-    <div className="relative group w-[100px] h-[100px] shrink-0 cursor-pointer" onClick={onClick}>
-        <div className="w-full h-full rounded-xl overflow-hidden border-2 border-[#30363d] group-hover:border-blue-500 transition-all bg-[#0d1117] shadow-lg">
-            <img src={photo.blobId} alt={photo.filename} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
-        </div>
-        <button
-            onClick={(e) => { e.stopPropagation(); onDelete(photo.id); }}
-            className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-400 text-white rounded-full p-1.5 shadow-xl z-20 transition-colors"
-        >
-            <Trash2 size={12} />
-        </button>
-        <div className="absolute bottom-1 inset-x-1 bg-black/60 backdrop-blur-sm py-0.5 px-1.5 rounded-md truncate text-[7px] font-mono text-white pointer-events-none border border-white/10">
-            {photo.filename}
-        </div>
-    </div>
-);
-
-/**
- * Función utilitaria para comprimir fotos antes de guardar en IndexedDB.
- * Reduce resolución al máximo de 1600px y aplica calidad 0.7 para ahorrar RAM.
- */
+// ─── Utilidad de compresión ───────────────────────────────────────────────────
 async function compressImageFileToDataUrl(file: File, maxSize = 1600, quality = 0.7): Promise<string> {
     return new Promise((resolve, reject) => {
         const img = new Image();
         const objectUrl = URL.createObjectURL(file);
-
         img.onload = () => {
             URL.revokeObjectURL(objectUrl);
             const canvas = document.createElement('canvas');
-            let width = img.width;
-            let height = img.height;
-
-            if (width > height) {
-                if (width > maxSize) {
-                    height *= maxSize / width;
-                    width = maxSize;
-                }
-            } else {
-                if (height > maxSize) {
-                    width *= maxSize / height;
-                    height = maxSize;
-                }
-            }
-
-            canvas.width = width;
-            canvas.height = height;
+            let w = img.width, h = img.height;
+            if (w > h) { if (w > maxSize) { h *= maxSize / w; w = maxSize; } }
+            else { if (h > maxSize) { w *= maxSize / h; h = maxSize; } }
+            canvas.width = w; canvas.height = h;
             const ctx = canvas.getContext('2d');
-            if (!ctx) {
-                reject(new Error("No se pudo obtener el contexto del canvas"));
-                return;
-            }
-
-            ctx.drawImage(img, 0, 0, width, height);
+            if (!ctx) { reject(new Error("No ctx")); return; }
+            ctx.drawImage(img, 0, 0, w, h);
             canvas.toBlob((blob) => {
-                if (!blob) {
-                    reject(new Error("Error al generar el Blob de imagen"));
-                    return;
-                }
+                if (!blob) { reject(new Error("No blob")); return; }
                 const reader = new FileReader();
                 reader.onloadend = () => resolve(reader.result as string);
                 reader.onerror = reject;
                 reader.readAsDataURL(blob);
             }, 'image/jpeg', quality);
         };
-
-        img.onerror = (err) => {
-            URL.revokeObjectURL(objectUrl);
-            reject(err);
-        };
-
+        img.onerror = reject;
         img.src = objectUrl;
     });
 }
 
-const PhotoSection: React.FC<{
-    title: string;
-    description: string;
-    type: FotoRegistro["tipo"];
+// ─── Tarjeta de una sola foto ─────────────────────────────────────────────────
+interface SinglePhotoCardProps {
+    label: string;          // Ej: "S1 · Foto Tubería"
+    sublabel: string;       // Ej: "SALIDA · Ø 200mm"
+    filename: string;       // Ej: "P007-S1-T.JPG"
     pozoId: string;
-    photos: FotoRegistro[];
+    categoria: 'General' | 'Interior' | 'Tuberia' | 'Sumidero';
+    existingPhoto?: FotoRegistro;
     onAdd: (foto: FotoRegistro) => void;
     onDelete: (id: string) => void;
-    indexOptions?: string[]; // New: List of available indices (e.g., ["E1", "S1"])
-    allowSumidero?: boolean;
-    sumideroOptions?: string[]; // New: List of available sumideros
-    isMedicion?: boolean;
-    isLocked: boolean;
     onPreview: (photo: FotoRegistro) => void;
-}> = ({ title, description, type, pozoId, photos, onAdd, onDelete, indexOptions, allowSumidero, sumideroOptions, isMedicion, isLocked, onPreview }) => {
-    const [index, setIndex] = useState(indexOptions?.[0] || "1");
-    const [sumidero, setSumidero] = useState("");
-    const [medType, setMedType] = useState("AT");
-    const [extraType, setExtraType] = useState("T");
+    isLocked: boolean;
+    accentColor: string;    // Para el borde izquierdo de color
+}
 
-    // Reset index if options change
-    useEffect(() => {
-        if (indexOptions?.length && !indexOptions.includes(index)) {
-            setIndex(indexOptions[0]);
-        }
-    }, [indexOptions]);
-
-    const lastPhoto = photos[photos.length - 1];
-
-    // Cálculo dinámico del nombre para Akaso
-    const akasoFilename = (() => {
-        let p = [pozoId];
-        if (isMedicion) p.push(medType);
-        else if (type === "general") p.push("P");
-        else if (type === "tapa" || type === "interior") p.push(type === "tapa" ? "T" : "I");
-        else if (type === "entrada" || type === "salida") p.push(`${index}-${extraType}`);
-        if (sumidero) p.push(sumidero.toUpperCase().startsWith('SUM') ? sumidero.toUpperCase() : `SUM${sumidero.toUpperCase()}`);
-        return `${p.join('-').toUpperCase()}.JPG`;
-    })();
-
+const SinglePhotoCard: React.FC<SinglePhotoCardProps> = ({
+    label, sublabel, filename, pozoId, categoria, existingPhoto,
+    onAdd, onDelete, onPreview, isLocked, accentColor
+}) => {
     const handleCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (isLocked) {
-            alert("⚠️ No hay espacio suficiente en el dispositivo.");
-            return;
-        }
-
+        if (isLocked) { alert("⚠️ No hay espacio suficiente."); return; }
         const file = e.target.files?.[0];
         if (!file) return;
-
         try {
-            // COMPRESIÓN CRÍTICA: Convertir archivo original a Data URL optimizado
             const blob = await compressImageFileToDataUrl(file, 1600, 0.7);
-
-            let parts = [pozoId];
-
-            if (isMedicion) {
-                parts.push(medType);
-            } else if (type === "general") {
-                parts.push("P");
-            } else if (type === "tapa" || type === "interior") {
-                parts.push(type === "tapa" ? "T" : "I");
-            } else if (type === "entrada" || type === "salida") {
-                parts.push(`${index}-${extraType}`);
-            }
-
-            if (sumidero) {
-                parts.push(sumidero.toUpperCase().startsWith('SUM') ? sumidero.toUpperCase() : `SUM${sumidero.toUpperCase()}`);
-            }
-
-            const filename = `${parts.join('-').toUpperCase()}.JPG`;
-
-            // Usamos el blob comprimido tanto para el estado de React como para IndexedDB
             const newFoto = procesarFoto(filename, pozoId, blob);
-
             const userStr = localStorage.getItem('ut_star_user');
             const inspector = userStr ? JSON.parse(userStr).name : 'Desconocido';
             const municipio = (window as any).CURRENT_MUNICIPIO || 'Sopó';
-
             await savePhotoToStorage({
-                id: newFoto.id,
-                pozoId: pozoId,
-                municipio: municipio,
-                barrio: '',
-                filename: filename,
-                blob: blob, // Aquí guardamos el String Base64 COMPRIMIDO
-                categoria: newFoto.tipo === 'general' ? 'General' :
-                    newFoto.tipo === 'tapa' || newFoto.tipo === 'interior' ? 'Interior' : 'Tuberia',
-                inspector: inspector,
-                timestamp: Date.now(),
-                synced: false
+                id: newFoto.id, pozoId, municipio, barrio: '', filename, blob,
+                categoria, inspector, timestamp: Date.now(), synced: false
             });
-
             onAdd({ ...newFoto, blobId: blob });
         } catch (err) {
-            console.error("Error al procesar/guardar foto:", err);
-            alert("Memoria insuficiente o error al procesar la foto. Intenta cerrar otras apps o liberar espacio.");
+            console.error(err);
+            alert("Error al procesar foto.");
         } finally {
-            // Limpiamos el input para permitir capturas repetidas
+            if (e.target) e.target.value = '';
+        }
+    };
+
+    const done = !!existingPhoto;
+
+    return (
+        <div style={{
+            background: '#161b22',
+            border: `1px solid ${done ? '#238636' : '#30363d'}`,
+            borderLeft: `3px solid ${done ? '#2ea043' : accentColor}`,
+            borderRadius: '10px',
+            padding: '12px',
+            marginBottom: '6px',
+            position: 'relative'
+        }}>
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {done
+                            ? <CheckCircle2 size={13} style={{ color: '#2ea043', flexShrink: 0 }} />
+                            : <div style={{ width: 13, height: 13, borderRadius: '50%', border: '1.5px solid #555', flexShrink: 0 }} />
+                        }
+                        <span style={{ fontSize: '13px', fontWeight: '700', color: done ? '#58a6ff' : 'white' }}>{label}</span>
+                    </div>
+                    <div style={{ fontSize: '10px', color: '#8b949e', marginLeft: '19px', marginTop: '1px' }}>{sublabel}</div>
+                </div>
+                <FotoAkasoAutomatica
+                    pozoId={pozoId}
+                    filename={filename}
+                    categoria={categoria}
+                    onSuccess={onAdd}
+                />
+            </div>
+
+            {/* Preview o placeholder */}
+            {existingPhoto ? (
+                <div style={{ position: 'relative', borderRadius: '6px', overflow: 'hidden', aspectRatio: '16/9', cursor: 'pointer' }}
+                    onClick={() => onPreview(existingPhoto)}>
+                    <img src={existingPhoto.blobId} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt={filename} />
+                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.75)', padding: '6px 8px', fontSize: '8px', color: '#8b949e', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {existingPhoto.filename}
+                    </div>
+                    <button onClick={(e) => { e.stopPropagation(); onDelete(existingPhoto.id); }}
+                        style={{ position: 'absolute', top: '6px', right: '6px', background: 'rgba(255,70,70,0.8)', border: 'none', borderRadius: '50%', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'white' }}>
+                        <Trash2 size={13} />
+                    </button>
+                </div>
+            ) : (
+                <div style={{ aspectRatio: '16/9', background: '#0d1117', border: '1px dashed #30363d', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.5 }}>
+                    <Camera size={30} strokeWidth={1} style={{ color: '#444' }} />
+                </div>
+            )}
+
+            {/* Botón Seleccionar */}
+            <div style={{ position: 'relative', marginTop: '8px' }}>
+                <button style={{
+                    width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                    background: done ? '#1a3a2a' : '#1f6feb', border: `1px solid ${done ? '#238636' : '#2d7dd5'}`,
+                    padding: '10px', borderRadius: '6px', fontSize: '11px', fontWeight: '800',
+                    color: done ? '#3fb950' : 'white', cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.5px',
+                    opacity: isLocked ? 0.5 : 1
+                }}>
+                    <ImageIcon size={14} />
+                    {done ? '✓ CAMBIAR FOTO' : 'SELECCIONAR FOTO'}
+                </button>
+                {!isLocked && (
+                    <input type="file" accept="image/*" onChange={handleCapture}
+                        style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', zIndex: 10, width: '100%' }} />
+                )}
+            </div>
+        </div>
+    );
+};
+
+// ─── Sección General/Tapa/Interior (una sola foto) ───────────────────────────
+const GenericPhotoCard: React.FC<{
+    label: string;
+    description: string;
+    filename: string;
+    pozoId: string;
+    tipo: FotoRegistro["tipo"];
+    photos: FotoRegistro[];
+    onAdd: (foto: FotoRegistro) => void;
+    onDelete: (id: string) => void;
+    onPreview: (photo: FotoRegistro) => void;
+    isLocked: boolean;
+}> = ({ label, description, filename, pozoId, tipo, photos, onAdd, onDelete, onPreview, isLocked }) => {
+    const last = photos[photos.length - 1];
+    const done = photos.length > 0;
+
+    const handleCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (isLocked) { alert("⚠️ No hay espacio suficiente."); return; }
+        const file = e.target.files?.[0];
+        if (!file) return;
+        try {
+            const blob = await compressImageFileToDataUrl(file, 1600, 0.7);
+            const newFoto = procesarFoto(filename, pozoId, blob);
+            const userStr = localStorage.getItem('ut_star_user');
+            const inspector = userStr ? JSON.parse(userStr).name : 'Desconocido';
+            const municipio = (window as any).CURRENT_MUNICIPIO || 'Sopó';
+            await savePhotoToStorage({
+                id: newFoto.id, pozoId, municipio, barrio: '', filename, blob,
+                categoria: 'General', inspector, timestamp: Date.now(), synced: false
+            });
+            onAdd({ ...newFoto, blobId: blob });
+        } catch (err) {
+            console.error(err);
+            alert("Error al procesar foto.");
+        } finally {
             if (e.target) e.target.value = '';
         }
     };
 
     return (
-        <div className="premium-photo-card">
-            <div className="header">
-                <div className="flex flex-col">
-                    <h3 className="title">{title}</h3>
-                    <p className="text-[10px] text-gray-500 uppercase tracking-tight">{description}</p>
+        <div style={{
+            background: '#161b22', border: `1px solid ${done ? '#238636' : '#30363d'}`,
+            borderLeft: `3px solid ${done ? '#2ea043' : '#1f6feb'}`,
+            borderRadius: '10px', padding: '12px', marginBottom: '6px'
+        }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {done ? <CheckCircle2 size={13} style={{ color: '#2ea043' }} />
+                            : <div style={{ width: 13, height: 13, borderRadius: '50%', border: '1.5px solid #555' }} />}
+                        <span style={{ fontSize: '13px', fontWeight: '700', color: done ? '#58a6ff' : 'white' }}>{label}</span>
+                    </div>
+                    <div style={{ fontSize: '10px', color: '#8b949e', marginLeft: '19px' }}>{description}</div>
                 </div>
-                {photos.length > 0 && (
-                    <span className="status-badge">
-                        <CheckCircle2 size={12} /> {photos.length} FOTO{photos.length > 1 ? 'S' : ''}
-                    </span>
-                )}
-                <FotoAkasoAutomatica
-                    pozoId={pozoId}
-                    filename={akasoFilename}
-                    categoria={
-                        type === 'general' ? 'General' :
-                            type === 'tapa' || type === 'interior' ? 'Interior' : 'Tuberia'
-                    }
-                    onSuccess={(f) => onAdd(f)}
-                />
+                <FotoAkasoAutomatica pozoId={pozoId} filename={filename} categoria="General" onSuccess={onAdd} />
             </div>
 
-            <div className="flex gap-2">
-                {indexOptions && indexOptions.length > 0 && (
-                    <select
-                        className="flex-1 bg-[#0d1117] border border-[#30363d] rounded text-[10px] px-1 py-1 text-blue-400 font-bold"
-                        value={index}
-                        onChange={(e) => setIndex(e.target.value)}
-                    >
-                        {indexOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                    </select>
-                )}
-                {(type === "entrada" || type === "salida" || (indexOptions && indexOptions.some(o => o.startsWith('E') || o.startsWith('S')))) && (
-                    <select
-                        className="flex-1 bg-[#0d1117] border border-[#30363d] rounded text-[10px] px-1 py-1 text-orange-400 font-bold"
-                        value={extraType}
-                        onChange={(e) => setExtraType(e.target.value)}
-                    >
-                        <option value="T">Tapa (T)</option>
-                        <option value="Z">Cota (Z)</option>
-                    </select>
-                )}
-                {isMedicion && (
-                    <select
-                        className="flex-1 bg-[#0d1117] border border-[#30363d] rounded text-[10px] px-1 py-1 text-yellow-400 font-bold"
-                        value={medType}
-                        onChange={(e) => setMedType(e.target.value)}
-                    >
-                        <option value="AT">AT</option>
-                        <option value="Z">Z</option>
-                    </select>
-                )}
-                {allowSumidero && sumideroOptions && sumideroOptions.length > 0 && (
-                    <select
-                        className="flex-1 bg-[#0d1117] border border-[#30363d] rounded text-[10px] px-1 py-1 text-white"
-                        value={sumidero}
-                        onChange={(e) => setSumidero(e.target.value)}
-                    >
-                        <option value="">Sin Sumidero</option>
-                        {sumideroOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                    </select>
-                )}
-                {allowSumidero && (!sumideroOptions || sumideroOptions.length === 0) && (
-                    <input
-                        type="text"
-                        placeholder="ID Sum..."
-                        className="flex-1 bg-[#0d1117] border border-[#30363d] rounded text-[10px] px-2 py-1 text-white"
-                        value={sumidero}
-                        onChange={(e) => setSumidero(e.target.value)}
-                    />
-                )}
-            </div>
-
-            {/* Featured Big Preview */}
-            {lastPhoto ? (
-                <div className="preview-container" onClick={() => onPreview(lastPhoto)}>
-                    <img src={lastPhoto.blobId} className="main-preview" alt="Preview" />
-                    <div className="filename-overlay">{lastPhoto.filename}</div>
-                    <button
-                        onClick={(e) => { e.stopPropagation(); onDelete(lastPhoto.id); }}
-                        className="absolute top-2 right-2 bg-red-500/80 hover:bg-red-500 text-white rounded-full p-1.5 shadow-xl transition-all"
-                    >
-                        <Trash2 size={12} />
+            {last ? (
+                <div style={{ position: 'relative', borderRadius: '6px', overflow: 'hidden', aspectRatio: '16/9', cursor: 'pointer' }}
+                    onClick={() => onPreview(last)}>
+                    <img src={last.blobId} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt={filename} />
+                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.75)', padding: '6px 8px', fontSize: '8px', color: '#8b949e', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {last.filename}
+                    </div>
+                    <button onClick={(e) => { e.stopPropagation(); onDelete(last.id); }}
+                        style={{ position: 'absolute', top: '6px', right: '6px', background: 'rgba(255,70,70,0.8)', border: 'none', borderRadius: '50%', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'white' }}>
+                        <Trash2 size={13} />
                     </button>
                 </div>
             ) : (
-                <div className="empty-preview h-32">
-                    <Camera size={32} strokeWidth={1.5} opacity={0.3} />
+                <div style={{ aspectRatio: '16/9', background: '#0d1117', border: '1px dashed #30363d', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.5 }}>
+                    <Camera size={30} strokeWidth={1} style={{ color: '#444' }} />
                 </div>
             )}
 
-            {/* Premium Selector Button */}
-            <button className={`btn-premium-capture ${isLocked ? 'grayscale opacity-50 cursor-not-allowed' : ''}`}>
-                <ImageIcon size={16} />
-                {lastPhoto ? 'AÑADIR DESDE GALERÍA' : 'SELECCIONAR FOTO'}
+            <div style={{ position: 'relative', marginTop: '8px' }}>
+                <button style={{
+                    width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                    background: done ? '#1a3a2a' : '#1f6feb', border: `1px solid ${done ? '#238636' : '#2d7dd5'}`,
+                    padding: '10px', borderRadius: '6px', fontSize: '11px', fontWeight: '800',
+                    color: done ? '#3fb950' : 'white', cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.5px',
+                    opacity: isLocked ? 0.5 : 1
+                }}>
+                    <ImageIcon size={14} />
+                    {done ? '✓ CAMBIAR FOTO' : 'SELECCIONAR FOTO'}
+                </button>
                 {!isLocked && (
-                    <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleCapture}
-                        className="absolute inset-0 opacity-0 cursor-pointer z-10"
-                    />
+                    <input type="file" accept="image/*" onChange={handleCapture}
+                        style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', zIndex: 10, width: '100%' }} />
                 )}
-            </button>
+            </div>
 
-            {/* Additional Thumbnails */}
             {photos.length > 1 && (
-                <div className="flex gap-2 overflow-x-auto pb-2 pt-1 scrollbar-hide">
+                <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', marginTop: '8px', paddingBottom: '4px' }}>
                     {photos.slice(0, -1).map(p => (
-                        <PhotoThumb key={p.id} photo={p} onDelete={onDelete} onClick={() => onPreview(p)} />
+                        <div key={p.id} style={{ width: '60px', height: '60px', flexShrink: 0, position: 'relative', cursor: 'pointer' }} onClick={() => onPreview(p)}>
+                            <img src={p.blobId} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '6px', border: '1px solid var(--border)' }} alt="" />
+                            <button onClick={(e) => { e.stopPropagation(); onDelete(p.id); }}
+                                style={{ position: 'absolute', top: '-4px', right: '-4px', background: '#ff4b2b', border: 'none', borderRadius: '50%', width: '16px', height: '16px', fontSize: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'white' }}>
+                                ×
+                            </button>
+                        </div>
                     ))}
                 </div>
             )}
@@ -307,178 +293,301 @@ const PhotoSection: React.FC<{
     );
 };
 
-const FotosZone: React.FC<FotosZoneProps> = ({ pozoId, photos, pipes, sums, onAddPhoto, onDeletePhoto }) => {
-    const [storageInfo, setStorageInfo] = useState<{ mode: string, info: string }>({ mode: 'FULL', info: '' });
+// ─── Grupo de Tubería (par: Foto + Medida) ────────────────────────────────────
+interface PipePhotoGroupProps {
+    pozoId: string;
+    label: string;      // "S1", "E2", "SUM1"
+    tipo: 'SALIDA' | 'ENTRADA' | 'SUMIDERO';
+    diam: string;
+    mat: string;
+    isSumidero: boolean;
+    photos: FotoRegistro[];
+    onAdd: (foto: FotoRegistro) => void;
+    onDelete: (id: string) => void;
+    onPreview: (photo: FotoRegistro) => void;
+    isLocked: boolean;
+}
+
+const PipePhotoGroup: React.FC<PipePhotoGroupProps> = ({
+    pozoId, label, tipo, diam, mat, isSumidero, photos, onAdd, onDelete, onPreview, isLocked
+}) => {
+    const accentColors: Record<string, string> = {
+        ENTRADA: '#1f6feb',
+        SALIDA: '#2ea043',
+        SUMIDERO: '#e3b341'
+    };
+    const accent = accentColors[tipo] || '#888';
+
+    // Filtra las fotos de este pipe por su prefijo de filename
+    const pipePhotos = photos.filter(p => p.filename.toUpperCase().startsWith(`${pozoId.toUpperCase()}-${label.toUpperCase()}-T`));
+    const medPhotos = photos.filter(p => p.filename.toUpperCase().startsWith(`${pozoId.toUpperCase()}-${label.toUpperCase()}-Z`));
+    const bateaPhotos = isSumidero ? photos.filter(p => p.filename.toUpperCase().startsWith(`${pozoId.toUpperCase()}-${label.toUpperCase()}-B`)) : [];
+
+    const pipeFile = `${pozoId.toUpperCase()}-${label.toUpperCase()}-T.JPG`;
+    const medFile = `${pozoId.toUpperCase()}-${label.toUpperCase()}-Z.JPG`;
+    const bateaFile = `${pozoId.toUpperCase()}-${label.toUpperCase()}-B.JPG`;
+
+    const donePipe = pipePhotos.length > 0;
+    const doneMed = medPhotos.length > 0;
+    const doneBatea = !isSumidero || bateaPhotos.length > 0;
+    const allDone = donePipe && doneMed && doneBatea;
+
+    const categ: 'Tuberia' | 'Sumidero' = isSumidero ? 'Sumidero' : 'Tuberia';
+
+    return (
+        <div style={{ marginBottom: '16px' }}>
+            {/* Header del grupo */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', padding: '8px 12px', borderRadius: '8px', background: '#0d1117', border: `1px solid ${accent}30` }}>
+                <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: allDone ? '#2ea043' : accent, flexShrink: 0 }} />
+                <div style={{ flex: 1 }}>
+                    <span style={{ fontSize: '12px', fontWeight: '800', color: 'white', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        {tipo} · {label}
+                    </span>
+                    <span style={{ fontSize: '10px', color: '#8b949e', marginLeft: '8px', fontFamily: 'monospace' }}>
+                        {diam ? `Ø ${diam}${mat ? ` · ${mat}` : ''}` : mat || '—'}
+                    </span>
+                </div>
+                <div style={{ fontSize: '10px', fontWeight: '700', color: allDone ? '#2ea043' : '#8b949e', background: allDone ? '#1a3a2a' : '#1a1f2e', padding: '3px 8px', borderRadius: '12px', border: `1px solid ${allDone ? '#238636' : '#30363d'}` }}>
+                    {[donePipe, doneMed, ...(isSumidero ? [doneBatea] : [])].filter(Boolean).length}/{isSumidero ? 3 : 2} fotos
+                </div>
+            </div>
+
+            {/* Par de fotos */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                <SinglePhotoCard
+                    label="📷 Foto Tubería"
+                    sublabel={`Archivo: ${pipeFile}`}
+                    filename={pipeFile}
+                    pozoId={pozoId}
+                    categoria={categ}
+                    existingPhoto={pipePhotos[0]}
+                    onAdd={onAdd}
+                    onDelete={onDelete}
+                    onPreview={onPreview}
+                    isLocked={isLocked}
+                    accentColor={accent}
+                />
+                <SinglePhotoCard
+                    label="📐 Medida (Cota Z)"
+                    sublabel={`Archivo: ${medFile}`}
+                    filename={medFile}
+                    pozoId={pozoId}
+                    categoria={categ}
+                    existingPhoto={medPhotos[0]}
+                    onAdd={onAdd}
+                    onDelete={onDelete}
+                    onPreview={onPreview}
+                    isLocked={isLocked}
+                    accentColor={accent}
+                />
+            </div>
+
+            {/* Extra: Batea del sumidero */}
+            {isSumidero && (
+                <SinglePhotoCard
+                    label="🪣 Medida Batea (Entrada)"
+                    sublabel={`Archivo: ${bateaFile} · Solo para sumideros`}
+                    filename={bateaFile}
+                    pozoId={pozoId}
+                    categoria="Sumidero"
+                    existingPhoto={bateaPhotos[0]}
+                    onAdd={onAdd}
+                    onDelete={onDelete}
+                    onPreview={onPreview}
+                    isLocked={isLocked}
+                    accentColor="#e3b341"
+                />
+            )}
+        </div>
+    );
+};
+
+// ─── Componente Principal ─────────────────────────────────────────────────────
+export default function FotosZone({ pozoId, photos, pipes, sums, onAddPhoto, onDeletePhoto }: FotosZoneProps) {
+    const [storageInfo, setStorageInfo] = useState({ mode: 'FULL', info: '' });
     const [previewPhoto, setPreviewPhoto] = useState<FotoRegistro | null>(null);
 
-    // Generar opciones de tubería basadas en el registro real
-    const entradas = pipes.filter(p => p.es === 'ENTRADA');
-    const salidas = pipes.filter(p => p.es === 'SALIDA');
-
-    const pipeOptions = [
-        ...entradas.map((_, i) => `E${i + 1}`),
-        ...salidas.map((_, i) => `S${i + 1}`)
-    ];
-
-    const sumOptions = sums.map((s, i) => s.codEsquema || `SUM${i + 1}`);
-
     useEffect(() => {
-        const check = async () => {
-            const status = await getHybridModeStatus(photos.length);
-            setStorageInfo(status);
-        };
-        check();
+        getHybridModeStatus(photos.length).then(setStorageInfo);
     }, [photos.length]);
 
     const isLocked = storageInfo.mode === 'LOCKED';
 
+    // Separar pipes por tipo, en orden: Salidas primero, luego Entradas, luego Sumideros
+    const salidas = pipes.filter(p => p.es === 'SALIDA');
+    const entradas = pipes.filter(p => p.es === 'ENTRADA');
+    const sumiderosPipe = pipes.filter(p => p.es === 'SUMIDERO');
+
+    // Calcular total de fotos necesarias
+    const totalNeeded = (salidas.length + entradas.length) * 2
+        + sumiderosPipe.length * 3
+        + sums.length * 3
+        + 3; // general + tapa + interior
+    const totalDone = photos.length;
+    const pct = Math.min(100, Math.round((totalDone / Math.max(totalNeeded, 1)) * 100));
+
+    // Fotos generales
+    const generalPhotos = photos.filter(p => p.tipo === 'general' || (p.filename.toUpperCase().includes('-P.') && !p.filename.match(/-[ES]\d/i)));
+    const tapaPhotos = photos.filter(p => p.tipo === 'tapa' || p.filename.toUpperCase().endsWith('-T.JPG') && !p.filename.match(/-[ES]\d/i));
+    const interiorPhotos = photos.filter(p => p.tipo === 'interior' || p.filename.toUpperCase().endsWith('-I.JPG'));
+
+    const pozoUp = pozoId?.toUpperCase() || 'PXXX';
+
     return (
-        <div className="space-y-4">
-            <div className="flex items-center gap-3 mb-2">
-                <Camera className="text-blue-400" size={24} />
-                <div>
-                    <h2 className="text-lg font-bold">Registro Fotográfico</h2>
-                    <p className="text-[10px] text-gray-500 uppercase tracking-widest">Nomenclatura Automática: {pozoId}-...</p>
+        <div style={{ width: '100%' }}>
+            {/* Encabezado */}
+            <div style={{ marginBottom: '20px' }}>
+                <h2 style={{ fontSize: '20px', fontWeight: '800', color: 'white', margin: '0 0 4px' }}>Registro Fotográfico</h2>
+                <div style={{ fontSize: '10px', color: '#8b949e', fontFamily: 'monospace', letterSpacing: '0.5px' }}>
+                    NOMENCLATURA: {pozoUp}-[ID]-[T|Z|B].JPG
+                </div>
+                {/* Barra de progreso */}
+                <div style={{ marginTop: '12px', background: '#21262d', borderRadius: '4px', height: '6px', overflow: 'hidden' }}>
+                    <div style={{ width: `${pct}%`, background: pct === 100 ? '#2ea043' : '#1f6feb', height: '100%', borderRadius: '4px', transition: 'width 0.5s ease' }} />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px' }}>
+                    <span style={{ fontSize: '10px', color: '#8b949e' }}>{totalDone} fotos tomadas</span>
+                    <span style={{ fontSize: '10px', color: pct === 100 ? '#2ea043' : '#8b949e', fontWeight: '700' }}>{pct}% completado</span>
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <PhotoSection
-                    title="General / Panorámica"
-                    description="Referencia visual del entorno"
-                    type="general"
-                    pozoId={pozoId}
-                    photos={photos.filter(p => p.tipo === "general")}
-                    onAdd={onAddPhoto}
-                    onDelete={onDeletePhoto}
-                    isLocked={isLocked}
-                    onPreview={setPreviewPhoto}
-                />
-                <PhotoSection
-                    title="Tapa Principal"
-                    description="Vista superior de la tapa"
-                    type="tapa"
-                    pozoId={pozoId}
-                    photos={photos.filter(p => p.tipo === "tapa")}
-                    onAdd={onAddPhoto}
-                    onDelete={onDeletePhoto}
-                    isLocked={isLocked}
-                    onPreview={setPreviewPhoto}
-                />
-                <PhotoSection
-                    title="Vista Interior"
-                    description="Cuerpo e interior del pozo"
-                    type="interior"
-                    pozoId={pozoId}
-                    photos={photos.filter(p => p.tipo === "interior")}
-                    onAdd={onAddPhoto}
-                    onDelete={onDeletePhoto}
-                    isLocked={isLocked}
-                    onPreview={setPreviewPhoto}
-                />
-                <PhotoSection
-                    title="Tuberías (E/S)"
-                    description="Detalle de entradas y salidas"
-                    type="entrada"
-                    pozoId={pozoId}
-                    photos={photos.filter(p => p.tipo === "entrada" || p.tipo === "salida")}
-                    onAdd={onAddPhoto}
-                    onDelete={onDeletePhoto}
-                    indexOptions={pipeOptions}
-                    allowSumidero
-                    sumideroOptions={sumOptions}
-                    isLocked={isLocked}
-                    onPreview={setPreviewPhoto}
-                />
-                <PhotoSection
-                    title="Mediciones (AT/Z)"
-                    description="Registro de profundidad"
-                    type="medicion"
-                    pozoId={pozoId}
-                    photos={photos.filter(p => p.esMedicion)}
-                    onAdd={onAddPhoto}
-                    onDelete={onDeletePhoto}
-                    isMedicion
-                    allowSumidero
-                    sumideroOptions={sumOptions}
-                    isLocked={isLocked}
-                    onPreview={setPreviewPhoto}
-                />
-                <PhotoSection
-                    title="Esquema Vertical"
-                    description="Dibujo/Corte del pozo"
-                    type="esquema"
-                    pozoId={pozoId}
-                    photos={photos.filter(p => p.tipo === "esquema")}
-                    onAdd={onAddPhoto}
-                    onDelete={onDeletePhoto}
-                    isLocked={isLocked}
-                    onPreview={setPreviewPhoto}
-                />
-                <PhotoSection
-                    title="Ubicación General"
-                    description="Croquis de localización"
-                    type="ubicacion"
-                    pozoId={pozoId}
-                    photos={photos.filter(p => p.tipo === "ubicacion")}
-                    onAdd={onAddPhoto}
-                    onDelete={onDeletePhoto}
-                    isLocked={isLocked}
-                    onPreview={setPreviewPhoto}
-                />
+            {/* ── Sección: Fotos Generales ── */}
+            <div style={{ marginBottom: '20px' }}>
+                <div style={{ fontSize: '11px', fontWeight: '800', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ flex: 1, height: '1px', background: '#30363d' }} />
+                    FOTOS GENERALES
+                    <div style={{ flex: 1, height: '1px', background: '#30363d' }} />
+                </div>
+                <GenericPhotoCard label="📸 General / Panorámica" description="Entorno exterior del pozo"
+                    filename={`${pozoUp}-P.JPG`} pozoId={pozoId} tipo="general"
+                    photos={generalPhotos} onAdd={onAddPhoto} onDelete={onDeletePhoto} onPreview={setPreviewPhoto} isLocked={isLocked} />
+                <GenericPhotoCard label="🔲 Tapa Principal" description="Estado y tipo de tapa"
+                    filename={`${pozoUp}-T.JPG`} pozoId={pozoId} tipo="tapa"
+                    photos={tapaPhotos} onAdd={onAddPhoto} onDelete={onDeletePhoto} onPreview={setPreviewPhoto} isLocked={isLocked} />
+                <GenericPhotoCard label="🔦 Vista Interior" description="Cuerpo y fondo del pozo"
+                    filename={`${pozoUp}-I.JPG`} pozoId={pozoId} tipo="interior"
+                    photos={interiorPhotos} onAdd={onAddPhoto} onDelete={onDeletePhoto} onPreview={setPreviewPhoto} isLocked={isLocked} />
             </div>
 
-            {/* Photo Preview Modal */}
-            {
-                previewPhoto && (
-                    <div
-                        className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-md flex flex-col p-4 animate-in fade-in duration-300"
-                        onClick={() => setPreviewPhoto(null)}
-                    >
-                        <div className="flex justify-between items-center mb-4 pt-2">
-                            <div className="flex flex-col">
-                                <span className="text-white font-bold text-sm tracking-tight">{previewPhoto.filename}</span>
-                                <span className="text-gray-500 text-[10px] uppercase">{previewPhoto.tipo} · Pozo {pozoId}</span>
-                            </div>
-                            <button className="bg-white/10 hover:bg-white/20 text-white p-2 rounded-full transition-colors">
-                                <Trash2 size={24} onClick={() => { onDeletePhoto(previewPhoto.id); setPreviewPhoto(null); }} />
-                            </button>
-                        </div>
-                        <div className="flex-1 flex items-center justify-center overflow-hidden rounded-2xl border border-white/10">
-                            <img src={previewPhoto.blobId} className="max-w-full max-h-full object-contain shadow-2xl" alt="Preview" />
-                        </div>
-                        <p className="text-center text-gray-400 text-[10px] mt-4 uppercase tracking-[0.2em]">Toca el fondo para cerrar</p>
-                    </div>
-                )
-            }
-
-            <div className={`p-3 border rounded-xl flex items-center justify-between transition-all ${isLocked ? 'bg-red-500/10 border-red-500/20' : 'bg-blue-500/10 border-blue-500/20'}`}>
-                <div className="flex items-center gap-2">
-                    {isLocked ? (
-                        <>
-                            <AlertTriangle size={16} className="text-red-400" />
-                            <span className="text-[10px] font-bold text-red-300 uppercase">Modo Texto Forzado (Almacenamiento Lleno)</span>
-                        </>
-                    ) : (
-                        <>
-                            <CheckCircle2 size={16} className="text-blue-400" />
-                            <span className="text-[10px] font-bold text-blue-300 uppercase">Cola Drive Activa (IndexedDB)</span>
-                        </>
-                    )}
+            {/* ── Sección: Tuberías ── */}
+            <div>
+                <div style={{ fontSize: '11px', fontWeight: '800', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ flex: 1, height: '1px', background: '#30363d' }} />
+                    TUBERÍAS · PARES DE FOTOS
+                    <div style={{ flex: 1, height: '1px', background: '#30363d' }} />
                 </div>
-                {storageInfo.mode === 'HYBRID' && (
-                    <div className="text-[8px] bg-yellow-500/20 text-yellow-300 px-2 py-0.5 rounded">
-                        Saturación {'>'} 50: Usar PC
+
+                {pipes.length === 0 && sums.length === 0 ? (
+                    <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: '10px', padding: '24px', textAlign: 'center', color: '#8b949e' }}>
+                        <AlertCircle size={32} style={{ margin: '0 auto 8px', opacity: 0.5 }} />
+                        <div style={{ fontSize: '13px', fontWeight: '600' }}>Sin tuberías registradas</div>
+                        <div style={{ fontSize: '11px', marginTop: '4px', opacity: 0.7 }}>Primero define las tuberías en el Paso 4 · Tuberías</div>
                     </div>
+                ) : (
+                    <>
+                        {/* Salidas primero */}
+                        {salidas.map((p, i) => (
+                            <PipePhotoGroup
+                                key={p.id}
+                                pozoId={pozoId}
+                                label={`S${i + 1}`}
+                                tipo="SALIDA"
+                                diam={p.diam}
+                                mat={p.mat}
+                                isSumidero={false}
+                                photos={photos}
+                                onAdd={onAddPhoto}
+                                onDelete={onDeletePhoto}
+                                onPreview={setPreviewPhoto}
+                                isLocked={isLocked}
+                            />
+                        ))}
+
+                        {/* Luego entradas */}
+                        {entradas.map((p, i) => (
+                            <PipePhotoGroup
+                                key={p.id}
+                                pozoId={pozoId}
+                                label={`E${i + 1}`}
+                                tipo="ENTRADA"
+                                diam={p.diam}
+                                mat={p.mat}
+                                isSumidero={false}
+                                photos={photos}
+                                onAdd={onAddPhoto}
+                                onDelete={onDeletePhoto}
+                                onPreview={setPreviewPhoto}
+                                isLocked={isLocked}
+                            />
+                        ))}
+
+                        {/* Sumideros registrados como pipes */}
+                        {sumiderosPipe.map((p, i) => (
+                            <PipePhotoGroup
+                                key={p.id}
+                                pozoId={pozoId}
+                                label={`SUM${i + 1}`}
+                                tipo="SUMIDERO"
+                                diam={p.diam}
+                                mat={p.mat}
+                                isSumidero={true}
+                                photos={photos}
+                                onAdd={onAddPhoto}
+                                onDelete={onDeletePhoto}
+                                onPreview={setPreviewPhoto}
+                                isLocked={isLocked}
+                            />
+                        ))}
+
+                        {/* Sumideros del array sums */}
+                        {sums.map((s, i) => (
+                            <PipePhotoGroup
+                                key={s.id}
+                                pozoId={pozoId}
+                                label={`SUM${sumiderosPipe.length + i + 1}`}
+                                tipo="SUMIDERO"
+                                diam={s.diamTub}
+                                mat={s.matTub}
+                                isSumidero={true}
+                                photos={photos}
+                                onAdd={onAddPhoto}
+                                onDelete={onDeletePhoto}
+                                onPreview={setPreviewPhoto}
+                                isLocked={isLocked}
+                            />
+                        ))}
+                    </>
                 )}
             </div>
-            {
-                storageInfo.info && (
-                    <p className="text-[9px] text-center text-gray-500 italic px-2">{storageInfo.info}</p>
-                )
-            }
-        </div >
-    );
-};
 
-export default FotosZone;
+            {/* Modal Previsualización */}
+            {previewPhoto && (
+                <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.97)', display: 'flex', flexDirection: 'column', padding: '16px' }}
+                    onClick={() => setPreviewPhoto(null)}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                        <span style={{ color: 'white', fontWeight: '700', fontSize: '13px', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{previewPhoto.filename}</span>
+                        <button style={{ background: '#da3633', color: 'white', border: 'none', padding: '10px', borderRadius: '50%', cursor: 'pointer', display: 'flex', marginLeft: '12px' }}
+                            onClick={(e) => { e.stopPropagation(); onDeletePhoto(previewPhoto.id); setPreviewPhoto(null); }}>
+                            <Trash2 size={20} />
+                        </button>
+                    </div>
+                    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                        <img src={previewPhoto.blobId} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} alt="Preview" />
+                    </div>
+                    <p style={{ textAlign: 'center', color: '#555', fontSize: '10px', marginTop: '12px', textTransform: 'uppercase', letterSpacing: '2px' }}>Toca para cerrar</p>
+                </div>
+            )}
+
+            {/* Estado almacenamiento */}
+            <div style={{
+                marginTop: '20px', padding: '10px 14px', borderRadius: '8px',
+                border: `1px solid ${isLocked ? 'rgba(218,54,51,0.3)' : 'rgba(31,111,235,0.2)'}`,
+                background: isLocked ? 'rgba(218,54,51,0.05)' : 'rgba(31,111,235,0.05)',
+                fontSize: '10px', fontWeight: '700', textAlign: 'center',
+                color: isLocked ? '#f85149' : '#58a6ff', textTransform: 'uppercase', letterSpacing: '1px'
+            }}>
+                {isLocked ? '⚠️ Almacenamiento Lleno · Modo Texto' : '✅ Almacenamiento OK · Sincronización Activa'}
+            </div>
+        </div>
+    );
+}
