@@ -19,7 +19,6 @@ interface SavedMarcacion {
     tipoElemento: string;
     municipio: string;
     gps: { lat: number | null; lng: number | null; precision: number | null };
-    alturaTotal: string;
     obs: string;
     inspector: string;
     createdAt: string;
@@ -37,7 +36,6 @@ interface FormState {
     otroTipo: string;
     municipio: string;
     gps: { lat: number | null; lng: number | null; precision: number | null };
-    alturaTotal: string;
     fotos: { panoramica: any | null; tapa: any | null; batea?: any | null };
     obs: string;
 }
@@ -48,7 +46,6 @@ const EMPTY_FORM = (municipio: string): FormState => ({
     otroTipo: '',
     municipio,
     gps: { lat: null, lng: null, precision: null },
-    alturaTotal: '',
     fotos: { panoramica: null, tapa: null, batea: null },
     obs: '',
 });
@@ -175,7 +172,6 @@ const MarcacionScreen: React.FC<{
             tipoElemento: finalType,
             municipio: form.municipio,
             gps: form.gps,
-            alturaTotal: form.alturaTotal.trim(),
             obs: form.obs,
             fotos: form.fotos,
             inspector: user?.name || user?.email || 'Desconocido',
@@ -301,11 +297,6 @@ const MarcacionScreen: React.FC<{
                                             <div style={{ fontSize: '10px', color: 'var(--text3)', marginTop: '4px' }}>
                                                 📍 {r.municipio} &nbsp;·&nbsp; 📅 {new Date(r.createdAt).toLocaleDateString('es-CO')}
                                             </div>
-                                            {r.alturaTotal && (
-                                                <div style={{ fontSize: '10px', color: 'var(--text2)', marginTop: '3px' }}>
-                                                    📏 Altura total: <strong style={{ color: '#a78bfa' }}>{r.alturaTotal} m</strong>
-                                                </div>
-                                            )}
                                             {r.gps.lat && (
                                                 <div style={{ fontSize: '9px', color: 'var(--text3)', fontFamily: 'monospace', marginTop: '2px' }}>
                                                     {r.gps.lat.toFixed(5)}, {r.gps.lng?.toFixed(5)}
@@ -418,37 +409,6 @@ const MarcacionScreen: React.FC<{
                                     {form.gps.lat.toFixed(6)}, {form.gps.lng?.toFixed(6)}
                                 </div>
                                 <div>Precisión: ±{form.gps.precision}m</div>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* 4b. Altura Total */}
-                    <div className="card" style={{ borderColor: form.alturaTotal ? 'rgba(167,139,250,0.5)' : 'var(--border2)', borderWidth: '1.5px' }}>
-                        <div className="card-title" style={{ color: form.alturaTotal ? '#a78bfa' : 'var(--text2)' }}>
-                            📏 Altura Total del Elemento
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <input
-                                type="number"
-                                inputMode="decimal"
-                                min="0"
-                                step="0.01"
-                                placeholder="0.00"
-                                value={form.alturaTotal}
-                                onChange={e => updateForm({ alturaTotal: e.target.value })}
-                                style={{
-                                    flex: 1,
-                                    fontSize: '26px', fontWeight: '800', fontFamily: "'DM Mono', monospace",
-                                    textAlign: 'center', color: form.alturaTotal ? '#a78bfa' : 'inherit',
-                                    background: 'var(--bg3)', border: `1.5px solid ${form.alturaTotal ? 'rgba(167,139,250,0.5)' : 'var(--border2)'}`,
-                                    borderRadius: '12px', padding: '14px', boxSizing: 'border-box'
-                                }}
-                            />
-                            <span style={{ fontSize: '18px', fontWeight: '700', color: 'var(--text2)', whiteSpace: 'nowrap' }}>m</span>
-                        </div>
-                        {form.alturaTotal && (
-                            <div style={{ textAlign: 'center', marginTop: '6px', fontSize: '11px', color: 'var(--text3)' }}>
-                                Altura registrada: <strong style={{ color: '#a78bfa' }}>{parseFloat(form.alturaTotal).toFixed(2)} metros</strong>
                             </div>
                         )}
                     </div>
