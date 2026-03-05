@@ -22,7 +22,7 @@ import { Crosshair, LocateFixed, Signal } from 'lucide-react';
 import { APIProvider, Map, AdvancedMarker } from '@vis.gl/react-google-maps';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.3.1';
 
 /* ═══════════════════════════════════════════════════════════
    TYPES & INTERFACES
@@ -265,6 +265,7 @@ const App: React.FC = () => {
     const [showSyncScreen, setShowSyncScreen] = useState(false);
     const [pendingCount, setPendingCount] = useState(0);
     const [pendingMarcaciones, setPendingMarcaciones] = useState(0);
+    const [marcacionMode, setMarcacionMode] = useState<'PZ' | 'SUMIDERO'>('PZ');
     const [deleteId, setDeleteId] = useState<string | null>(null);
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
     const [showGeoTracker, setShowGeoTracker] = useState(false);
@@ -771,9 +772,9 @@ const App: React.FC = () => {
                         <ChevronRight style={{ marginLeft: 'auto', color: 'rgba(255,255,255,0.3)' }} />
                     </button>
 
-                    {/* Marcación */}
+                    {/* Marcación PZ */}
                     <button
-                        onClick={() => setActiveScreen('sMarcacion')}
+                        onClick={() => { setMarcacionMode('PZ'); setActiveScreen('sMarcacion'); }}
                         style={{
                             background: 'rgba(30, 41, 59, 0.6)',
                             border: '1px solid rgba(245, 158, 11, 0.3)',
@@ -795,8 +796,38 @@ const App: React.FC = () => {
                             <Flag size={26} />
                         </div>
                         <div>
-                            <div style={{ color: 'white', fontWeight: '700', fontSize: '16px', fontFamily: "'Syne', sans-serif" }}>Actividad Marcación</div>
-                            <div style={{ color: '#fbbf24', fontSize: '10px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '1.5px', marginTop: '4px' }}>Georreferenciación en Campo</div>
+                            <div style={{ color: 'white', fontWeight: '700', fontSize: '16px', fontFamily: "'Syne', sans-serif" }}>Actividad Marcación PZ</div>
+                            <div style={{ color: '#fbbf24', fontSize: '10px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '1.5px', marginTop: '4px' }}>Georreferenciación Pozos</div>
+                        </div>
+                        <ChevronRight style={{ marginLeft: 'auto', color: 'rgba(255,255,255,0.3)' }} />
+                    </button>
+
+                    {/* Marcación Sumidero */}
+                    <button
+                        onClick={() => { setMarcacionMode('SUMIDERO'); setActiveScreen('sMarcacion'); }}
+                        style={{
+                            background: 'rgba(30, 41, 59, 0.6)',
+                            border: '1px solid rgba(16, 185, 129, 0.3)',
+                            borderRadius: '20px',
+                            padding: '22px 20px',
+                            textAlign: 'left',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '18px',
+                            cursor: 'pointer',
+                            transition: 'all 0.25s',
+                            boxShadow: '0 4px 24px rgba(16,185,129,0.1)',
+                            width: '100%'
+                        }}
+                        onTouchStart={e => (e.currentTarget.style.transform = 'scale(0.97)')}
+                        onTouchEnd={e => (e.currentTarget.style.transform = 'scale(1)')}
+                    >
+                        <div style={{ background: 'linear-gradient(135deg, #10b981, #047857)', padding: '14px', borderRadius: '14px', color: 'white', flexShrink: 0 }}>
+                            <ArrowDown size={26} />
+                        </div>
+                        <div>
+                            <div style={{ color: 'white', fontWeight: '700', fontSize: '16px', fontFamily: "'Syne', sans-serif" }}>Actividad Marcación Sumidero</div>
+                            <div style={{ color: '#34d399', fontSize: '10px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '1.5px', marginTop: '4px' }}>Georreferenciación Sumideros</div>
                         </div>
                         <ChevronRight style={{ marginLeft: 'auto', color: 'rgba(255,255,255,0.3)' }} />
                     </button>
@@ -1785,6 +1816,7 @@ const App: React.FC = () => {
                 {activeScreen === 'sMarcacion' && (
                     <MarcacionScreen
                         user={user}
+                        mode={marcacionMode}
                         onBack={() => setActiveScreen('sActivity')}
                         onSync={() => { setShowSyncScreen(true); }}
                         onSuccess={(m) => toast(m)}

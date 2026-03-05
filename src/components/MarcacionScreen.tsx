@@ -26,6 +26,7 @@ interface SavedMarcacion {
     fotos: {
         panoramica: any | null;
         tapa: any | null;
+        interna?: any | null;
         batea?: any | null;
         puntoGPS?: any | null;
     };
@@ -37,7 +38,7 @@ interface FormState {
     otroTipo: string;
     municipio: string;
     gps: { lat: number | null; lng: number | null; precision: number | null };
-    fotos: { panoramica: any | null; tapa: any | null; batea?: any | null; puntoGPS?: any | null };
+    fotos: { panoramica: any | null; tapa: any | null; interna?: any | null; batea?: any | null; puntoGPS?: any | null };
     obs: string;
 }
 
@@ -47,7 +48,7 @@ const EMPTY_FORM = (municipio: string): FormState => ({
     otroTipo: '',
     municipio,
     gps: { lat: null, lng: null, precision: null },
-    fotos: { panoramica: null, tapa: null, batea: null, puntoGPS: null },
+    fotos: { panoramica: null, tapa: null, interna: null, batea: null, puntoGPS: null },
     obs: '',
 });
 
@@ -81,13 +82,18 @@ const trySyncFirestore = async (data: SavedMarcacion) => {
 ════════════════════════════════════════════════════════ */
 const MarcacionScreen: React.FC<{
     user: any;
+    mode: 'PZ' | 'SUMIDERO';
     onBack: () => void;
     onSync: () => void;
     onSuccess: (msg: string) => void;
-}> = ({ user, onBack, onSync, onSuccess }) => {
+}> = ({ user, mode, onBack, onSync, onSuccess }) => {
     const defaultMun = (window as any).CURRENT_MUNICIPIO || 'Sopó';
     const [view, setView] = useState<'list' | 'form'>('list');
-    const [form, setForm] = useState<FormState>(EMPTY_FORM(defaultMun));
+    const [form, setForm] = useState<FormState>(() => {
+        const base = EMPTY_FORM(defaultMun);
+        if (mode === 'SUMIDERO') base.tipoElemento = 'sumidero';
+        return base;
+    });
     const [records, setRecords] = useState<SavedMarcacion[]>([]);
     const [showGeoTracker, setShowGeoTracker] = useState(false);
     const [loading, setLoading] = useState(false);
@@ -117,35 +123,42 @@ const MarcacionScreen: React.FC<{
         }));
     }, [isOnline]);
 
-    const updateForm = (patch: Partial<FormState>) => setForm(prev => ({ ...prev, ...patch }));
+    const updateForm = (upd: Partial<FormState>) => setForm(prev => ({ ...prev, ...upd }));
+
+    useEffect(() => {
+        const base = EMPTY_FORM(defaultMun);
+        if (mode === 'SUMIDERO') base.tipoElemento = 'sumidero';
+        setForm(base);
+        setView('list');
+    }, [mode]);
 
     /* ── Captura foto ── */
     const isSumidero = form.tipoElemento === 'sumidero';
 
-    const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>, category: 'panoramica' | 'tapa' | 'batea' | 'medidaAT' | 'puntoGPS') => {
+    const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>, cat: keyof FormState['fotos']) => {
         const file = e.target.files?.[0];
         if (!file) return;
         const rawCodigo = form.codigo.trim().toUpperCase().replace(/\s+/g, '');
-        const prefix = category === 'panoramica' ? 'P' : category === 'tapa' ? 'T' : category === 'batea' ? 'BE' : category === 'medidaAT' ? 'AT' : 'GPS';
+        const prefix = cat === 'panoramica' ? 'P' : cat === 'tapa' ? 'T' : cat === 'interna' ? 'I' : cat === 'batea' ? 'BE' : 'GPS';
         const filename = rawCodigo ? `${rawCodigo}-${prefix}.JPG` : `MARC-${Date.now()}-${prefix}.JPG`;
         try {
             const base64 = await resizeImage(file, 1600, 1600, 0.7);
             const newFoto = procesarFoto(filename, rawCodigo || 'MARC', base64);
-            const catString = category === 'panoramica' ? 'General' : category === 'tapa' ? 'Interior' : category === 'puntoGPS' ? 'Plano/Mapa' as any : category === 'batea' ? 'Sumidero' : 'General';
+            const catString = cat === 'panoramica' ? 'General' : cat === 'tapa' ? 'Interior' : (cat === 'puntoGPS') ? 'Plano/Mapa' as any : (cat === 'batea' || cat === 'interna') ? 'Sumidero' : 'General';
             await savePhotoToStorage({
                 id: newFoto.id, pozoId: rawCodigo || 'MARC', municipio: form.municipio,
                 barrio: 'MARCACION', filename, blob: base64,
                 categoria: catString,
                 inspector: user?.name || 'Desconocido', timestamp: Date.now(), synced: false
             });
-            updateForm({ fotos: { ...form.fotos, [category]: { ...newFoto, blobId: base64 } } });
+            updateForm({ fotos: { ...form.fotos, [cat]: { ...newFoto, blobId: base64 } } });
         } catch (err) {
             console.error('Error capturando foto:', err);
             alert('Error al procesar la foto.');
         }
     };
 
-    const handleAkasoSuccess = (cat: 'panoramica' | 'tapa' | 'batea' | 'medidaAT' | 'puntoGPS', foto: any) => {
+    const handleAkasoSuccess = (cat: keyof FormState['fotos'], foto: any) => {
         updateForm({ fotos: { ...form.fotos, [cat]: foto } });
     };
 
@@ -300,6 +313,9 @@ const MarcacionScreen: React.FC<{
                                                 <span style={{ fontFamily: "'DM Mono', monospace", fontSize: '16px', fontWeight: '800', color: 'white', letterSpacing: '1px' }}>
                                                     {r.codigo}
                                                 </span>
+                                                <span style={{ fontSize: '9px', background: r.tipoElemento === 'sumidero' ? 'rgba(16,185,129,0.2)' : 'rgba(245,158,11,0.2)', color: r.tipoElemento === 'sumidero' ? '#34d399' : '#fbbf24', borderRadius: '4px', padding: '1px 5px', fontWeight: '800' }}>
+                                                    {r.tipoElemento.toUpperCase()}
+                                                </span>
                                                 {r.synced ? (
                                                     <span style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '9px', color: 'var(--green)', fontWeight: '700' }}>
                                                         <Cloud size={11} /> Synced
@@ -325,6 +341,9 @@ const MarcacionScreen: React.FC<{
                                                 )}
                                                 {r.fotos?.tapa && (
                                                     <span style={{ fontSize: '9px', background: 'rgba(0,200,150,0.15)', color: 'var(--green)', borderRadius: '4px', padding: '2px 6px', fontFamily: 'monospace', fontWeight: '700' }}>-T ✓</span>
+                                                )}
+                                                {r.fotos?.interna && (
+                                                    <span style={{ fontSize: '9px', background: 'rgba(255,100,255,0.15)', color: '#ff64ff', borderRadius: '4px', padding: '2px 6px', fontFamily: 'monospace', fontWeight: '700' }}>-I ✓</span>
                                                 )}
                                                 {r.fotos?.puntoGPS && (
                                                     <span style={{ fontSize: '9px', background: 'rgba(255,165,0,0.15)', color: 'orange', borderRadius: '4px', padding: '2px 6px', fontFamily: 'monospace', fontWeight: '700' }}>-GPS ✓</span>
@@ -391,27 +410,29 @@ const MarcacionScreen: React.FC<{
                         </div>
                     </div>
 
-                    {/* 3. Tipo */}
-                    <div className="card">
-                        <div className="card-title">Tipo de Elemento</div>
-                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                            {TIPOS.map(t => (
-                                <button key={t} onClick={() => updateForm({ tipoElemento: t })} style={{
-                                    padding: '8px 14px', borderRadius: '10px', fontSize: '11px', fontWeight: '700',
-                                    cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.5px',
-                                    border: `1.5px solid ${form.tipoElemento === t ? 'var(--blue)' : 'var(--border2)'}`,
-                                    background: form.tipoElemento === t ? 'rgba(0,132,255,0.15)' : 'var(--bg3)',
-                                    color: form.tipoElemento === t ? '#60a5fa' : 'var(--text2)'
-                                }}>{t === 'OTRO' ? 'OTRO...' : t}</button>
-                            ))}
-                        </div>
-                        {form.tipoElemento === 'OTRO' && (
-                            <div className="field" style={{ marginTop: '12px' }}>
-                                <input type="text" placeholder="Especificar tipo..." value={form.otroTipo}
-                                    onChange={e => updateForm({ otroTipo: e.target.value })} />
+                    {/* 3. Tipo (Solo si NO es Sumidero) */}
+                    {mode !== 'SUMIDERO' && (
+                        <div className="card">
+                            <div className="card-title">Tipo de Elemento</div>
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                {TIPOS.map(t => (
+                                    <button key={t} onClick={() => updateForm({ tipoElemento: t })} style={{
+                                        padding: '8px 14px', borderRadius: '10px', fontSize: '11px', fontWeight: '700',
+                                        cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.5px',
+                                        border: `1.5px solid ${form.tipoElemento === t ? 'var(--blue)' : 'var(--border2)'}`,
+                                        background: form.tipoElemento === t ? 'rgba(0,132,255,0.15)' : 'var(--bg3)',
+                                        color: form.tipoElemento === t ? '#60a5fa' : 'var(--text2)'
+                                    }}>{t === 'OTRO' ? 'OTRO...' : t}</button>
+                                ))}
                             </div>
-                        )}
-                    </div>
+                            {form.tipoElemento === 'OTRO' && (
+                                <div className="field" style={{ marginTop: '12px' }}>
+                                    <input type="text" placeholder="Especificar tipo..." value={form.otroTipo}
+                                        onChange={e => updateForm({ otroTipo: e.target.value })} />
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {/* 4. GPS */}
                     <div className="card">
@@ -467,11 +488,11 @@ const MarcacionScreen: React.FC<{
                             })}
                         </div>
 
-                        <div className="card-title" style={{ marginTop: '16px', borderTop: '1px dashed var(--border)', paddingTop: '16px' }}>Evidencia Opcional</div>
+                        <div className="card-title" style={{ marginTop: '16px', borderTop: '1px dashed var(--border)', paddingTop: '16px' }}>{mode === 'SUMIDERO' ? 'Evidencia Adicional' : 'Evidencia Opcional'}</div>
                         <div className="field-row" style={{ gap: '16px' }}>
-                            {(['puntoGPS'] as const).map(cat => {
-                                const label = 'Punto GPS';
-                                const suffix = '-GPS';
+                            {(mode === 'SUMIDERO' ? (['interna', 'puntoGPS'] as const) : (['puntoGPS'] as const)).map(cat => {
+                                const label = cat === 'puntoGPS' ? 'Punto GPS' : 'Foto Interna (i)';
+                                const suffix = cat === 'puntoGPS' ? '-GPS' : '-I';
                                 const foto = form.fotos[cat];
                                 return (
                                     <div key={cat} style={{ flex: 1, textAlign: 'center' }}>
@@ -481,7 +502,7 @@ const MarcacionScreen: React.FC<{
                                             <FotoAkasoAutomatica
                                                 pozoId={form.codigo.trim().toUpperCase() || 'MARC'}
                                                 filename={form.codigo.trim() ? `${form.codigo.trim().toUpperCase()}${suffix}.JPG` : `MARC-${Date.now()}${suffix}.JPG`}
-                                                categoria="General"
+                                                categoria={mode === 'SUMIDERO' ? 'Sumidero' : 'General'}
                                                 onSuccess={(f) => handleAkasoSuccess(cat, f)}
                                             />
                                         </div>
@@ -500,8 +521,8 @@ const MarcacionScreen: React.FC<{
                         </div>
                     </div>
 
-                    {/* 4b. Condicional Sumideros: Foto Batea de Entrada */}
-                    {isSumidero && (
+                    {/* 4b. Condicional Sumideros: Solo si NO estamos en modo dedicado SUMIDERO (para no duplicar) */}
+                    {isSumidero && mode !== 'SUMIDERO' && (
                         <div className="card" style={{
                             borderColor: form.fotos.batea ? 'var(--green)' : 'rgba(255,165,0,0.5)',
                             borderWidth: '1.5px',
@@ -521,24 +542,17 @@ const MarcacionScreen: React.FC<{
                                 Obligatorio: Captura la foto interna de la <strong style={{ color: 'var(--text2)' }}>batea de la entrada</strong> del sumidero.
                                 El archivo se guardará como <span style={{ fontFamily: 'monospace', color: '#60a5fa' }}>{form.codigo || 'CÓDIGO'}-BE.JPG</span>
                             </div>
-                            <div className="photo-zone" style={{ height: '150px', position: 'relative' }}>
-                                <input
-                                    type="file"
-                                    accept="image/*"
-                                    onChange={e => handlePhoto(e, 'batea')}
-                                    style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', zIndex: 10 }}
-                                />
+                            <div className="photo-zone" style={{ height: '180px', position: 'relative' }}>
+                                <input type="file" accept="image/*" onChange={e => handlePhoto(e, 'batea')}
+                                    style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', zIndex: 10 }} />
                                 {form.fotos.batea ? (
-                                    <img
-                                        src={form.fotos.batea.blobId}
-                                        alt="Batea entrada"
-                                        style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '8px' }}
-                                    />
+                                    <img src={form.fotos.batea.blobId} alt="Batea" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '8px' }} />
                                 ) : (
-                                    <>
-                                        <div className="pz-icon"><ImageIcon size={28} style={{ color: 'orange' }} /></div>
-                                        <div className="pz-label" style={{ color: 'orange' }}>Foto Batea (-BE)</div>
-                                    </>
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                                        <Camera size={38} style={{ color: 'orange' }} />
+                                        <div style={{ fontSize: '13px', fontWeight: '800', color: 'orange' }}>TOMAR FOTO BATEA</div>
+                                        <div style={{ fontSize: '10px', color: 'var(--text3)' }}>Requerido para sumideros</div>
+                                    </div>
                                 )}
                             </div>
                         </div>
