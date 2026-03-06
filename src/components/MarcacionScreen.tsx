@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
     Camera, MapPin, ChevronLeft, Save, AlertTriangle,
     Image as ImageIcon, Hash, CheckCircle2, List, Plus,
-    Cloud, WifiOff, Trash2
+    Cloud, WifiOff, Trash2, Edit2
 } from 'lucide-react';
 import FotoAkasoAutomatica from './FotoAkasoAutomatica';
 import { db } from '../lib/firebase';
@@ -99,6 +99,7 @@ const MarcacionScreen: React.FC<{
     const [loading, setLoading] = useState(false);
     const [errors, setErrors] = useState<string[]>([]);
     const [isOnline, setIsOnline] = useState(navigator.onLine);
+    const [creationDate, setCreationDate] = useState<string | null>(null);
 
     /* ── Cargar historial local ── */
     useEffect(() => {
@@ -123,12 +124,33 @@ const MarcacionScreen: React.FC<{
         }));
     }, [isOnline]);
 
-    const updateForm = (upd: Partial<FormState>) => setForm(prev => ({ ...prev, ...upd }));
-
-    useEffect(() => {
+    const resetForm = () => {
         const base = EMPTY_FORM(defaultMun);
         if (mode === 'SUMIDERO') base.tipoElemento = 'sumidero';
         setForm(base);
+        setErrors([]);
+        setCreationDate(null);
+    };
+
+    const updateForm = (upd: Partial<FormState>) => setForm(prev => ({ ...prev, ...upd }));
+
+    const handleEdit = (record: SavedMarcacion) => {
+        setForm({
+            codigo: record.codigo,
+            tipoElemento: record.tipoElemento,
+            municipio: record.municipio,
+            gps: record.gps,
+            obs: record.obs,
+            fotos: record.fotos || { panoramica: null, tapa: null, puntoGPS: null, batea: null, interna: null },
+            otroTipo: TIPOS.includes(record.tipoElemento) ? '' : record.tipoElemento
+        });
+        setCreationDate(record.createdAt);
+        setErrors([]);
+        setView('form');
+    };
+
+    useEffect(() => {
+        resetForm();
         setView('list');
     }, [mode]);
 
@@ -191,7 +213,7 @@ const MarcacionScreen: React.FC<{
             obs: form.obs,
             fotos: form.fotos,
             inspector: user?.name || user?.email || 'Desconocido',
-            createdAt: new Date().toISOString(),
+            createdAt: creationDate || new Date().toISOString(),
             synced: false,
         };
 
@@ -209,7 +231,7 @@ const MarcacionScreen: React.FC<{
 
         setLoading(false);
         onSuccess(`✅ Marcación "${codigo}" guardada localmente`);
-        setForm(EMPTY_FORM(form.municipio)); // Resetear formulario
+        resetForm(); // Resetear formulario correctamente según el modo
         setView('list'); // Volver al listado
     };
 
@@ -252,7 +274,7 @@ const MarcacionScreen: React.FC<{
                                 <Cloud size={15} /> Sincronizar
                             </button>
                             <button
-                                onClick={() => { setForm(EMPTY_FORM(defaultMun)); setErrors([]); setView('form'); }}
+                                onClick={() => { resetForm(); setView('form'); }}
                                 className="btn btn-blue btn-sm"
                                 style={{ padding: '8px 14px', fontSize: '12px' }}
                             >
@@ -281,7 +303,7 @@ const MarcacionScreen: React.FC<{
                             <div style={{ fontSize: '12px', marginBottom: '24px' }}>Toca "+ Nuevo" para registrar un elemento</div>
                             <button
                                 className="btn btn-blue"
-                                onClick={() => { setForm(EMPTY_FORM(defaultMun)); setErrors([]); setView('form'); }}
+                                onClick={() => { resetForm(); setView('form'); }}
                             >
                                 <Plus size={16} /> Crear primera marcación
                             </button>
@@ -350,13 +372,22 @@ const MarcacionScreen: React.FC<{
                                                 )}
                                             </div>
                                         </div>
-                                        {/* Eliminar */}
-                                        <button
-                                            onClick={() => handleDelete(r.codigo, r.municipio)}
-                                            style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', padding: '4px', flexShrink: 0 }}
-                                        >
-                                            <Trash2 size={16} />
-                                        </button>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                            <button
+                                                onClick={() => handleEdit(r)}
+                                                style={{ background: 'transparent', border: 'none', color: 'var(--blue)', cursor: 'pointer', padding: '4px', flexShrink: 0 }}
+                                                title="Editar"
+                                            >
+                                                <Edit2 size={16} />
+                                            </button>
+                                            <button
+                                                onClick={() => handleDelete(r.codigo, r.municipio)}
+                                                style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', padding: '4px', flexShrink: 0 }}
+                                                title="Eliminar"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             ))}
