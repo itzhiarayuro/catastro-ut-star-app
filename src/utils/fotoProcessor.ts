@@ -13,6 +13,91 @@ export interface FotoRegistro {
 }
 
 /**
+ * Normaliza un texto: Mayúsculas y sin tildes/acentos.
+ */
+export const cleanText = (text: any): any => {
+    if (typeof text !== 'string') return text;
+    return text
+        .toUpperCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .trim();
+};
+
+/**
+ * Elimina los binarios (base64) de un objeto antes de guardarlo en Firestore
+ * para evitar el error de límite de 1MB por documento.
+ */
+export const stripBinaryData = (data: any): any => {
+    if (!data) return data;
+    try {
+        const clean = JSON.parse(JSON.stringify(data));
+
+        // 0. Normalizar campos de texto recursivamente (Solo strings, excluyendo IDs de binarios o URLs si fuera necesario)
+        const normalizeFields = (obj: any) => {
+            if (!obj || typeof obj !== 'object') return;
+
+            Object.keys(obj).forEach(key => {
+                const val = obj[key];
+
+                // No normalizar campos técnicos específicos (ej: IDs, bases64, etc)
+                const skipKeys = ['id', 'blobId', 'lastSync', 'downloadURL', 'url', 'uid', 'createdBy', 'creatorEmail', 'filename'];
+
+                if (typeof val === 'string' && !skipKeys.includes(key)) {
+                    // Si el string parece base64 o URL, no lo tocamos
+                    if (val.length < 500 && !val.startsWith('data:image') && !val.startsWith('http')) {
+                        obj[key] = cleanText(val);
+                    }
+                } else if (typeof val === 'object' && val !== null) {
+                    normalizeFields(val);
+                }
+            });
+        };
+
+        normalizeFields(clean);
+
+        // 1. Manejar el objeto 'fotos' (Usado en Marcaciones)
+        if (clean.fotos && typeof clean.fotos === 'object') {
+            Object.keys(clean.fotos).forEach(k => {
+                if (clean.fotos[k] && typeof clean.fotos[k] === 'object') {
+                    if (clean.fotos[k].blobId) {
+                        delete clean.fotos[k].blobId;
+                        clean.fotos[k].binaryStripped = true;
+                    }
+                }
+            });
+        }
+
+        // 2. Manejar 'fotoList' (Usado en Fichas Técnicas)
+        if (clean.fotoList && Array.isArray(clean.fotoList)) {
+            clean.fotoList = clean.fotoList.map((f: any) => {
+                if (f && typeof f === 'object') {
+                    const { blobId, ...meta } = f;
+                    return { ...meta, binaryStripped: !!blobId };
+                }
+                return f;
+            });
+        }
+
+        // 3. Manejar el objeto 'photos' (Legacy/Otros)
+        if (clean.photos && typeof clean.photos === 'object') {
+            Object.keys(clean.photos).forEach(key => {
+                if (Array.isArray(clean.photos[key])) {
+                    clean.photos[key] = clean.photos[key].map((p: string) =>
+                        (typeof p === 'string' && p.startsWith('data:image')) ? '[STRIPPED]' : p
+                    );
+                }
+            });
+        }
+
+        return clean;
+    } catch (e) {
+        console.error("Error stripping binary data:", e);
+        return data;
+    }
+};
+
+/**
  * Función estricta que lee el nombre del archivo y retorna el JSON mapeado
  * basándose únicamente en las reglas enviadas.
  */

@@ -20,7 +20,7 @@ import {
     ChevronLeft,
     Download
 } from 'lucide-react';
-import { BingLayer } from './BingLayer';
+import { CustomMapLayers } from './BingLayer';
 import OfflineMapManager from './OfflineMapManager';
 
 // Estilo Premium Dark para Google Maps
@@ -57,32 +57,7 @@ const MapasScreen: React.FC<{
     const [showOfflineManager, setShowOfflineManager] = useState(false);
     const [mapReady, setMapReady] = useState(false);
 
-    // Simple OSM Layer using Native Google Maps TileLayer
-    const OSMLayer = ({ active }: { active: boolean }) => {
-        const map = useMap();
-        useEffect(() => {
-            if (!map) return;
-            const osmMapType = new google.maps.ImageMapType({
-                getTileUrl: (coord, zoom) => `https://tile.openstreetmap.org/${zoom}/${coord.x}/${coord.y}.png`,
-                tileSize: new google.maps.Size(256, 256),
-                name: 'OpenStreetMap',
-                maxZoom: 19
-            });
-            if (active) {
-                map.overlayMapTypes.insertAt(0, osmMapType);
-            } else {
-                map.overlayMapTypes.forEach((mt, i) => {
-                    if (mt?.name === 'OpenStreetMap') map.overlayMapTypes.removeAt(i);
-                });
-            }
-            return () => {
-                map.overlayMapTypes.forEach((mt, i) => {
-                    if (mt?.name === 'OpenStreetMap') map.overlayMapTypes.removeAt(i);
-                });
-            };
-        }, [map, active]);
-        return null;
-    };
+
 
     useEffect(() => {
         // Fetch Fichas
@@ -252,8 +227,7 @@ const MapasScreen: React.FC<{
                     gestureHandling={'greedy'}
                     style={{ width: '100%', height: '100%' }}
                 >
-                    <BingLayer active={mapType === 'bing'} defaultType={mapType === 'bing' ? 'hybrid' : mapType} />
-                    <OSMLayer active={mapType === 'osm'} />
+                    <CustomMapLayers mapType={mapType} />
 
                     {/* Marcador de Ubicación del Usuario (Punto Azul) */}
                     {userPos && (

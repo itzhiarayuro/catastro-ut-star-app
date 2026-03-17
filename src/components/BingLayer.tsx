@@ -1,7 +1,8 @@
 import React, { useEffect } from 'react';
 import { useMap } from '@vis.gl/react-google-maps';
+import { getTile } from '../lib/mapUtils';
 
-export const BingLayer: React.FC<{ active: boolean; defaultType: string }> = ({ active, defaultType }) => {
+export const CustomMapLayers: React.FC<{ mapType: 'hybrid' | 'roadmap' | 'bing' | 'osm' }> = ({ mapType }) => {
     const map = useMap();
 
     useEffect(() => {
@@ -35,11 +36,7 @@ export const BingLayer: React.FC<{ active: boolean; defaultType: string }> = ({ 
         // Register OSM (Offline capable)
         if (!map.mapTypes.get(OSM_ID)) {
             const osmMapType = new google.maps.ImageMapType({
-                getTileUrl: (coord, zoom) => {
-                    // This is a dummy URL because we will override the tile rendering logic
-                    // logic is handled via custom store
-                    return `https://tile.openstreetmap.org/${zoom}/${coord.x}/${coord.y}.png`;
-                },
+                getTileUrl: (coord, zoom) => `https://tile.openstreetmap.org/${zoom}/${coord.x}/${coord.y}.png`,
                 tileSize: new google.maps.Size(256, 256),
                 maxZoom: 19,
                 minZoom: 1,
@@ -52,13 +49,16 @@ export const BingLayer: React.FC<{ active: boolean; defaultType: string }> = ({ 
                 const img = doc.createElement('img');
                 img.style.width = '256px';
                 img.style.height = '256px';
+                img.style.backgroundColor = '#0b0e14'; // Fondo oscuro mientras carga
 
                 if (coord) {
                     const key = `osm_${zoom}_${coord.x}_${coord.y}`;
-                    import('./OfflineMapManager').then(m => m.getTile(key)).then(blob => {
+                    getTile(key).then(blob => {
                         if (blob) {
                             img.src = URL.createObjectURL(blob);
+                            // Limpieza opcional: URL.revokeObjectURL(img.src) al desmontar o cargar otra
                         } else {
+                            // Si no está en cache, intentar cargar online
                             img.src = `https://tile.openstreetmap.org/${zoom}/${coord.x}/${coord.y}.png`;
                         }
                     }).catch(() => {
@@ -72,14 +72,16 @@ export const BingLayer: React.FC<{ active: boolean; defaultType: string }> = ({ 
             map.mapTypes.set(OSM_ID, osmMapType);
         }
 
-        if (active) {
-            map.setMapTypeId(OSM_ID);
-        } else if (defaultType === 'bing') {
+        // Apply correct map type
+        if (mapType === 'bing') {
             map.setMapTypeId(BING_ID);
+        } else if (mapType === 'osm') {
+            map.setMapTypeId(OSM_ID);
         } else {
-            map.setMapTypeId(defaultType);
+            map.setMapTypeId(mapType);
         }
-    }, [map, active, defaultType]);
+
+    }, [map, mapType]);
 
     return null;
 };

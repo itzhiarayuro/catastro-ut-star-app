@@ -122,6 +122,13 @@ interface Group {
     description?: string;
 }
 
+interface TechnicalGroup {
+    type: 'entrada' | 'salida' | 'sumidero';
+    number: number;
+    elements: (Placement | ShapeElement & { _isShape: boolean })[];
+    hasRealData: boolean;
+}
+
 interface Design {
     pageSize: string;
     orientation: string;
@@ -284,46 +291,138 @@ function getFieldValue(pozo: ReturnType<typeof mapFirestoreToPozo>, fieldId: str
 }
 
 // ─────────────────────────────────────────────────
-// LÓGICA DE VISIBILIDAD DE GRUPOS
+// MOTOR DE LAYOUT INTELIGENTE (Página 2)
 // ─────────────────────────────────────────────────
-function isGroupVisible(groupId: string | undefined, design: Design, pozo: ReturnType<typeof mapFirestoreToPozo>): boolean {
-    if (!groupId) return true;
 
-    const group = (design.groups || []).find(g => g.id === groupId);
-    if (!group) return true;
+function checkIfPage2ShouldBeSkipped(pozo: ReturnType<typeof mapFirestoreToPozo>): boolean {
+    const hasPipes = pozo.pipes.length > 0;
+    const hasSums = pozo.sums.length > 0;
 
-    const name = group.name.toLowerCase();
+    const page2PhotoCodes = [
+        'E1', 'E2', 'E3', 'E4', 'E5', 'E6', 'E7', 'E8',
+        'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8',
+        'SUM1', 'SUM2', 'SUM3', 'SUM4', 'SUM5', 'SUM6', 'SUM7', 'SUM8'
+    ];
 
-    // Lógica para Entrada X
-    if (name.includes("entrada")) {
-        const match = name.match(/entrada\s*(\d+)/i);
-        if (match) {
-            const num = parseInt(match[1]);
-            const entradas = pozo.pipes.filter(p => p.tipo === "entrada");
-            return entradas.length >= num;
+    const hasPage2Photos = pozo.fotos.some(f => {
+        const n = (f.nombre || "").toUpperCase();
+        const match = n.match(/-([A-Z0-9]+)\.[A-Z]+$/);
+        return match ? page2PhotoCodes.includes(match[1]) : false;
+    });
+
+    return !hasPipes && !hasSums && !hasPage2Photos;
+}
+
+function applySmartLayout(elements: any[], design: Design, pozo: ReturnType<typeof mapFirestoreToPozo>): any[] {
+    const page1Elements = elements.filter(el => (el.pageNumber || 1) === 1 || el.repeatOnEveryPage);
+    const page2Elements = elements.filter(el => (el.pageNumber || 1) === 2 && !el.repeatOnEveryPage);
+    const otherPageElements = elements.filter(el => (el.pageNumber || 1) > 2);
+
+    // Clasificar elementos de Página 2
+    const technicalFields = page2Elements.filter(el => {
+        if (el._isShape) return false;
+        const fid = (el as Placement).fieldId;
+        return fid.startsWith("ent_") || fid.startsWith("sal_") || fid.startsWith("sum_") || fid.startsWith("foto_");
+    });
+    const decorativeElements = page2Elements.filter(el => !technicalFields.includes(el));
+
+    // Agrupar técnicos
+    const groups = buildTechnicalGroups(technicalFields, pozo);
+
+    // Reposicionar en 3 columnas
+    const startY = 54; // Estimado, podrías hacerlo dinámico
+    const entries = groups.filter(g => g.type === 'entrada' && g.hasRealData);
+    const exits = groups.filter(g => g.type === 'salida' && g.hasRealData);
+    const sums = groups.filter(g => g.type === 'sumidero' && g.hasRealData);
+
+    const repoEntries = repositionGroupsInColumn(entries, 10, startY, 2);
+    const repoExits = repositionGroupsInColumn(exits, 74.67, startY, 2);
+    const repoSums = repositionGroupsInColumn(sums, 139.34, startY, 2);
+
+    return [
+        ...page1Elements,
+        ...decorativeElements,
+        ...repoEntries,
+        ...repoExits,
+        ...repoSums,
+        ...otherPageElements
+    ];
+}
+
+function buildTechnicalGroups(elements: any[], pozo: ReturnType<typeof mapFirestoreToPozo>): TechnicalGroup[] {
+    const groupsMap: Record<string, TechnicalGroup> = {};
+
+    elements.forEach(el => {
+        const fid = el.fieldId as string;
+        let type: 'entrada' | 'salida' | 'sumidero' | null = null;
+        let num = 0;
+
+        const pipeMatch = fid.match(/^(ent|sal)_[a-z]+_(\d+)$/);
+        const fotoMatch = fid.match(/^foto_(entrada|salida|sumidero)_(\d+)$/);
+
+        if (pipeMatch) {
+            type = pipeMatch[1] === "ent" ? "entrada" : "salida";
+            num = parseInt(pipeMatch[2]);
+        } else if (fotoMatch) {
+            type = fotoMatch[1] === "entrada" ? "entrada" : fotoMatch[1] === "salida" ? "salida" : "sumidero";
+            num = parseInt(fotoMatch[2]);
         }
-    }
 
-    // Lógica para Salida X
-    if (name.includes("salida")) {
-        const match = name.match(/salida\s*(\d+)/i);
-        if (match) {
-            const num = parseInt(match[1]);
-            const salidas = pozo.pipes.filter(p => p.tipo === "salida");
-            return salidas.length >= num;
+        if (type && num) {
+            const key = `${type}_${num}`;
+            if (!groupsMap[key]) {
+                groupsMap[key] = { type, number: num, elements: [], hasRealData: false };
+            }
+            groupsMap[key].elements.push(el);
         }
-    }
+    });
 
-    // Lógica para Sumidero X
-    if (name.includes("sumidero")) {
-        const match = name.match(/sumidero\s*(\d+)/i);
-        if (match) {
-            const num = parseInt(match[1]);
-            return (pozo as any).sums?.length >= num;
-        }
-    }
+    const groups = Object.values(groupsMap);
+    groups.forEach(g => {
+        g.hasRealData = checkHasRealData(g, pozo);
+    });
 
-    return true;
+    return groups;
+}
+
+function checkHasRealData(group: TechnicalGroup, pozo: ReturnType<typeof mapFirestoreToPozo>): boolean {
+    const idx = group.number - 1;
+    if (group.type === 'entrada') return !!pozo.pipes.filter(p => p.tipo === 'entrada')[idx];
+    if (group.type === 'salida') return !!pozo.pipes.filter(p => p.tipo === 'salida')[idx];
+    if (group.type === 'sumidero') return !!pozo.sums[idx];
+    return false;
+}
+
+function repositionGroupsInColumn(groups: TechnicalGroup[], colX: number, startY: number, pageNumber: number): any[] {
+    let currentY = startY;
+    const result: any[] = [];
+    const GROUP_GAP = 4;
+
+    groups.sort((a, b) => a.number - b.number);
+
+    groups.forEach(g => {
+        // Encontrar el elemento más a la izquierda del grupo original para calcular offsets relativos si fuera necesario
+        // Pero aquí simplificamos: alineamos todo a colX y apilamos.
+
+        // Calculamos offsets relativos de cada elemento dentro del grupo original
+        // para preservar su layout interno (label arriba, foto abajo, etc)
+        const minY = Math.min(...g.elements.map(el => el.y));
+
+        g.elements.forEach(el => {
+            const relY = el.y - minY;
+            const relX = el.x - Math.min(...g.elements.map(e => e.x));
+
+            el.x = colX + relX;
+            el.y = currentY + relY;
+            el.pageNumber = pageNumber;
+            result.push(el);
+        });
+
+        const gHeight = Math.max(...g.elements.map(el => el.y + el.height)) - currentY;
+        currentY += gHeight + GROUP_GAP;
+    });
+
+    return result;
 }
 
 // ─────────────────────────────────────────────────
@@ -335,21 +434,24 @@ async function generatePdf(design: Design, pozo: ReturnType<typeof mapFirestoreT
 
     const doc = new jsPDF({ orientation, unit: "mm", format });
 
-    const allElements = [
+    let allElements = [
         ...(design.shapes ?? []).map((s: ShapeElement) => ({ ...s, _isShape: true })),
         ...(design.placements ?? []).map((p: Placement) => ({ ...p, _isShape: false })),
-    ].sort((a, b) => (Number(a.zIndex) || 0) - (Number(b.zIndex) || 0));
+    ];
 
-    const numPages = design.numPages || 1;
+    // Aplicar Smart Layout
+    const skipP2 = checkIfPage2ShouldBeSkipped(pozo);
+    allElements = applySmartLayout(allElements, design, pozo);
+
+    allElements.sort((a, b) => (Number(a.zIndex) || 0) - (Number(b.zIndex) || 0));
+
+    const numPages = skipP2 ? 1 : (design.numPages || 1);
 
     for (let pageIdx = 1; pageIdx <= numPages; pageIdx++) {
         if (pageIdx > 1) doc.addPage();
 
         for (const el of allElements) {
             if (el.isVisible === false) continue;
-
-            // VERIFICAR GRUPO CONDICIONAL
-            if (!isGroupVisible(el.groupId, design, pozo)) continue;
 
             const isRepeated = (el as any).repeatOnEveryPage;
             const elPage = (el as any).pageNumber || 1;
@@ -369,28 +471,87 @@ async function generatePdf(design: Design, pozo: ReturnType<typeof mapFirestoreT
     return Buffer.from(doc.output("arraybuffer") as ArrayBuffer);
 }
 
+function isValidColor(c: any): boolean {
+    if (!c || typeof c !== "string") return false;
+    const lower = c.trim().toLowerCase();
+    return lower !== "transparent" && lower !== "none" && lower !== "";
+}
+
 function renderShape(doc: InstanceType<typeof jsPDF>, shape: ShapeElement) {
     if (shape.type === "rectangle") {
-        const hasFill = shape.fillColor && shape.fillColor !== "transparent" && shape.fillColor !== "none";
+        const hasFill = isValidColor(shape.fillColor);
         if (hasFill) {
             doc.setFillColor(shape.fillColor as string);
-            if (shape.strokeColor) doc.setDrawColor(shape.strokeColor);
-            doc.rect(shape.x, shape.y, shape.width, shape.height, shape.strokeColor ? "FD" : "F");
+            if (isValidColor(shape.strokeColor)) {
+                doc.setDrawColor(shape.strokeColor as string);
+                doc.rect(shape.x, shape.y, shape.width, shape.height, "FD");
+            } else {
+                doc.rect(shape.x, shape.y, shape.width, shape.height, "F");
+            }
         } else {
-            if (shape.strokeColor) doc.setDrawColor(shape.strokeColor);
-            doc.rect(shape.x, shape.y, shape.width, shape.height, "D");
+            if (isValidColor(shape.strokeColor)) {
+                doc.setDrawColor(shape.strokeColor as string);
+                doc.rect(shape.x, shape.y, shape.width, shape.height, "D");
+            }
         }
     }
 
     if (shape.type === "text" && (shape as any).content) {
         doc.setFontSize(shape.fontSize || 10);
-        doc.setTextColor(shape.color || "#000000");
-        doc.text((shape as any).content, shape.x, shape.y + shape.height / 2, { baseline: "middle" });
+        doc.setTextColor(isValidColor(shape.color) ? shape.color : "#000000");
+
+        const fontWeight = (shape as any).fontWeight || "normal";
+        try {
+            const fontName = doc.getFont().fontName;
+            doc.setFont(fontName, fontWeight === "bold" ? "bold" : "normal");
+        } catch (_) { }
+
+        const align = (shape as any).textAlign || "left";
+        const padding = 2; // 2mm padding to avoid touching borders
+
+        let textX = shape.x + padding;
+        const availableWidth = Math.max(0, shape.width - (padding * 2));
+        if (align === "center") textX = shape.x + shape.width / 2;
+        else if (align === "right") textX = shape.x + shape.width - padding;
+
+        const contentStr = String((shape as any).content);
+        // Manual wrapping to compute total height and center vertically
+        const textLines = doc.splitTextToSize(contentStr, availableWidth);
+        const lineHeight = doc.getLineHeight() * 0.3527; // convert pt to mm
+        const totalTextHeight = Math.max(0, (textLines.length - 1) * lineHeight);
+
+        // Calculate Y so the middle of the block aligns to the center of the box
+        // We add +1.5 mm to push the text down roughly 5px as requested by the user
+        const startY = shape.y + (shape.height / 2) - (totalTextHeight / 2) + 1.5;
+
+        doc.text(textLines, textX, startY, {
+            align: align as any,
+            baseline: "middle"
+        });
+
+        try {
+            const fontName = doc.getFont().fontName;
+            doc.setFont(fontName, "normal");
+        } catch (_) { }
+    }
+
+    if (shape.type === "image" && (shape as any).imageUrl) {
+        const url = (shape as any).imageUrl;
+        if (url.startsWith("data:image")) {
+            try {
+                const fmt = url.includes("png") ? "PNG" : "JPEG";
+                doc.addImage(url, fmt, shape.x, shape.y, shape.width, shape.height, undefined, "FAST");
+            } catch (e) {
+                console.warn(`Error añadiendo imagen estática (${shape.id}):`, e);
+            }
+        }
     }
 
     if (shape.type === "line") {
-        if (shape.strokeColor) doc.setDrawColor(shape.strokeColor);
-        doc.line(shape.x, shape.y, shape.x + shape.width, shape.y + shape.height);
+        if (isValidColor(shape.strokeColor)) {
+            doc.setDrawColor(shape.strokeColor as string);
+            doc.line(shape.x, shape.y, shape.x + shape.width, shape.y + shape.height);
+        }
     }
 }
 
@@ -398,8 +559,8 @@ async function renderField(doc: InstanceType<typeof jsPDF>, pl: Placement, pozo:
     const value = getFieldValue(pozo, pl.fieldId);
 
     // Borde del campo
-    if (pl.borderWidth && pl.borderWidth > 0) {
-        doc.setDrawColor(pl.borderColor || "#000000");
+    if (pl.borderWidth && pl.borderWidth > 0 && isValidColor(pl.borderColor)) {
+        doc.setDrawColor(pl.borderColor as string);
         doc.setLineWidth(pl.borderWidth * 0.35); // px → mm aprox
         doc.rect(pl.x, pl.y, pl.width, pl.height);
     }
@@ -409,12 +570,12 @@ async function renderField(doc: InstanceType<typeof jsPDF>, pl: Placement, pozo:
     if (pl.showLabel) {
         const lfs = pl.labelFontSize || 8;
         labelH = lfs * 0.35 + 2; // mm
-        if (pl.labelBackgroundColor) {
-            doc.setFillColor(pl.labelBackgroundColor);
+        if (isValidColor(pl.labelBackgroundColor)) {
+            doc.setFillColor(pl.labelBackgroundColor as string);
             doc.rect(pl.x, pl.y, pl.width, labelH, "F");
         }
         doc.setFontSize(lfs);
-        doc.setTextColor(pl.labelColor || "#000000");
+        doc.setTextColor(isValidColor(pl.labelColor) ? pl.labelColor : "#000000");
         const labelText = pl.customLabel || pl.fieldId;
         doc.text(String(labelText), pl.x + pl.width / 2, pl.y + labelH / 2, { align: "center", baseline: "middle" });
     }
@@ -460,13 +621,23 @@ async function renderField(doc: InstanceType<typeof jsPDF>, pl: Placement, pozo:
 
     // Texto
     doc.setFontSize(pl.fontSize || 10);
-    doc.setTextColor(pl.color || "#000000");
-    doc.text(
-        String(value || "-"),
-        pl.x + pl.width / 2,
-        contentY + contentH / 2,
-        { align: "center", baseline: "middle", maxWidth: pl.width - 2 }
-    );
+    doc.setTextColor(isValidColor(pl.color) ? pl.color : "#000000");
+    const valueStr = String(value || "-");
+    const padding = 2; // 2mm padding
+    const availableWidth = Math.max(0, pl.width - (padding * 2));
+    const alignedX = pl.x + (pl.width / 2);
+
+    const textLines = doc.splitTextToSize(valueStr, availableWidth);
+    const lineHeight = doc.getLineHeight() * 0.3527; // mm
+    const totalTextHeight = Math.max(0, (textLines.length - 1) * lineHeight);
+
+    // +1.5 mm to push the text down roughly 5px as requested
+    const startY = contentY + (contentH / 2) - (totalTextHeight / 2) + 1.5;
+
+    doc.text(textLines, alignedX, startY, {
+        align: "center",
+        baseline: "middle"
+    });
 }
 
 // ─────────────────────────────────────────────────
@@ -527,31 +698,15 @@ export const generateFicha = functions
             console.log("📄 Renderizando PDF...");
             const pdfBuffer = await generatePdf(design, pozoMapeado);
 
-            // 4. Guardar en Storage
+            // 4. Devolver PDF como base64 directamente al cliente
             const idParaFichero = fichaId || baseData.pozo || Date.now();
-            const filenameTarget = `fichas_pdf/${idParaFichero}_${Date.now()}.pdf`;
-            const bucket = storage().bucket();
-            const file = bucket.file(filenameTarget);
+            const pdfBase64 = pdfBuffer.toString("base64");
 
-            await file.save(pdfBuffer, {
-                metadata: {
-                    contentType: "application/pdf",
-                    metadata: { disenoId, generatedAt: new Date().toISOString() },
-                },
-            });
-
-            // URL firmada válida 1 hora
-            const [url] = await file.getSignedUrl({
-                version: "v4",
-                action: "read",
-                expires: Date.now() + 60 * 60 * 1000,
-            });
-
-            console.log(`✅ PDF generado exitosamente: ${filenameTarget}`);
+            console.log(`✅ PDF generado exitosamente para: ${idParaFichero} (${pdfBuffer.length} bytes)`);
             return {
                 success: true,
-                downloadUrl: url,
-                filename: filenameTarget,
+                pdfBase64,
+                filename: `ficha_${idParaFichero}.pdf`,
                 id: idParaFichero
             };
 

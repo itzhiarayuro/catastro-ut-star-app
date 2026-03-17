@@ -1,5 +1,6 @@
 import { db, persistFicha } from '../lib/firebase';
 import { doc, setDoc } from 'firebase/firestore';
+import { stripBinaryData } from './fotoProcessor';
 
 export interface AppState {
     id: string | null;
@@ -72,7 +73,8 @@ export const syncMarcacionesToFirestore = async (
 
         try {
             const path = `marcaciones/${Marc.municipio.toUpperCase()}_${Marc.codigo}`;
-            await setDoc(doc(db, path), { ...Marc, synced: true, lastSync: new Date().toISOString() });
+            const cleanMarc = stripBinaryData(Marc);
+            await setDoc(doc(db, path), { ...cleanMarc, synced: true, lastSync: new Date().toISOString() });
 
             // Actualizar en localStorage
             const updated = JSON.parse(localStorage.getItem('marcaciones_star') || '[]');

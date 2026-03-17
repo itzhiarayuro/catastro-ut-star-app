@@ -10,8 +10,9 @@ import {
     Camera,
     Download
 } from 'lucide-react';
-import { BingLayer } from './BingLayer';
+import { CustomMapLayers as BingLayer } from './BingLayer';
 import { FotoRegistro, procesarFoto } from '../utils/fotoProcessor';
+import { getTile } from '../lib/mapUtils';
 import OfflineMapManager from './OfflineMapManager';
 
 const MAP_ID = import.meta.env.VITE_GOOGLE_MAPS_ID;
@@ -135,59 +136,106 @@ const GeoTracker: React.FC<GeoTrackerProps> = ({ initialCoords, onConfirm, onScr
             // Google Static Maps API URL - Forzamos parámetros para que el pantallazo sea idéntico
             const staticMapUrl = `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=${currentZoom}&size=640x640&scale=2&maptype=${mapType === 'roadmap' ? 'roadmap' : 'hybrid'}&markers=color:blue%7C${lat},${lng}&key=${apiKey}`;
 
-            const response = await fetch(staticMapUrl);
-            if (!response.ok) throw new Error("Error en la respuesta de Static Maps");
-
-            const blob = await response.blob();
-
-            // Creamos un nombre de archivo más descriptivo
+            let base64data: string;
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
             const filename = `MAPA-${pozoId || 'P'}-${currentZoom}z-${timestamp}.JPG`;
 
-            const reader = new FileReader();
-            reader.readAsDataURL(blob);
-            reader.onloadend = async () => {
-                const base64data = reader.result as string;
+            try {
+                // Intentar Google Static Maps API (requiere internet)
+                const response = await fetch(staticMapUrl);
+                if (!response.ok) throw new Error('Static Maps API failed');
+                const blob = await response.blob();
+                base64data = await new Promise<string>((resolve) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result as string);
+                    reader.readAsDataURL(blob);
+                });
+            } catch (staticErr) {
+                // FALLBACK OFFLINE: Capturar tiles de IndexedDB via canvas
+                console.warn('Static Maps failed, using offline canvas fallback:', staticErr);
+                const canvas = document.createElement('canvas');
+                canvas.width = 1280;
+                canvas.height = 1280;
+                const ctx = canvas.getContext('2d')!;
+                ctx.fillStyle = '#1a1f2e';
+                ctx.fillRect(0, 0, 1280, 1280);
 
-                // TRUCO PARA GALERÍA EN MÓVIL: 
-                // 1. Intentamos el Share API si el navegador lo permite (mejor para Galería)
-                if (navigator.share && (navigator as any).canShare && (navigator as any).canShare({ files: [new File([blob], filename, { type: 'image/jpeg' })] })) {
-                    try {
-                        const file = new File([blob], filename, { type: 'image/jpeg' });
-                        await navigator.share({
-                            files: [file],
-                            title: 'Captura de Mapa',
-                            text: `Ubicación Pozo ${pozoId}`
-                        });
-                    } catch (shareErr) {
-                        // Fallback al link tradicional si el usuario cancela o falla
-                        const link = document.createElement('a');
-                        link.href = base64data;
-                        link.download = filename;
-                        document.body.appendChild(link);
-                        link.click();
-                        document.body.removeChild(link);
+                // Calculate tile coords
+                const tileSize = 256;
+                const scale = Math.pow(2, currentZoom);
+                const xCenter = (lng + 180) / 360 * scale;
+                const yCenter = (1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * scale;
+                const tilesX = Math.ceil(1280 / tileSize) + 1;
+                const tilesY = Math.ceil(1280 / tileSize) + 1;
+                const startTileX = Math.floor(xCenter - tilesX / 2);
+                const startTileY = Math.floor(yCenter - tilesY / 2);
+
+                const tilePromises: Promise<void>[] = [];
+                for (let tx = startTileX; tx < startTileX + tilesX; tx++) {
+                    for (let ty = startTileY; ty < startTileY + tilesY; ty++) {
+                        const key = `osm_${currentZoom}_${tx}_${ty}`;
+                        tilePromises.push(
+                            getTile(key).then(blob => {
+                                if (!blob) return;
+                                return new Promise<void>((resolve) => {
+                                    const img = new Image();
+                                    img.onload = () => {
+                                        const px = (tx - xCenter) * tileSize + 640;
+                                        const py = (ty - yCenter) * tileSize + 640;
+                                        ctx.drawImage(img, px, py, tileSize, tileSize);
+                                        URL.revokeObjectURL(img.src);
+                                        resolve();
+                                    };
+                                    img.onerror = () => resolve();
+                                    img.src = URL.createObjectURL(blob);
+                                });
+                            })
+                        );
                     }
-                } else {
-                    // Fallback tradicional para navegadores que no soportan Share API con archivos
-                    const link = document.createElement('a');
-                    link.href = base64data;
-                    link.download = filename;
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
                 }
+                await Promise.all(tilePromises);
 
-                const newFoto = procesarFoto(filename, pozoId || 'M', base64data);
-                onScreenshot({ ...newFoto, blobId: base64data });
+                // Draw center marker
+                ctx.beginPath();
+                ctx.arc(640, 640, 14, 0, 2 * Math.PI);
+                ctx.fillStyle = '#2563eb';
+                ctx.fill();
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(640, 640, 5, 0, 2 * Math.PI);
+                ctx.fillStyle = '#fff';
+                ctx.fill();
 
-                setIsCapturing(false);
-                toast("📸 Mapa guardado en Galería/Descargas");
-            };
+                // Coordinates bar
+                ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                ctx.fillRect(0, 1220, 1280, 60);
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 24px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText(`${lat.toFixed(7)}, ${lng.toFixed(7)}`, 640, 1256);
+
+                base64data = canvas.toDataURL('image/jpeg', 0.85);
+            }
+
+            // Download file
+            const link = document.createElement('a');
+            link.href = base64data;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            const newFoto = procesarFoto(filename, pozoId || 'M', base64data);
+            onScreenshot({ ...newFoto, blobId: base64data });
+
+            setIsCapturing(false);
+            toast("📸 Mapa capturado correctamente");
         } catch (err) {
             console.error("Error capturando mapa:", err);
             setIsCapturing(false);
-            toast("❌ Error al capturar: Revisa tu conexión");
+            toast("❌ Error al capturar el mapa");
         }
     };
 
@@ -284,7 +332,7 @@ const GeoTracker: React.FC<GeoTrackerProps> = ({ initialCoords, onConfirm, onScr
                         gestureHandling="greedy"
                         style={{ width: '100%', height: '100%' }}
                     >
-                        <BingLayer active={mapType === 'bing'} defaultType={mapType === 'bing' ? 'hybrid' : mapType} />
+                        <BingLayer mapType={mapType} />
 
                         {/* Círculo de precisión GPS (muestra radio del GPS, no del punto manual) */}
                         {gpsPos && accuracy > 0 && (

@@ -15,14 +15,21 @@ import FotosZone from './components/FotosZone';
 import ManholeDiagram from './components/ManholeDiagram';
 import SyncScreen from './components/SyncScreen';
 import MapasScreen from './components/MapasScreen';
-import GeoTracker from './components/GeoTracker';
+import GeoTracker from './components/SmartGeoTracker';
 import MarcacionScreen from './components/MarcacionScreen';
-import { getPendingPhotosCount, checkPendingInList, renamePhotoInStorage, savePhotoToStorage } from './utils/storageManager';
+import {
+    getPendingPhotosCount,
+    checkPendingInList,
+    renamePhotoInStorage,
+    savePhotoToStorage,
+    getAllFichasFromStorage,
+    saveFichaToStorage
+} from './utils/storageManager';
 import { Crosshair, LocateFixed, Signal } from 'lucide-react';
 import { APIProvider, Map, AdvancedMarker } from '@vis.gl/react-google-maps';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 
-const APP_VERSION = '1.3.2';
+const APP_VERSION = '1.4.2';
 
 /* ═══════════════════════════════════════════════════════════
    TYPES & INTERFACES
@@ -221,13 +228,28 @@ const App: React.FC = () => {
         needRefresh: [needRefresh, setNeedRefresh],
         updateServiceWorker,
     } = useRegisterSW({
-        onRegistered(r: any) {
-            console.log('SW Registered: ', r);
+        onRegistered(r) {
+            console.log('SW Registered', r);
+            // Auto update when available
+            if (r) {
+                setInterval(() => {
+                    r.update().catch(console.error);
+                }, 60 * 60 * 1000); // Check every hour
+            }
         },
-        onRegisterError(error: any) {
+        onRegisterError(error) {
             console.error('SW registration error', error);
         },
     });
+
+    // Auto-update SW when needRefresh is true (to avoid users being stuck on old versions)
+    useEffect(() => {
+        if (needRefresh) {
+            console.log("🔄 Actualización detectada, recargando aplicación...");
+            toast("🔄 Nueva versión disponible, actualizando...");
+            setTimeout(() => updateServiceWorker(true), 2000);
+        }
+    }, [needRefresh]);
 
     const { user, loading: authLoading, isAuthorized, logout } = useAuth();
     const [state, setState] = useState<AppState>(() => {
@@ -306,6 +328,82 @@ const App: React.FC = () => {
         return () => clearInterval(interval);
     }, []);
 
+    // 🔄 Background Sync for Pending Fichas & Photos (30 min cycle)
+    useEffect(() => {
+        const backgroundSync = async () => {
+            if (!navigator.onLine) return;
+
+            const now = new Date();
+            const hour = now.getHours();
+            const isNightWindow = hour >= 23 || hour <= 5; // 11 PM to 5 AM
+
+            console.log(`🔄 Ciclo de sincronización de fondo (${hour}:${now.getMinutes()})...`);
+
+            // 0. Migration Check (Ensures legacy data moves to IDB even if load failed)
+            const savedLS = localStorage.getItem('fichas_star');
+            if (savedLS) {
+                try {
+                    const lsFichas = JSON.parse(savedLS);
+                    for (const f of Object.values(lsFichas)) {
+                        await saveFichaToStorage(f);
+                    }
+                    console.log("💾 Migración de fondo (LS -> IDB) exitosa");
+                } catch (e) { }
+            }
+
+            // 1. Data Sync (Always tries every 30 mins if online)
+            const pendingFichas = Object.values(fichas).filter(f => !f.synced && !f.deleted);
+            if (pendingFichas.length > 0) {
+                console.log(`📤 Sincronizando ${pendingFichas.length} fichas pendientes...`);
+                const { syncFichasToFirestore } = await import('./utils/syncRegistry');
+                try {
+                    const refreshedFichas = await syncFichasToFirestore(fichas);
+                    setFichas(refreshedFichas);
+
+                    // Persist updated status
+                    try {
+                        localStorage.setItem('fichas_star', JSON.stringify(refreshedFichas));
+                    } catch (e) { }
+
+                    for (const f of Object.values(refreshedFichas)) {
+                        await saveFichaToStorage(f);
+                    }
+                } catch (error) {
+                    console.error("❌ Error sync fichas fondo:", error);
+                }
+            }
+
+            // 2. Nightly Sync (Photos)
+            if (isNightWindow) {
+                console.log("🌙 Ventana nocturna detectada. Iniciando subida de fotos silenciosa...");
+                try {
+                    const { syncPhotosToDrive } = await import('./utils/driveSync');
+                    const pendingPhotosCount = await getPendingPhotosCount();
+
+                    if (pendingPhotosCount > 0) {
+                        await syncPhotosToDrive((p) => {
+                            if (p.error) console.error("Error en sync nocturno de fotos:", p.error);
+                        });
+                        // Update UI counts after sync
+                        const count = await getPendingPhotosCount();
+                        setPendingCount(count);
+                    }
+                } catch (error) {
+                    console.error("❌ Fallo en sincronización nocturna:", error);
+                }
+            }
+        };
+
+        const syncInterval = setInterval(backgroundSync, 30 * 60 * 1000); // 30 minutes
+        // Initial run after a short delay for app stability
+        const initialTimeout = setTimeout(backgroundSync, 5000);
+
+        return () => {
+            clearInterval(syncInterval);
+            clearTimeout(initialTimeout);
+        };
+    }, [fichas, isOnline]);
+
     const firestorePath = state.pozo && state.municipio
         ? `fichas/${state.municipio.toUpperCase()}_${state.pozo.replace(/\s+/g, '')}`
         : '';
@@ -315,20 +413,30 @@ const App: React.FC = () => {
     // Dynamic Imports for Exports
     const forceHardReload = async () => {
         toast("🧹 Limpiando caché y reiniciando...");
-        if ('serviceWorker' in navigator) {
-            const registrations = await navigator.serviceWorker.getRegistrations();
-            for (const registration of registrations) {
-                await registration.unregister();
+        try {
+            if ('serviceWorker' in navigator) {
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                for (const registration of registrations) {
+                    await registration.unregister();
+                }
             }
-        }
-        if ('caches' in window) {
-            const cacheNames = await caches.keys();
-            for (const name of cacheNames) {
-                await caches.delete(name);
+            if ('caches' in window) {
+                const cacheNames = await caches.keys();
+                for (const name of cacheNames) {
+                    await caches.delete(name);
+                }
             }
+            // Clear storage-based version flags if any
+            sessionStorage.clear();
+
+            // Hard redirect with unique timestamp
+            const url = new URL(window.location.origin + window.location.pathname);
+            url.searchParams.set('v', Date.now().toString());
+            window.location.replace(url.toString());
+        } catch (e) {
+            console.error("Error during hard reload:", e);
+            window.location.reload();
         }
-        // Forzamos recarga con un parámetro aleatorio para saltar caché de Chrome
-        window.location.href = window.location.origin + window.location.pathname + '?v=' + Date.now();
     };
 
     const handlePDF = async (customPozo?: AppState) => {
@@ -345,16 +453,45 @@ const App: React.FC = () => {
         try {
             const { getFunctions, httpsCallable } = await import('firebase/functions');
             const functions = getFunctions();
-            const generateFichaFn = httpsCallable(functions, 'generateFicha');
+            const generateFichaFn = httpsCallable(functions, 'generateFicha', { timeout: 300000 });
 
             const result = await generateFichaFn({ pozo: pozoToExport });
-            const { downloadUrl } = result.data as { downloadUrl: string };
+            const { pdfBase64, filename, downloadUrl } = result.data as {
+                pdfBase64?: string;
+                filename?: string;
+                downloadUrl?: string;
+            };
 
-            if (downloadUrl) {
+            if (pdfBase64) {
+                // Convert base64 to blob and download
+                const byteChars = atob(pdfBase64);
+                const byteNumbers = new Array(byteChars.length);
+                for (let i = 0; i < byteChars.length; i++) {
+                    byteNumbers[i] = byteChars.charCodeAt(i);
+                }
+                const byteArray = new Uint8Array(byteNumbers);
+                const blob = new Blob([byteArray], { type: 'application/pdf' });
+                const url = URL.createObjectURL(blob);
+
+                // Open in new tab
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename || 'ficha.pdf';
+                a.target = '_blank';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+
+                // Also try opening in new tab
+                window.open(url, '_blank');
+
+                toast("✅ PDF Listo. Descargando...");
+            } else if (downloadUrl) {
+                // Fallback for old response format
                 toast("✅ PDF Listo. Abriendo...");
                 window.open(downloadUrl, '_blank');
             } else {
-                throw new Error("No se recibió URL de descarga");
+                throw new Error("No se recibió el PDF");
             }
         } catch (error: any) {
             console.error("Error generando PDF:", error);
@@ -404,16 +541,103 @@ const App: React.FC = () => {
         }
     };
 
-    // Load fichas from LocalStorage
-    useEffect(() => {
-        const saved = localStorage.getItem('fichas_star');
-        if (saved) {
-            try {
-                setFichas(JSON.parse(saved));
-            } catch (e) {
-                console.error("Error parsing fichas", e);
-            }
+    const restoreMarcacionesFromCloud = async () => {
+        if (!navigator.onLine) {
+            toast("❌ Necesitas conexión para restaurar");
+            return;
         }
+        if (!confirm("⚠️ Esto descargará tus marcaciones (Pozos/Sumideros) de la nube. ¿Continuar?")) return;
+
+        toast("🔄 Descargando marcaciones...");
+        try {
+            const operatorId = user?.name || user?.email;
+            if (!operatorId) {
+                toast("❌ No se pudo identificar al operario");
+                return;
+            }
+            const q = query(collection(db, 'marcaciones'), where('inspector', '==', operatorId));
+            const snapshot = await getDocs(q);
+            const recovered: any[] = [];
+
+            // Cargar existentes para no duplicar por createdAt
+            const existing: any[] = JSON.parse(localStorage.getItem('marcaciones_star') || '[]');
+            const existingIds = new Set(existing.map(m => m.createdAt));
+
+            snapshot.forEach(docSnap => {
+                const data = docSnap.data();
+                if (!existingIds.has(data.createdAt)) {
+                    recovered.push({ ...data, synced: true });
+                }
+            });
+
+            if (recovered.length === 0) {
+                toast("ℹ️ No se encontraron marcaciones nuevas en la nube");
+                return;
+            }
+
+            const updated = [...existing, ...recovered];
+            localStorage.setItem('marcaciones_star', JSON.stringify(updated));
+            setPendingMarcaciones(updated.filter(m => !m.synced && !m.deleted).length);
+
+            toast(`✅ Recuperadas ${recovered.length} marcaciones`);
+        } catch (error) {
+            console.error("Error restoring marcaciones", error);
+            toast("❌ Error al recuperar marcaciones");
+        }
+    };
+
+    const repairMarcacionesSync = () => {
+        if (!confirm("⚠️ Esto marcará todas tus marcaciones locales como 'Pendientes' para que se vuelvan a subir a Firebase. ¿Quieres continuar?")) return;
+
+        try {
+            const existing: any[] = JSON.parse(localStorage.getItem('marcaciones_star') || '[]');
+            const updated = existing.map(m => ({ ...m, synced: false }));
+            localStorage.setItem('marcaciones_star', JSON.stringify(updated));
+            setPendingMarcaciones(updated.filter(m => !m.deleted).length);
+            toast("🔄 Marcaciones listas para re-sincronizar");
+        } catch (e) {
+            toast("❌ Error al reparar sync");
+        }
+    };
+
+    // Load fichas from Hybrid Storage (LS + IDB)
+    useEffect(() => {
+        const loadAllFichas = async () => {
+            let combinedFichas: Record<string, AppState> = {};
+
+            // 1. Load from IndexedDB (New Standard)
+            try {
+                const idbFichas = await getAllFichasFromStorage();
+                combinedFichas = { ...idbFichas };
+            } catch (e) {
+                console.error("Error loading from IDB", e);
+            }
+
+            // 2. Load from LocalStorage (Legacy/Migration)
+            const savedLS = localStorage.getItem('fichas_star');
+            if (savedLS) {
+                try {
+                    const lsFichas = JSON.parse(savedLS);
+                    // Merge: IDB always wins because it's newer standard
+                    combinedFichas = { ...lsFichas, ...combinedFichas };
+
+                    // 3. AUTO-MIGRATION: Save LS data to IDB for future safety
+                    for (const f of Object.values(lsFichas)) {
+                        await saveFichaToStorage(f);
+                    }
+                    console.log("🚚 Migradas fichas de LocalStorage a IndexedDB");
+
+                    // Optional: We could clear localStorage here, but let's keep it for 
+                    // safety for now, just pruned to avoid QuotaExceeded on next write.
+                } catch (e) {
+                    console.error("Error parsing fichas from LS", e);
+                }
+            }
+
+            setFichas(combinedFichas);
+        };
+
+        loadAllFichas();
 
         const handleOnline = () => setIsOnline(true);
         const handleOffline = () => setIsOnline(false);
@@ -614,7 +838,28 @@ const App: React.FC = () => {
         // FIRST: Always save locally (Emergency Save / Auto-Draft)
         const updatedFichas = { ...fichas, [id]: finalData };
         setFichas(updatedFichas);
-        localStorage.setItem('fichas_star', JSON.stringify(updatedFichas));
+
+        // 1. New standard local storage (IndexedDB)
+        await saveFichaToStorage(finalData);
+
+        // 2. Legacy local storage (LocalStorage) - with quota protection
+        try {
+            localStorage.setItem('fichas_star', JSON.stringify(updatedFichas));
+        } catch (e) {
+            console.warn("LocalStorage Quota Exceeded! Using IndexedDB only.", e);
+            // If it fails, we prune LS to only keep metadata to avoid future errors
+            const metadataOnly: Record<string, any> = {};
+            Object.keys(updatedFichas).forEach(key => {
+                const f = updatedFichas[key];
+                metadataOnly[key] = { id: f.id, pozo: f.pozo, synced: f.synced, savedAt: f.savedAt };
+            });
+            try {
+                localStorage.setItem('fichas_star_meta', JSON.stringify(metadataOnly));
+                // We don't remove fichas_star yet to not break other things, 
+                // but at least we saved meta elsewhere.
+            } catch (innerE) { }
+        }
+
         // localStorage.removeItem('catastro_draft'); // Keep draft after saving so it survives page reloads
 
         // VALIDATION CHECK
@@ -642,8 +887,7 @@ const App: React.FC = () => {
         });
 
         if (missingFields.length > 0) {
-            toast(`📝 Guardado como Borrador.Pendiente: ${missingFields[0]}...`);
-            // We DON'T return, we stay in the form so they can fix it, but now it's in the list!
+            toast(`📝 Guardado Local & IDB. Pendiente: ${missingFields[0]}...`);
             setActiveScreen('sFichas');
             return;
         }
@@ -655,13 +899,19 @@ const App: React.FC = () => {
                 const completeSynced = { ...finalData, synced: true };
                 const finalFichas = { ...updatedFichas, [id]: completeSynced };
                 setFichas(finalFichas);
-                localStorage.setItem('fichas_star', JSON.stringify(finalFichas));
+
+                await saveFichaToStorage(completeSynced);
+
+                try {
+                    localStorage.setItem('fichas_star', JSON.stringify(finalFichas));
+                } catch (e) { }
+
                 toast("✅ Sincronizado en Nube");
             } catch (e) {
-                toast("⚠️ Error Nube, guardado local");
+                toast("⚠️ Error Nube, guardado local e IDB");
             }
         } else {
-            toast("✅ Guardado local (Offline)");
+            toast("✅ Guardado en IDB y Local (Offline)");
         }
         setActiveScreen('sFichas');
     };
@@ -1084,8 +1334,14 @@ const App: React.FC = () => {
                     <p style={{ fontSize: '11px', color: 'var(--text3)', lineHeight: '1.4', marginBottom: '12px' }}>
                         Si perdiste tus datos locales por problemas de memoria del navegador o si cambiaste de celular, puedes descargar nuevamente las fichas que ya subiste a la nube.
                     </p>
-                    <button className="btn btn-blue btn-full" onClick={restoreFromCloud}>
-                        <RefreshCw size={16} /> Descargar fichas asignadas a mí
+                    <button className="btn btn-blue btn-full mb-3" onClick={restoreFromCloud}>
+                        <RefreshCw size={16} /> Descargar fichas (Investigación)
+                    </button>
+                    <button className="btn btn-blue btn-full mb-3" onClick={restoreMarcacionesFromCloud} style={{ background: 'linear-gradient(135deg, #f59e0b, #b45309)', border: 'none' }}>
+                        <RefreshCw size={16} /> Descargar marcaciones (Hoy/Reciente)
+                    </button>
+                    <button className="btn btn-ghost btn-full" onClick={repairMarcacionesSync} style={{ border: '1px dashed #3b82f6', color: '#3b82f6', fontSize: '10px' }}>
+                        <RefreshCw size={12} /> ¿Borraste algo de la nube? Resubir mis datos locales
                     </button>
                 </div>
 
@@ -1117,14 +1373,28 @@ const App: React.FC = () => {
                     </button>
                 </div>
 
-                <div style={{ textAlign: 'center', padding: '20px', opacity: 0.3 }}>
-                    <div style={{ fontSize: '9px', fontWeight: 'bold', letterSpacing: '2px' }}>UT STAR Catastro v{APP_VERSION}</div>
-                    <div style={{ fontSize: '7px', marginTop: '4px' }}>© 2026 • SOPÓ, COLOMBIA</div>
+                <div style={{ textAlign: 'center', padding: '30px 20px', opacity: 0.9 }}>
+                    <div style={{ fontSize: '15px', fontWeight: 'bold', letterSpacing: '2px', color: 'white' }}>UT STAR Catastro v{APP_VERSION}</div>
+                    <div style={{ fontSize: '12px', marginTop: '4px', color: '#94a3b8' }}>© 2026 • SOPÓ, COLOMBIA</div>
                     <button
                         onClick={forceHardReload}
-                        style={{ background: 'none', border: 'none', color: 'inherit', fontSize: '8px', textDecoration: 'underline', marginTop: '10px', cursor: 'pointer' }}
+                        style={{
+                            background: '#3b82f6',
+                            border: 'none',
+                            color: 'white',
+                            fontSize: '14px',
+                            fontWeight: 'bold',
+                            padding: '12px 24px',
+                            borderRadius: '12px',
+                            marginTop: '20px',
+                            cursor: 'pointer',
+                            boxShadow: '0 6px 20px rgba(59,132,255,0.5)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '8px'
+                        }}
                     >
-                        Forzar recarga de sistema
+                        🚀 Forzar actualización manual
                     </button>
                 </div>
             </div>

@@ -7,14 +7,14 @@ import {
 import FotoAkasoAutomatica from './FotoAkasoAutomatica';
 import { db } from '../lib/firebase';
 import { doc, setDoc } from 'firebase/firestore';
-import { procesarFoto, FotoRegistro, resizeImage } from '../utils/fotoProcessor';
-import { savePhotoToStorage } from '../utils/storageManager';
-import GeoTracker from './GeoTracker';
+import { procesarFoto, FotoRegistro, resizeImage, stripBinaryData } from '../utils/fotoProcessor';
+import { savePhotoToStorage, getPhotoFromStorage } from '../utils/storageManager';
+import GeoTracker from './SmartGeoTracker';
 
 const MUNICIPIOS = ['Sopó', 'Sibaté', 'Granada', 'Marinilla'];
 const TIPOS = ['pozo de inspección', 'aliviadero', 'descarga', 'caja de inspección', 'sumidero', 'OTRO'];
 
-interface SavedMarcacion {
+export interface SavedMarcacion {
     codigo: string;
     tipoElemento: string;
     municipio: string;
@@ -23,6 +23,7 @@ interface SavedMarcacion {
     inspector: string;
     createdAt: string;
     synced: boolean;
+    deleted?: boolean;
     fotos: {
         panoramica: any | null;
         tapa: any | null;
@@ -52,29 +53,81 @@ const EMPTY_FORM = (municipio: string): FormState => ({
     obs: '',
 });
 
-/* ── Guardar en local storage ── */
+/* ── Quitar fotos pesadas antes de guardar en localStorage ── */
+const stripPhotos = (data: SavedMarcacion): SavedMarcacion => {
+    const clean = JSON.parse(JSON.stringify(data));
+    if (clean.fotos) {
+        Object.keys(clean.fotos).forEach(k => {
+            if (clean.fotos[k]) delete clean.fotos[k].blobId;
+        });
+    }
+    return clean;
+};
+
+/* ── Guardar en local storage (Sin fotos pesadas) ── */
 const saveLocal = (data: SavedMarcacion) => {
     const existing: SavedMarcacion[] = JSON.parse(localStorage.getItem('marcaciones_star') || '[]');
-    const idx = existing.findIndex(m => m.codigo === data.codigo && m.municipio === data.municipio);
-    if (idx >= 0) existing[idx] = data;
-    else existing.push(data);
+    const cleanData = stripPhotos(data);
+    const idx = existing.findIndex(m => m.createdAt === data.createdAt);
+    if (idx >= 0) existing[idx] = cleanData;
+    else existing.push(cleanData);
     localStorage.setItem('marcaciones_star', JSON.stringify(existing));
 };
 
-/* ── Intentar sync con Firestore (en background) ── */
+/* ── Intentar sync con Firestore (Sin fotos pesadas) ── */
 const trySyncFirestore = async (data: SavedMarcacion) => {
     try {
+        const cleanData = stripBinaryData(data);
+
         const path = `marcaciones/${data.municipio.toUpperCase()}_${data.codigo}`;
-        await setDoc(doc(db, path), { ...data, lastSync: new Date().toISOString() });
-        // Marcar como synced en local
+        const historyPath = `historial_marcaciones/${data.municipio.toUpperCase()}_${data.codigo}_${Date.now()}`;
+
+        // 1. Guardar en Master
+        await setDoc(doc(db, path), { ...cleanData, synced: true, lastSync: new Date().toISOString() });
+
+        // 2. Guardar en Historial (Espejo / Mirror)
+        await setDoc(doc(db, historyPath), {
+            ...cleanData,
+            synced: true,
+            tipoRegistro: 'HISTORIAL',
+            timestamp_mirror: Date.now()
+        });
+
+        // Marcar como synced en local (manteniendo el estado limpio)
         const existing: SavedMarcacion[] = JSON.parse(localStorage.getItem('marcaciones_star') || '[]');
-        const idx = existing.findIndex(m => m.codigo === data.codigo && m.municipio === data.municipio);
-        if (idx >= 0) { existing[idx].synced = true; localStorage.setItem('marcaciones_star', JSON.stringify(existing)); }
+        const idx = existing.findIndex(m => m.createdAt === data.createdAt);
+        if (idx >= 0) {
+            existing[idx].synced = true;
+            localStorage.setItem('marcaciones_star', JSON.stringify(existing));
+        }
         return true;
     } catch (e) {
         console.warn('Firestore sync failed (will retry later):', e);
         return false;
     }
+};
+
+/* ── Componente para mostrar imagen desde IDB si no tiene blobId ── */
+const HydratedImage: React.FC<{ foto: any, alt: string, style?: any, fallback?: any }> = ({ foto, alt, style, fallback }) => {
+    const [src, setSrc] = useState<string | null>(foto?.blobId || null);
+    const [loading, setLoading] = useState(!foto?.blobId && !!foto?.id);
+
+    useEffect(() => {
+        if (!foto?.blobId && foto?.id) {
+            setLoading(true);
+            getPhotoFromStorage(foto.id).then(p => {
+                if (p) setSrc(p.blob);
+                setLoading(false);
+            }).catch(() => setLoading(false));
+        } else {
+            setSrc(foto?.blobId || null);
+            setLoading(false);
+        }
+    }, [foto?.id, foto?.blobId]);
+
+    if (loading) return <div style={{ ...style, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg3)' }}><div className="spinner-small" /></div>;
+    if (!src) return fallback || null;
+    return <img src={src} alt={alt} style={style} />;
 };
 
 /* ════════════════════════════════════════════════════════
@@ -100,6 +153,8 @@ const MarcacionScreen: React.FC<{
     const [errors, setErrors] = useState<string[]>([]);
     const [isOnline, setIsOnline] = useState(navigator.onLine);
     const [creationDate, setCreationDate] = useState<string | null>(null);
+    const [deleteItem, setDeleteItem] = useState<{ codigo: string, mun: string, createdAt: string } | null>(null);
+    const [deleteConfirmText, setDeleteConfirmText] = useState('');
 
     /* ── Cargar historial local ── */
     useEffect(() => {
@@ -120,7 +175,7 @@ const MarcacionScreen: React.FC<{
         if (!isOnline) return;
         const pending = records.filter(r => !r.synced);
         pending.forEach(r => trySyncFirestore(r).then(ok => {
-            if (ok) setRecords(prev => prev.map(p => p.codigo === r.codigo ? { ...p, synced: true } : p));
+            if (ok) setRecords(prev => prev.map(p => p.createdAt === r.createdAt ? { ...p, synced: true } : p));
         }));
     }, [isOnline]);
 
@@ -130,6 +185,29 @@ const MarcacionScreen: React.FC<{
         setForm(base);
         setErrors([]);
         setCreationDate(null);
+    };
+
+    const [syncingAll, setSyncingAll] = useState(false);
+    const syncAllPending = async () => {
+        if (syncingAll || !isOnline) return;
+        const pending = records.filter(r => !r.synced);
+        if (pending.length === 0) return;
+
+        setSyncingAll(true);
+        let count = 0;
+        for (const r of pending) {
+            const ok = await trySyncFirestore(r);
+            if (ok) count++;
+        }
+
+        if (count > 0) {
+            const saved = JSON.parse(localStorage.getItem('marcaciones_star') || '[]') as any[];
+            setRecords(saved.filter((r: any) => !r.deleted));
+            onSuccess(`✅ Se sincronizaron ${count} registros pendientes.`);
+        } else {
+            alert('❌ No se pudo sincronizar. Verifica tu conexión a internet.');
+        }
+        setSyncingAll(false);
     };
 
     const updateForm = (upd: Partial<FormState>) => setForm(prev => ({ ...prev, ...upd }));
@@ -189,9 +267,6 @@ const MarcacionScreen: React.FC<{
         const errs: string[] = [];
         if (!form.codigo.trim()) errs.push('Código del elemento es obligatorio');
         if (!form.gps.lat) errs.push('Debes fijar la ubicación GPS en el mapa');
-        if (!form.fotos.panoramica) errs.push('Falta foto Panorámica (-P)');
-        if (!form.fotos.tapa) errs.push('Falta foto de Tapa (-T)');
-        if (form.tipoElemento === 'sumidero' && !form.fotos.batea) errs.push('Falta foto de Batea de Entrada (-BE) — obligatoria para sumideros');
         return errs;
     };
 
@@ -225,7 +300,7 @@ const MarcacionScreen: React.FC<{
         // 2️⃣ Intentar Firestore en background
         if (isOnline) {
             trySyncFirestore(dataToSave).then(ok => {
-                if (ok) setRecords(prev => prev.map(r => r.codigo === codigo ? { ...r, synced: true } : r));
+                if (ok) setRecords(prev => prev.map(r => r.createdAt === dataToSave.createdAt ? { ...r, synced: true } : r));
             });
         }
 
@@ -235,13 +310,35 @@ const MarcacionScreen: React.FC<{
         setView('list'); // Volver al listado
     };
 
-    /* ── Eliminar registro ── */
-    const handleDelete = (codigo: string, mun: string) => {
-        if (!confirm(`¿Eliminar marcación ${codigo}?`)) return;
+    /* ── Eliminar registro con confirmación segura ── */
+    const handleDelete = (codigo: string, mun: string, createdAt: string) => {
+        setDeleteItem({ codigo, mun, createdAt });
+        setDeleteConfirmText('');
+    };
+
+    const confirmDelete = () => {
+        if (deleteConfirmText.toUpperCase() !== 'ELIMINAR') {
+            alert('Por favor escribe ELIMINAR para confirmar');
+            return;
+        }
+        if (!deleteItem) return;
+
         const existing: SavedMarcacion[] = JSON.parse(localStorage.getItem('marcaciones_star') || '[]');
-        const updated = existing.filter(r => !(r.codigo === codigo && r.municipio === mun));
-        localStorage.setItem('marcaciones_star', JSON.stringify(updated));
-        setRecords(updated);
+        const idx = existing.findIndex(r => r.createdAt === deleteItem.createdAt);
+
+        if (idx >= 0) {
+            // Soft Delete: Marcamos como borrado en lugar de eliminar del array
+            existing[idx] = {
+                ...existing[idx],
+                deleted: true,
+                synced: false // Forzamos resync para que la nube sepa que se borró (si implementamos sync de borrados)
+            };
+            localStorage.setItem('marcaciones_star', JSON.stringify(existing));
+            setRecords(existing.filter(r => !r.deleted));
+        }
+
+        setDeleteItem(null);
+        setDeleteConfirmText('');
     };
 
     /* ════════  RENDER  ════════ */
@@ -310,25 +407,61 @@ const MarcacionScreen: React.FC<{
                         </div>
                     ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            {/* Botón de Emergencia si hay pendientes */}
+                            {records.some(r => !r.synced) && (
+                                <button
+                                    onClick={syncAllPending}
+                                    disabled={syncingAll || !isOnline}
+                                    style={{
+                                        width: '100%',
+                                        padding: '12px',
+                                        background: isOnline ? 'rgba(234, 179, 8, 0.1)' : 'rgba(255,255,255,0.05)',
+                                        border: `1px dashed ${isOnline ? 'var(--yellow)' : 'var(--text3)'}`,
+                                        borderRadius: '12px',
+                                        color: isOnline ? 'var(--yellow)' : 'var(--text3)',
+                                        fontSize: '12px',
+                                        fontWeight: '800',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '10px',
+                                        marginBottom: '6px',
+                                        cursor: isOnline ? 'pointer' : 'not-allowed',
+                                        opacity: syncingAll ? 0.7 : 1
+                                    }}
+                                >
+                                    {syncingAll ? (
+                                        <>
+                                            <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-yellow-500" style={{ display: 'inline-block' }} />
+                                            Sincronizando...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Cloud size={16} />
+                                            {isOnline ? `⚠️ HAY ${records.filter(r => !r.synced).length} PENDIENTES - TOCAR PARA SUBIR` : '⚠️ CONÉCTATE PARA SUBIR PENDIENTES'}
+                                        </>
+                                    )}
+                                </button>
+                            )}
+
                             {records.slice().reverse().map((r, i) => (
                                 <div
-                                    key={`${r.codigo}-${i}`}
+                                    key={r.createdAt}
                                     className="card"
                                     style={{ borderLeft: `3px solid ${r.synced ? 'var(--green)' : 'var(--yellow)'}`, padding: '14px 16px' }}
                                 >
                                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
                                         {/* Miniatura panorámica */}
-                                        {r.fotos?.panoramica?.blobId ? (
-                                            <img
-                                                src={r.fotos.panoramica.blobId}
-                                                alt="panoramica"
-                                                style={{ width: '56px', height: '56px', objectFit: 'cover', borderRadius: '8px', flexShrink: 0 }}
-                                            />
-                                        ) : (
-                                            <div style={{ width: '56px', height: '56px', background: 'var(--bg3)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                                <ImageIcon size={20} style={{ color: 'var(--text3)' }} />
-                                            </div>
-                                        )}
+                                        <HydratedImage
+                                            foto={r.fotos?.panoramica}
+                                            alt="panoramica"
+                                            style={{ width: '56px', height: '56px', objectFit: 'cover', borderRadius: '8px', flexShrink: 0 }}
+                                            fallback={
+                                                <div style={{ width: '56px', height: '56px', background: 'var(--bg3)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                                    <ImageIcon size={20} style={{ color: 'var(--text3)' }} />
+                                                </div>
+                                            }
+                                        />
                                         {/* Info */}
                                         <div style={{ flex: 1, minWidth: 0 }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
@@ -381,7 +514,7 @@ const MarcacionScreen: React.FC<{
                                                 <Edit2 size={16} />
                                             </button>
                                             <button
-                                                onClick={() => handleDelete(r.codigo, r.municipio)}
+                                                onClick={() => handleDelete(r.codigo, r.municipio, r.createdAt)}
                                                 style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', padding: '4px', flexShrink: 0 }}
                                                 title="Eliminar"
                                             >
@@ -508,20 +641,21 @@ const MarcacionScreen: React.FC<{
                                         <div className="photo-zone" style={{ height: '120px', position: 'relative' }}>
                                             <input type="file" accept="image/*" onChange={e => handlePhoto(e, cat)}
                                                 style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', zIndex: 10 }} />
-                                            {foto ? (
-                                                <img src={foto.blobId} alt={label} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '8px' }} />
-                                            ) : (
-                                                <><div className="pz-icon"><ImageIcon size={24} /></div><div className="pz-label">Galería</div></>
-                                            )}
+                                            <HydratedImage
+                                                foto={foto}
+                                                alt={label}
+                                                style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '8px' }}
+                                                fallback={<><div className="pz-icon"><ImageIcon size={24} /></div><div className="pz-label">Galería</div></>}
+                                            />
                                         </div>
                                     </div>
                                 );
                             })}
                         </div>
 
-                        <div className="card-title" style={{ marginTop: '16px', borderTop: '1px dashed var(--border)', paddingTop: '16px' }}>{mode === 'SUMIDERO' ? 'Evidencia Adicional' : 'Evidencia Opcional'}</div>
+                        <div className="card-title" style={{ marginTop: '16px', borderTop: '1px dashed var(--border)', paddingTop: '16px' }}>Evidencia Opcional</div>
                         <div className="field-row" style={{ gap: '16px' }}>
-                            {(mode === 'SUMIDERO' ? (['interna', 'puntoGPS'] as const) : (['puntoGPS'] as const)).map(cat => {
+                            {(isSumidero ? (['interna', 'puntoGPS'] as const) : (['puntoGPS'] as const)).map(cat => {
                                 const label = cat === 'puntoGPS' ? 'Punto GPS' : 'Foto Interna (i)';
                                 const suffix = cat === 'puntoGPS' ? '-GPS' : '-I';
                                 const foto = form.fotos[cat];
@@ -540,11 +674,12 @@ const MarcacionScreen: React.FC<{
                                         <div className="photo-zone" style={{ height: '120px', position: 'relative' }}>
                                             <input type="file" accept="image/*" onChange={e => handlePhoto(e, cat)}
                                                 style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', zIndex: 10 }} />
-                                            {foto ? (
-                                                <img src={foto.blobId} alt={label} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '8px' }} />
-                                            ) : (
-                                                <><div className="pz-icon"><ImageIcon size={24} /></div><div className="pz-label">Galería</div></>
-                                            )}
+                                            <HydratedImage
+                                                foto={foto}
+                                                alt={label}
+                                                style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '8px' }}
+                                                fallback={<><div className="pz-icon"><ImageIcon size={24} /></div><div className="pz-label">Galería</div></>}
+                                            />
                                         </div>
                                     </div>
                                 );
@@ -552,39 +687,23 @@ const MarcacionScreen: React.FC<{
                         </div>
                     </div>
 
-                    {/* 4b. Condicional Sumideros: Solo si NO estamos en modo dedicado SUMIDERO (para no duplicar) */}
-                    {isSumidero && mode !== 'SUMIDERO' && (
+                    {/* 4b. No eliminamos la batea por si la tenían, pero ya no la mostramos como obligatoria ni en el flujo principal */}
+                    {isSumidero && mode !== 'SUMIDERO' && form.fotos.batea && (
                         <div className="card" style={{
-                            borderColor: form.fotos.batea ? 'var(--green)' : 'rgba(255,165,0,0.5)',
+                            borderColor: 'var(--green)',
                             borderWidth: '1.5px',
                             background: 'rgba(255,140,0,0.05)'
                         }}>
                             <div className="card-title" style={{ color: 'orange', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                ⚠️ Sumidero — Foto Batea de Entrada
-                                {form.fotos.batea && <CheckCircle2 size={14} style={{ color: 'var(--green)', display: 'inline' }} />}
-                                <FotoAkasoAutomatica
-                                    pozoId={form.codigo.trim().toUpperCase() || 'MARC'}
-                                    filename={form.codigo.trim() ? `${form.codigo.trim().toUpperCase()}-BE.JPG` : `MARC-${Date.now()}-BE.JPG`}
-                                    categoria="Sumidero"
-                                    onSuccess={(f) => handleAkasoSuccess('batea', f)}
+                                Foto Batea de Entrada (Existente)
+                                <CheckCircle2 size={14} style={{ color: 'var(--green)', display: 'inline' }} />
+                            </div>
+                            <div className="photo-zone" style={{ height: '120px', position: 'relative' }}>
+                                <HydratedImage
+                                    foto={form.fotos.batea}
+                                    alt="Batea"
+                                    style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '8px' }}
                                 />
-                            </div>
-                            <div style={{ fontSize: '11px', color: 'var(--text3)', marginBottom: '10px', lineHeight: '1.5' }}>
-                                Obligatorio: Captura la foto interna de la <strong style={{ color: 'var(--text2)' }}>batea de la entrada</strong> del sumidero.
-                                El archivo se guardará como <span style={{ fontFamily: 'monospace', color: '#60a5fa' }}>{form.codigo || 'CÓDIGO'}-BE.JPG</span>
-                            </div>
-                            <div className="photo-zone" style={{ height: '180px', position: 'relative' }}>
-                                <input type="file" accept="image/*" onChange={e => handlePhoto(e, 'batea')}
-                                    style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', zIndex: 10 }} />
-                                {form.fotos.batea ? (
-                                    <img src={form.fotos.batea.blobId} alt="Batea" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '8px' }} />
-                                ) : (
-                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-                                        <Camera size={38} style={{ color: 'orange' }} />
-                                        <div style={{ fontSize: '13px', fontWeight: '800', color: 'orange' }}>TOMAR FOTO BATEA</div>
-                                        <div style={{ fontSize: '10px', color: 'var(--text3)' }}>Requerido para sumideros</div>
-                                    </div>
-                                )}
                             </div>
                         </div>
                     )}
@@ -673,6 +792,31 @@ const MarcacionScreen: React.FC<{
                         });
                     }}
                 />
+            )}
+
+            {/* Modal de confirmación de eliminación */}
+            {deleteItem && (
+                <div className="fixed inset-0 z-[1000] bg-black/90 backdrop-blur-sm flex items-center justify-center p-6" style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.9)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
+                    <div className="bg-[#1c2230] border border-[#2d3748] p-6 rounded-2xl w-full max-w-xs shadow-2xl text-center" style={{ background: '#1c2230', border: '1px solid #2d3748', padding: '24px', borderRadius: '16px', width: '100%', maxWidth: '320px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', textAlign: 'center' }}>
+                        <AlertTriangle size={40} className="text-red-500 mx-auto mb-4" style={{ color: 'var(--red)', margin: '0 auto 16px' }} />
+                        <h3 className="text-lg font-bold text-white mb-2" style={{ color: 'white', fontSize: '18px', fontWeight: 'bold', marginBottom: '8px' }}>¿Eliminar Marcación?</h3>
+                        <p className="text-gray-400 text-xs mb-6" style={{ color: 'var(--text3)', fontSize: '12px', marginBottom: '24px' }}>
+                            Eliminaras <strong>{deleteItem.codigo}</strong>. Escribe <span className="text-white font-bold" style={{ color: 'white', fontWeight: 'bold' }}>ELIMINAR</span> para confirmar:
+                        </p>
+                        <input
+                            type="text"
+                            className="w-full bg-[#0f172a] border border-[#334155] rounded-xl p-3 text-center text-white font-bold uppercase mb-6"
+                            style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', borderRadius: '12px', padding: '12px', textAlign: 'center', color: 'white', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '24px', boxSizing: 'border-box' }}
+                            value={deleteConfirmText}
+                            onChange={e => setDeleteConfirmText(e.target.value)}
+                            placeholder="..."
+                        />
+                        <div className="flex gap-3" style={{ display: 'flex', gap: '12px' }}>
+                            <button className="btn btn-ghost flex-1 py-3" style={{ flex: 1, padding: '12px' }} onClick={() => setDeleteItem(null)}>Cancelar</button>
+                            <button className="btn btn-danger flex-1 py-3" style={{ flex: 1, padding: '12px', background: 'var(--red)', color: 'white' }} onClick={confirmDelete}>Eliminar</button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );

@@ -3,7 +3,7 @@ import { zipSync, strToU8 } from 'fflate';
 
 const GAS_URL = import.meta.env.VITE_GAS_DRIVE_SYNC_URL;
 const SECRET_TOKEN = import.meta.env.VITE_GAS_SECRET_TOKEN;
-const MAX_BATCH_SIZE = 35 * 1024 * 1024; // ~35MB to stay safe within 40MB limit
+const MAX_BATCH_SIZE = 12 * 1024 * 1024; // Lower batch size (12MB) for better stability in GAS / Mobile uploads
 
 interface SyncProgress {
     total: number;

@@ -10,6 +10,8 @@ import {
 } from 'firebase/firestore';
 import React, { useState, useEffect, createContext, useContext } from 'react';
 
+import { stripBinaryData } from '../utils/fotoProcessor';
+
 // Your web app's Firebase configuration - Extraído de Variables de Entorno y GitIgnore (.env.local)
 const firebaseConfig = {
     apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -102,6 +104,10 @@ export { db, auth };
 export const persistFicha = async (ficha: any) => {
     if (!ficha.pozo || !ficha.municipio) return;
 
+    // --- PREVENIR ERROR DE TAMAÑO EN FIRESTORE (1MB LIMIT) ---
+    const cleanFicha = stripBinaryData(ficha);
+    // ---------------------------------------------------------
+
     const pozoId = ficha.pozo.replace(/\s+/g, '').toUpperCase();
     const mun = ficha.municipio.toUpperCase();
 
@@ -120,7 +126,7 @@ export const persistFicha = async (ficha: any) => {
     } : {};
 
     const dataToSave = {
-        ...ficha,
+        ...cleanFicha, // Usamos la versión limpia sin binarios
         ...auditoria,
         lastSync: new Date().toISOString()
     };
