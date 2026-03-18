@@ -30,11 +30,11 @@
     ],
     "headers": [
       {
-        "source": "/**/*.{js,css,html,png,svg,json}",
+        "source": "/**/*.{js,css,png,svg,json,woff2,html}",
         "headers": [
           {
             "key": "Cache-Control",
-            "value": "max-age=604800"
+            "value": "max-age=3600, must-revalidate"
           }
         ]
       },

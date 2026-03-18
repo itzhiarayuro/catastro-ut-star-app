@@ -28,6 +28,7 @@ import UnauthorizedPage from './presentation/pages/UnauthorizedPage';
 // ── UI Components ────────────────────────────────────────────
 import { LogoutModal, ClearDbModal, PdfDebugModal } from './components/AppModals';
 import BottomNav from './components/BottomNav';
+import { safeLocalStorageSet, safeLocalStorageGet, safeLocalStorageRemove } from './utils/ui';
 
 // ── Types & Config ──────────────────────────────────────────
 import { AppState, MUNICIPIOS } from './types/catastro';
@@ -94,8 +95,8 @@ const App: React.FC = () => {
             await saveFichaToStorage(f);
         }
         try {
-            localStorage.setItem('fichas_star', JSON.stringify(updatedFichas));
-            localStorage.removeItem('fichas_star_meta');
+            safeLocalStorageSet('fichas_star', JSON.stringify(updatedFichas));
+            safeLocalStorageRemove('fichas_star_meta');
         } catch (e: any) {
             if (e.name === 'QuotaExceededError' || e.message?.includes('exceeded the quota')) {
                 console.warn("⚠️ QuotaExceeded en LocalStorage. Usando fallback de metadatos.");
@@ -104,8 +105,8 @@ const App: React.FC = () => {
                     metadata[f.id!] = { id: f.id, pozo: f.pozo, synced: f.synced, savedAt: f.savedAt || f.createdAt, municipio: f.municipio };
                 });
                 try {
-                    localStorage.setItem('fichas_star_meta', JSON.stringify(metadata));
-                    localStorage.removeItem('fichas_star');
+                    safeLocalStorageSet('fichas_star_meta', JSON.stringify(metadata));
+                    safeLocalStorageRemove('fichas_star');
                 } catch (inner) {
                     console.error("❌ Fallo crítico de storage:", inner);
                 }
@@ -127,15 +128,20 @@ const App: React.FC = () => {
     } = useFichaActions({ toast, safeSaveAllFichas });
 
     // ── Simple Effects ───────────────────────────────────────
-    useEffect(() => { localStorage.setItem('catastro_active_screen', activeScreen); }, [activeScreen]);
-    useEffect(() => { localStorage.setItem('catastro_current_step', currentStep.toString()); }, [currentStep]);
+    useEffect(() => { 
+        safeLocalStorageSet('catastro_active_screen', activeScreen);
+    }, [activeScreen]);
+
+    useEffect(() => { 
+        safeLocalStorageSet('catastro_current_step', currentStep.toString());
+    }, [currentStep]);
     useEffect(() => { (window as any).CURRENT_MUNICIPIO = state.municipio; }, [state.municipio]);
 
     useEffect(() => {
         const checkPending = async () => {
             const count = await getPendingPhotosCount();
             setPendingCount(count);
-            const savedMarc = JSON.parse(localStorage.getItem('marcaciones_star') || '[]');
+            const savedMarc = safeLocalStorageGet('marcaciones_star', []);
             setPendingMarcaciones((savedMarc as any[]).filter(m => !m.synced && !m.deleted).length);
         };
         const interval = setInterval(checkPending, 30000);
@@ -151,10 +157,10 @@ const App: React.FC = () => {
                 combinedFichas = { ...idbFichas };
             } catch (e) { console.error("Error loading from IDB", e); }
 
-            const savedLS = localStorage.getItem('fichas_star');
+            const savedLS = safeLocalStorageGet('fichas_star');
             if (savedLS) {
                 try {
-                    const lsFichas = JSON.parse(savedLS);
+                    const lsFichas = savedLS;
                     combinedFichas = { ...lsFichas, ...combinedFichas };
                     for (const f of Object.values(lsFichas)) { await saveFichaToStorage(f); }
                     console.log("🚚 Migradas fichas de LocalStorage a IndexedDB");
@@ -276,7 +282,7 @@ const App: React.FC = () => {
                         user={user} pendingCount={pendingCount} loggingOut={loggingOut}
                         onConfirm={async () => {
                             setLoggingOut(true);
-                            localStorage.removeItem('catastro_active_screen');
+                            safeLocalStorageRemove('catastro_active_screen');
                             setActiveScreen('sActivity');
                             await logout();
                             setShowLogoutModal(false);
@@ -292,8 +298,8 @@ const App: React.FC = () => {
                         onConfirmTextChange={setClearDbConfirmText}
                         onConfirm={() => {
                             if (clearDbConfirmText.toLowerCase() === 'eliminar') {
-                                localStorage.removeItem('fichas_star');
-                                localStorage.removeItem('catastro_draft');
+                                safeLocalStorageRemove('fichas_star');
+                                safeLocalStorageRemove('catastro_draft');
                                 setFichas({});
                                 setShowClearDbModal(false);
                                 toast("🗑️ Memoria local totalmente limpia");

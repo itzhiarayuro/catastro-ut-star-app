@@ -53,7 +53,7 @@ const PortalPage: React.FC<PortalPageProps> = ({ setShowLogoutModal }) => {
 
                     {/* Sistema de Fichas (Admin/PDF) */}
                     <button
-                        onClick={() => setActiveScreen('sFichas')}
+                        onClick={() => setActiveScreen('sFichasViewer')}
                         style={{
                             background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(30, 41, 59, 0.4))',
                             border: '1px solid rgba(16, 185, 129, 0.3)',

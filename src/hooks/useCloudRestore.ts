@@ -4,6 +4,7 @@ import { AppState } from '../types/catastro';
 import { fetchPhotoFromDrive } from '../utils/driveSync';
 import { savePhotoToStorage } from '../utils/storageManager';
 import { useAppStore } from './useAppStore';
+import { safeLocalStorageSet, safeLocalStorageGet } from '../utils/ui';
 
 interface UseCloudRestoreParams {
     toast: (msg: string) => void;
@@ -91,7 +92,7 @@ export const useCloudRestore = ({ toast, safeSaveAllFichas }: UseCloudRestorePar
             const recovered: any[] = [];
 
             // Cargar existentes para no duplicar por createdAt
-            const existing: any[] = JSON.parse(localStorage.getItem('marcaciones_star') || '[]');
+            const existing: any[] = safeLocalStorageGet('marcaciones_star', []);
             const existingIds = new Set(existing.map(m => m.createdAt));
 
             snapshot.forEach(docSnap => {
@@ -107,7 +108,7 @@ export const useCloudRestore = ({ toast, safeSaveAllFichas }: UseCloudRestorePar
             }
 
             const updated = [...existing, ...recovered];
-            localStorage.setItem('marcaciones_star', JSON.stringify(updated));
+            safeLocalStorageSet('marcaciones_star', JSON.stringify(updated));
             setPendingMarcaciones(updated.filter(m => !m.synced && !m.deleted).length);
 
             toast(`✅ Recuperadas ${recovered.length} marcaciones`);
@@ -147,9 +148,9 @@ export const useCloudRestore = ({ toast, safeSaveAllFichas }: UseCloudRestorePar
         if (!confirm("⚠️ Esto marcará todas tus marcaciones locales como 'Pendientes' para que se vuelvan a subir a Firebase. ¿Quieres continuar?")) return;
 
         try {
-            const existing: any[] = JSON.parse(localStorage.getItem('marcaciones_star') || '[]');
+            const existing: any[] = safeLocalStorageGet('marcaciones_star', []);
             const updated = existing.map(m => ({ ...m, synced: false }));
-            localStorage.setItem('marcaciones_star', JSON.stringify(updated));
+            safeLocalStorageSet('marcaciones_star', JSON.stringify(updated));
             setPendingMarcaciones(updated.filter(m => !m.deleted).length);
             toast("🔄 Marcaciones listas para re-sincronizar");
         } catch (e) {

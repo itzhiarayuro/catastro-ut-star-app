@@ -50,12 +50,16 @@ export const useAppStore = create<AppStore>()(
     {
       name: 'catastro-storage',
       storage: createJSONStorage(() => localStorage),
-      partialize: (state: AppStore) => ({
-        // Solo persistimos lo necesario para no saturar LS
-        ...state,
-        fotoList: [], // Las fotos van a IndexedDB, no saturar LS
-        photos: { general: [], interior: [], danos: [], esquemaVertical: [], ubGeneral: [] },
-      }),
+      partialize: (state: AppStore) => {
+        // EXCLUDE fichas from LS persist (handled separately in IDB/safeLS)
+        // EXCLUDE heavy photos lists
+        const { fichas, ...persistentState } = state;
+        return {
+          ...persistentState,
+          fotoList: [],
+          photos: { general: [], interior: [], danos: [], esquemaVertical: [], ubGeneral: [] },
+        };
+      },
     }
   )
 );

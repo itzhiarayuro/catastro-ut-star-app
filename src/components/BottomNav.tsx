@@ -41,7 +41,7 @@ const BottomNav: React.FC<BottomNavProps> = ({
                 </div>
                 <span>Fichas</span>
             </button>
-            {isAdmin && (
+            {(isAdmin || activeScreen === 'sFichasViewer') && (
                 <button
                     className={`nav-btn ${activeScreen === 'sFichasViewer' ? 'active' : ''}`}
                     onClick={() => setActiveScreen('sFichasViewer')}

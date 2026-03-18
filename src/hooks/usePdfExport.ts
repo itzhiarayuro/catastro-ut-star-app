@@ -1,0 +1,119 @@
+import { useState } from 'react';
+import { AppState } from '../types/catastro';
+import { getPhotoFromStorage, savePhotoToStorage } from '../utils/storageManager';
+import { fetchPhotoFromDrive } from '../utils/driveSync';
+
+export const usePdfExport = (toast: (msg: string) => void) => {
+    const [pdfLoading, setPdfLoading] = useState(false);
+    const [pdfDebugLogs, setPdfDebugLogs] = useState<string[] | null>(null);
+
+    const handlePDF = async (pozoToExport: AppState) => {
+        if (!pozoToExport.id && !pozoToExport.pozo) {
+            toast("❌ No hay ficha cargada para exportar");
+            return;
+        }
+
+        if (pdfLoading) return;
+        setPdfLoading(true);
+        toast("🚀 Conectando con el generador en la nube...");
+
+        try {
+            const { getFunctions, httpsCallable } = await import('firebase/functions');
+            const functions = getFunctions();
+            const generateFichaFn = httpsCallable(functions, 'generateFicha', { timeout: 300000 });
+
+            // Hidratar fotos desde IndexedDB antes de enviar
+            const hydratedPozo = JSON.parse(JSON.stringify(pozoToExport));
+            
+            // 1. Caso: fotoList (Array de Catastro)
+            if (hydratedPozo.fotoList && Array.isArray(hydratedPozo.fotoList)) {
+                for (const f of hydratedPozo.fotoList) {
+                    if (f.id && !f.blobId) {
+                        let stored = await getPhotoFromStorage(f.id);
+                        if (stored?.blob) {
+                            f.blobId = stored.blob;
+                        } else if (f.filename) {
+                            console.log(`Hidratación PDF: Descargando ${f.filename} de Drive...`);
+                            const driveBlob = await fetchPhotoFromDrive(f.filename);
+                            if (driveBlob) {
+                                f.blobId = driveBlob;
+                                savePhotoToStorage({
+                                    id: f.id,
+                                    pozoId: hydratedPozo.pozo || '',
+                                    municipio: hydratedPozo.municipio || '',
+                                    barrio: hydratedPozo.barrio || '',
+                                    filename: f.filename,
+                                    blob: driveBlob,
+                                    categoria: f.categoria || 'General',
+                                    inspector: hydratedPozo.elaboro || 'Sistema',
+                                    timestamp: Date.now(),
+                                    synced: true
+                                }).catch(console.error);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 2. Caso: fotos (Objeto de Marcaciones)
+            if (hydratedPozo.fotos && typeof hydratedPozo.fotos === 'object') {
+                for (const key of Object.keys(hydratedPozo.fotos)) {
+                    const f = hydratedPozo.fotos[key];
+                    if (f && typeof f === 'object' && f.id && !f.blobId) {
+                        let stored = await getPhotoFromStorage(f.id);
+                        if (stored?.blob) {
+                            f.blobId = stored.blob;
+                        } else if (f.filename) {
+                             const driveBlob = await fetchPhotoFromDrive(f.filename);
+                             if (driveBlob) f.blobId = driveBlob;
+                        }
+                    }
+                }
+            }
+
+            const result = await generateFichaFn({ pozo: hydratedPozo });
+            const { pdfBase64, filename, downloadUrl, debugLogs } = result.data as any;
+
+            if (debugLogs && debugLogs.length > 0) {
+                setPdfDebugLogs(debugLogs);
+            }
+
+            if (pdfBase64) {
+                const byteChars = atob(pdfBase64);
+                const byteNumbers = new Array(byteChars.length);
+                for (let i = 0; i < byteChars.length; i++) {
+                    byteNumbers[i] = byteChars.charCodeAt(i);
+                }
+                const byteArray = new Uint8Array(byteNumbers);
+                const blob = new Blob([byteArray], { type: 'application/pdf' });
+                const url = URL.createObjectURL(blob);
+
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename || 'ficha.pdf';
+                a.target = '_blank';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.open(url, '_blank');
+                toast("✅ PDF Listo. Descargando...");
+            } else if (downloadUrl) {
+                toast("✅ PDF Listo. Abriendo...");
+                window.open(downloadUrl, '_blank');
+            } else {
+                throw new Error("No se recibió el PDF");
+            }
+        } catch (error: any) {
+            console.error("Error generando PDF:", error);
+            const errLogs: string[] | undefined = error?.details?.debugLogs || error?.debugLogs;
+            if (errLogs && errLogs.length > 0) {
+                setPdfDebugLogs(errLogs);
+            }
+            toast(`❌ Error: ${error.message || "Fallo en la nube"}`);
+        } finally {
+            setPdfLoading(false);
+        }
+    };
+
+    return { handlePDF, pdfLoading, pdfDebugLogs, setPdfDebugLogs };
+};

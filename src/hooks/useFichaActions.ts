@@ -3,28 +3,25 @@ import { AppState, INITIAL_STATE } from '../types/catastro';
 import { useFirestoreDoc } from '../lib/firebase';
 import { saveFichaToStorage } from '../utils/storageManager';
 import { useAppStore } from './useAppStore';
+import { safeLocalStorageSet, safeLocalStorageGet, safeLocalStorageGetRaw } from '../utils/ui';
 
 /**
  * Guarda el borrador en localStorage de manera segura.
  */
 const safeSetDraft = (key: string, data: any) => {
     try {
-        localStorage.setItem(key, JSON.stringify(data));
-    } catch (e: any) {
-        if (e.name === 'QuotaExceededError' || e.message?.includes('exceeded the quota')) {
-            try {
-                const strippedStr = JSON.stringify(data, (k, v) => {
-                    if (k === 'binaryData' || k === 'binaryStrip' || k === 'blob') return undefined;
-                    return v;
-                });
-                localStorage.setItem(key, strippedStr);
-                console.warn('[Storage] Borrador guardado sin fotos para evitar límite de cuota.');
-            } catch (e2) {
-                console.error('[Storage] Error crítico al guardar borrador', e2);
-            }
-        } else {
-            console.error('[Storage] Error al guardar borrador:', e);
+        const str = JSON.stringify(data);
+        if (!safeLocalStorageSet(key, str)) {
+            // If failed, try stripping photos
+            const strippedStr = JSON.stringify(data, (k, v) => {
+                if (k === 'binaryData' || k === 'binaryStrip' || k === 'blob') return undefined;
+                return v;
+            });
+            safeLocalStorageSet(key, strippedStr);
+            console.warn('[Storage] Borrador guardado sin fotos para evitar límite de cuota.');
         }
+    } catch (e: any) {
+        console.error('[Storage] Error al guardar borrador:', e);
     }
 };
 
@@ -60,14 +57,12 @@ export const useFichaActions = ({ toast, safeSaveAllFichas }: UseFichaActionsPar
             return next;
         });
     };
-
     const startNewFicha = () => {
         const currentMuni = state.municipio;
         const currentElaboro = state.elaboro;
 
-        const existingDraft = localStorage.getItem('catastro_draft');
-        if (existingDraft) {
-            const draftObj = JSON.parse(existingDraft);
+        const draftObj = safeLocalStorageGet('catastro_draft');
+        if (draftObj) {
             if (draftObj.id || draftObj.pozo) {
                 const ok = window.confirm(
                     `Hay un borrador guardado(Pozo: ${draftObj.pozo || 'S/N'}).Crear una nueva ficha lo sobrescribirá. ¿Continuar ? `
@@ -90,13 +85,12 @@ export const useFichaActions = ({ toast, safeSaveAllFichas }: UseFichaActionsPar
     };
 
     const continueDraft = () => {
-        const draft = localStorage.getItem('catastro_draft');
-        if (draft) {
+        const parsed = safeLocalStorageGet('catastro_draft');
+        if (parsed) {
             try {
-                const parsed = JSON.parse(draft);
                 setState(parsed);
                 setActiveScreen('sForm');
-                const savedStep = localStorage.getItem('catastro_current_step');
+                const savedStep = safeLocalStorageGetRaw('catastro_current_step');
                 setCurrentStep(savedStep ? parseInt(savedStep) : 1);
                 setActiveScreen('sForm');
                 toast("📝 Borrador restaurado");

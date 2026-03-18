@@ -5,6 +5,7 @@ import {
     saveFichaToStorage,
 } from '../utils/storageManager';
 import { useAppStore } from './useAppStore';
+import { safeLocalStorageGet } from '../utils/ui';
 
 interface UseBackgroundSyncParams {
     safeSaveAllFichas: (fichas: Record<string, AppState>) => Promise<void>;
@@ -31,11 +32,11 @@ export const useBackgroundSync = ({ safeSaveAllFichas }: UseBackgroundSyncParams
             console.log(`🔄 Ciclo de sincronización de fondo (${hour}:${now.getMinutes()})...`);
 
             // 0. Migration Check (Ensures legacy data moves to IDB even if load failed)
-            const savedLS = localStorage.getItem('fichas_star');
+            const savedLS = safeLocalStorageGet('fichas_star');
             if (savedLS) {
                 try {
-                    const lsFichas = JSON.parse(savedLS);
-                    for (const f of Object.values(lsFichas)) {
+                    const lsFichas = savedLS;
+                    for (const f of Object.values(lsFichas) as any[]) {
                         await saveFichaToStorage(f);
                     }
                     console.log("💾 Migración de fondo (LS -> IDB) exitosa");
