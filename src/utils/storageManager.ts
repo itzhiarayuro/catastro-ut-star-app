@@ -14,7 +14,7 @@ export interface PendingPhoto {
     barrio: string;
     filename: string;
     blob: string; // Base64 o Blob
-    categoria: 'General' | 'Interior' | 'Daños' | 'Tuberia' | 'Medicion' | 'Sumidero';
+    categoria: 'General' | 'Interior' | 'Daños' | 'Tuberia' | 'Medicion' | 'Sumidero' | any;
     inspector: string;
     timestamp: number;
     synced: boolean;

@@ -3,7 +3,9 @@ import { AppState, INITIAL_STATE } from '../types/catastro';
 import { useFirestoreDoc } from '../lib/firebase';
 import { saveFichaToStorage } from '../utils/storageManager';
 import { useAppStore } from './useAppStore';
+import { useAuth } from '../lib/firebase';
 import { safeLocalStorageSet, safeLocalStorageGet, safeLocalStorageGetRaw } from '../utils/ui';
+import { convertirA9377 } from '../utils/coords';
 
 /**
  * Guarda el borrador en localStorage de manera segura.
@@ -31,10 +33,14 @@ interface UseFichaActionsParams {
 }
 
 export const useFichaActions = ({ toast, safeSaveAllFichas }: UseFichaActionsParams) => {
+    const { user } = useAuth();
     const store = useAppStore();
     const {
         setState, setActiveScreen, setCurrentStep,
         fichas, setFichas, isOnline,
+        // Excluimos las funciones de acción y el estado de la UI para no contaminar la data
+        resetForm, setIsOnline, setPendingCount, setPendingMarcaciones,
+        activeScreen, currentStep: _, pendingCount, pendingMarcaciones,
         ...state
     } = store;
 
@@ -127,7 +133,19 @@ export const useFichaActions = ({ toast, safeSaveAllFichas }: UseFichaActionsPar
             orden: idx + 1
         }));
 
-        const finalData = { ...state, pipes: normalizedPipes, sums: normalizedSums, id, savedAt: now, synced: false } as AppState;
+        const { coordenada_x, coordenada_y } = convertirA9377(state.gps.lat || 0, state.gps.lng || 0);
+
+        const finalData = { 
+            ...state, 
+            pipes: normalizedPipes, 
+            sums: normalizedSums, 
+            id, 
+            elaboro: state.elaboro || user?.name || 'Desconocido',
+            savedAt: now, 
+            synced: false,
+            coordenada_x,
+            coordenada_y
+        } as AppState;
 
         // FIRST: Always save locally
         const updatedFichas = { ...fichas, [id]: finalData };

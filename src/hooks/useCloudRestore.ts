@@ -1,5 +1,5 @@
 import { db, useAuth } from '../lib/firebase';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, getDocs } from 'firebase/firestore';
 import { AppState } from '../types/catastro';
 import { fetchPhotoFromDrive } from '../utils/driveSync';
 import { savePhotoToStorage } from '../utils/storageManager';
@@ -20,16 +20,12 @@ export const useCloudRestore = ({ toast, safeSaveAllFichas }: UseCloudRestorePar
             toast("❌ Necesitas conexión para restaurar");
             return;
         }
-        if (!confirm("⚠️ Esto sobrescribirá tus fichas locales con las descargas de la nube. ¿Continuar?")) return;
+        if (!confirm("⚠️ Esto sobrescribirá tus fichas locales con las descargas de la nube (Investigación). ¿Continuar?")) return;
 
         toast("🔄 Descargando desde la nube...");
         try {
-            const operatorEmail = user?.email;
-            if (!operatorEmail) {
-                toast("❌ No se encontró nombre de operario para buscar");
-                return;
-            }
-            const q = query(collection(db, 'fichas'), where('creatorEmail', '==', operatorEmail));
+            // Fichas: Fetch ALL
+            const q = query(collection(db, 'fichas')); 
             const snapshot = await getDocs(q);
             const recovered: Record<string, AppState> = {};
             snapshot.forEach(doc => {
@@ -37,11 +33,11 @@ export const useCloudRestore = ({ toast, safeSaveAllFichas }: UseCloudRestorePar
                 recovered[doc.id] = { ...data, synced: true };
             });
             if (Object.keys(recovered).length === 0) {
-                toast("ℹ️ No se encontraron fichas tuyas en la nube");
+                toast("ℹ️ No se encontraron fichas en la nube");
                 return;
             }
             await safeSaveAllFichas(recovered);
-            toast(`✅ Restauradas ${Object.keys(recovered).length} fichas asignadas a ti`);
+            toast(`✅ Restauradas ${Object.keys(recovered).length} fichas (Todos los usuarios)`);
 
             // Hidratar fotos en segundo plano
             Object.values(recovered).forEach(async (ficha) => {
@@ -78,16 +74,12 @@ export const useCloudRestore = ({ toast, safeSaveAllFichas }: UseCloudRestorePar
             toast("❌ Necesitas conexión para restaurar");
             return;
         }
-        if (!confirm("⚠️ Esto descargará tus marcaciones (Pozos/Sumideros) de la nube. ¿Continuar?")) return;
+        if (!confirm("⚠️ Esto descargará las marcaciones globales de la nube. ¿Continuar?")) return;
 
         toast("🔄 Descargando marcaciones...");
         try {
-            const operatorId = user?.name || user?.email;
-            if (!operatorId) {
-                toast("❌ No se pudo identificar al operario");
-                return;
-            }
-            const q = query(collection(db, 'marcaciones'), where('inspector', '==', operatorId));
+            // Marcaciones: Fetch ALL
+            const q = query(collection(db, 'marcaciones'));
             const snapshot = await getDocs(q);
             const recovered: any[] = [];
 
@@ -111,7 +103,7 @@ export const useCloudRestore = ({ toast, safeSaveAllFichas }: UseCloudRestorePar
             safeLocalStorageSet('marcaciones_star', JSON.stringify(updated));
             setPendingMarcaciones(updated.filter(m => !m.synced && !m.deleted).length);
 
-            toast(`✅ Recuperadas ${recovered.length} marcaciones`);
+            toast(`✅ Recuperadas ${recovered.length} marcaciones (Todos los usuarios)`);
 
             // Hidratar fotos de marcaciones en segundo plano
             recovered.forEach(async (m) => {

@@ -22,7 +22,7 @@ const ESTADOS = ["—", "LIMPIO", "INUNDADO", "SEDIMENTADO", "COLMATADO", "CON B
 function deg2rad(d: number) { return (d * Math.PI) / 180; }
 const emptyPipe = () => ({
   tipo: "", deHasta: "", diametro: "", unit: "mm",
-  material: "", estado: "", emboquillado: "", cotaClave: "", pendiente: "",
+  material: "", estado: "", emboquillado: "", cotaClave: "",
 });
 
 interface PipeData {
@@ -34,7 +34,6 @@ interface PipeData {
   estado: string;
   emboquillado: string;
   cotaClave: string;
-  pendiente: string;
 }
 
 interface PipeTubeProps {
@@ -162,17 +161,19 @@ function ManholeBody({ pozoId }: { pozoId: string }) {
 }
 
 // Mapeo entre campos del esquema y campos del sistema
-const mapToLocal = (p: any): PipeData => ({
-  tipo: p.es === 'ENTRADA' ? 'E' : p.es === 'SALIDA' ? 'S' : p.es === 'SUMIDERO' ? 'SUM' : '',
-  deHasta: p.deA || '',
-  diametro: p.diam || '',
-  unit: p.unit || 'mm',
-  material: p.mat || '',
-  estado: p.estado || '',
-  emboquillado: p.emboq || '',
-  cotaClave: p.cotaZ || '',
-  pendiente: p.pendiente || '',
-});
+const mapToLocal = (p: any): PipeData => {
+  const es = p.es?.toUpperCase() || '';
+  return {
+    tipo: es === 'ENTRADA' ? 'E' : es === 'SALIDA' ? 'S' : es === 'SUMIDERO' ? 'SUM' : '',
+    deHasta: p.deA || '',
+    diametro: p.diam || '',
+    unit: p.unit || 'mm',
+    material: p.mat || '',
+    estado: p.estado || '',
+    emboquillado: p.emboq || '',
+    cotaClave: p.cotaZ || '',
+  };
+};
 
 interface PipeFormProps {
   slotIndex: number;
@@ -205,7 +206,6 @@ function PipeForm({ slotIndex, angle, pipe, pozoId, onSave, onCancel, onDelete }
       estado: d.estado,
       emboq: d.emboquillado,
       cotaZ: d.cotaClave,
-      pendiente: d.pendiente,
       angle: angle
     };
     onSave(systemPipe);
@@ -320,12 +320,6 @@ function PipeForm({ slotIndex, angle, pipe, pozoId, onSave, onCancel, onDelete }
         </div>
       </div>
 
-      <div className="field">
-        <label>Pendiente (%)</label>
-        <input className="font-mono" style={{ color: "var(--orange)", textAlign: "center", fontWeight: 700 }}
-          type="number" step="0.1" placeholder="0.0"
-          value={d.pendiente} onChange={e => f("pendiente", e.target.value)} />
-      </div>
 
       <div className="btn-row">
         {pipe.es && (

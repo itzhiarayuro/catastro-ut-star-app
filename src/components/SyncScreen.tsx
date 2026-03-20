@@ -3,6 +3,7 @@ import { Cloud, Wifi, Battery, Moon, Sun, ArrowLeft, RefreshCw, CheckCircle, Ale
 import { syncPhotosToDrive } from '../utils/driveSync';
 import { syncFichasToFirestore, syncMarcacionesToFirestore, validateFicha } from '../utils/syncRegistry';
 import { getPendingPhotosCount } from '../utils/storageManager';
+import { safeLocalStorageGet } from '../utils/ui';
 
 interface SyncScreenProps {
     fichas: Record<string, any>;
@@ -29,7 +30,7 @@ const SyncScreen: React.FC<SyncScreenProps> = ({ fichas, onFichasUpdated, onClos
             const photoCount = await getPendingPhotosCount();
             setPendingPhotos(photoCount);
 
-            const savedMarc = JSON.parse(localStorage.getItem('marcaciones_star') || '[]');
+            const savedMarc = safeLocalStorageGet('marcaciones_star', []);
             const pendingM = (savedMarc as any[]).filter(m => !m.synced && !m.deleted).length;
             setPendingMarcaciones(pendingM);
         };

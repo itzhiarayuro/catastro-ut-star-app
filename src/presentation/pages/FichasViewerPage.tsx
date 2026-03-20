@@ -3,7 +3,13 @@ import { ChevronLeft } from 'lucide-react';
 import { useAppStore } from '../../hooks/useAppStore';
 import FichasViewerComponent from '../../components/FichasViewer'; 
 
-const FichasViewerPage: React.FC = () => {
+interface FichasViewerPageProps {
+    toast: (msg: string) => void;
+    handlePDF: (ficha: any) => void;
+    pdfLoading: boolean;
+}
+
+const FichasViewerPage: React.FC<FichasViewerPageProps> = ({ toast, handlePDF, pdfLoading }) => {
     const { activeScreen, setActiveScreen } = useAppStore();
 
     return (
@@ -20,7 +26,7 @@ const FichasViewerPage: React.FC = () => {
                 </div>
             </div>
             <div className="content" style={{ padding: '12px' }}>
-                <FichasViewerComponent />
+                <FichasViewerComponent toast={toast} handlePDF={handlePDF} pdfLoading={pdfLoading} />
             </div>
         </div>
     );

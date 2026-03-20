@@ -10,8 +10,23 @@ import { doc, setDoc } from 'firebase/firestore';
 import { procesarFoto, FotoRegistro, resizeImage, stripBinaryData } from '../utils/fotoProcessor';
 import { savePhotoToStorage, getPhotoFromStorage } from '../utils/storageManager';
 import GeoTracker from './SmartGeoTracker';
+import { safeLocalStorageSet, safeLocalStorageGet } from '../utils/ui';
+import { convertirA9377 } from '../utils/coords';
 
-const MUNICIPIOS = ['Sopó', 'Sibaté', 'Granada', 'Marinilla'];
+const MUNICIPIOS = [
+    'AGUA DE DIOS',
+    'ANOLAIMA',
+    'QUIPILE',
+    'SAN ANTONIO DEL TEQUENDAMA',
+    'CACHIPAY - SAN MATEO',
+    'CACHIPAY - PENA NEGRA',
+    'RICAURTE',
+    'ANAPOIMA',
+    'SOPO',
+    'SIBATE',
+    'GRANADA',
+    'MARINILLA'
+];
 const TIPOS = ['pozo de inspección', 'aliviadero', 'descarga', 'caja de inspección', 'sumidero', 'OTRO'];
 
 export interface SavedMarcacion {
@@ -24,6 +39,8 @@ export interface SavedMarcacion {
     createdAt: string;
     synced: boolean;
     deleted?: boolean;
+    coordenada_x?: number;
+    coordenada_y?: number;
     fotos: {
         panoramica: any | null;
         tapa: any | null;
@@ -66,12 +83,12 @@ const stripPhotos = (data: SavedMarcacion): SavedMarcacion => {
 
 /* ── Guardar en local storage (Sin fotos pesadas) ── */
 const saveLocal = (data: SavedMarcacion) => {
-    const existing: SavedMarcacion[] = JSON.parse(localStorage.getItem('marcaciones_star') || '[]');
+    const existing: SavedMarcacion[] = safeLocalStorageGet('marcaciones_star', []);
     const cleanData = stripPhotos(data);
     const idx = existing.findIndex(m => m.createdAt === data.createdAt);
     if (idx >= 0) existing[idx] = cleanData;
     else existing.push(cleanData);
-    localStorage.setItem('marcaciones_star', JSON.stringify(existing));
+    safeLocalStorageSet('marcaciones_star', JSON.stringify(existing));
 };
 
 /* ── Intentar sync con Firestore (Sin fotos pesadas) ── */
@@ -83,7 +100,12 @@ const trySyncFirestore = async (data: SavedMarcacion) => {
         const historyPath = `historial_marcaciones/${data.municipio.toUpperCase()}_${data.codigo}_${Date.now()}`;
 
         // 1. Guardar en Master
-        await setDoc(doc(db, path), { ...cleanData, synced: true, lastSync: new Date().toISOString() });
+        await setDoc(doc(db, path), {
+            ...cleanData,
+            tipoRegistro: 'MARCACION_STAR',
+            synced: true,
+            lastSync: new Date().toISOString()
+        });
 
         // 2. Guardar en Historial (Espejo / Mirror)
         await setDoc(doc(db, historyPath), {
@@ -94,11 +116,11 @@ const trySyncFirestore = async (data: SavedMarcacion) => {
         });
 
         // Marcar como synced en local (manteniendo el estado limpio)
-        const existing: SavedMarcacion[] = JSON.parse(localStorage.getItem('marcaciones_star') || '[]');
+        const existing: SavedMarcacion[] = safeLocalStorageGet('marcaciones_star', []);
         const idx = existing.findIndex(m => m.createdAt === data.createdAt);
         if (idx >= 0) {
             existing[idx].synced = true;
-            localStorage.setItem('marcaciones_star', JSON.stringify(existing));
+            safeLocalStorageSet('marcaciones_star', JSON.stringify(existing));
         }
         return true;
     } catch (e) {
@@ -135,12 +157,12 @@ const HydratedImage: React.FC<{ foto: any, alt: string, style?: any, fallback?: 
 ════════════════════════════════════════════════════════ */
 const MarcacionScreen: React.FC<{
     user: any;
-    mode: 'PZ' | 'SUMIDERO';
+    mode: 'PZ' | 'SUMIDERO' | 'OTRO';
     onBack: () => void;
     onSync: () => void;
     onSuccess: (msg: string) => void;
 }> = ({ user, mode, onBack, onSync, onSuccess }) => {
-    const defaultMun = (window as any).CURRENT_MUNICIPIO || 'Sopó';
+    const defaultMun = (window as any).CURRENT_MUNICIPIO || 'SOPO';
     const [view, setView] = useState<'list' | 'form'>('list');
     const [form, setForm] = useState<FormState>(() => {
         const base = EMPTY_FORM(defaultMun);
@@ -158,7 +180,7 @@ const MarcacionScreen: React.FC<{
 
     /* ── Cargar historial local ── */
     useEffect(() => {
-        const saved = JSON.parse(localStorage.getItem('marcaciones_star') || '[]') as any[];
+        const saved = safeLocalStorageGet('marcaciones_star', []);
         setRecords(saved.filter((r: any) => !r.deleted));
     }, []);
 
@@ -201,7 +223,7 @@ const MarcacionScreen: React.FC<{
         }
 
         if (count > 0) {
-            const saved = JSON.parse(localStorage.getItem('marcaciones_star') || '[]') as any[];
+            const saved = safeLocalStorageGet('marcaciones_star', []);
             setRecords(saved.filter((r: any) => !r.deleted));
             onSuccess(`✅ Se sincronizaron ${count} registros pendientes.`);
         } else {
@@ -280,6 +302,8 @@ const MarcacionScreen: React.FC<{
         const codigo = form.codigo.trim().toUpperCase().replace(/\s+/g, '');
         const finalType = form.tipoElemento === 'OTRO' ? form.otroTipo : form.tipoElemento;
 
+        const { coordenada_x, coordenada_y } = convertirA9377(form.gps.lat || 0, form.gps.lng || 0);
+
         const dataToSave: SavedMarcacion = {
             codigo,
             tipoElemento: finalType,
@@ -290,11 +314,13 @@ const MarcacionScreen: React.FC<{
             inspector: user?.name || user?.email || 'Desconocido',
             createdAt: creationDate || new Date().toISOString(),
             synced: false,
+            coordenada_x,
+            coordenada_y
         };
 
         // 1️⃣ Guardar LOCAL siempre (no falla)
         saveLocal(dataToSave);
-        const updated = JSON.parse(localStorage.getItem('marcaciones_star') || '[]') as SavedMarcacion[];
+        const updated = safeLocalStorageGet('marcaciones_star', []);
         setRecords(updated.filter((r: any) => !r.deleted));
 
         // 2️⃣ Intentar Firestore en background
@@ -323,7 +349,7 @@ const MarcacionScreen: React.FC<{
         }
         if (!deleteItem) return;
 
-        const existing: SavedMarcacion[] = JSON.parse(localStorage.getItem('marcaciones_star') || '[]');
+        const existing: SavedMarcacion[] = safeLocalStorageGet('marcaciones_star', []);
         const idx = existing.findIndex(r => r.createdAt === deleteItem.createdAt);
 
         if (idx >= 0) {
@@ -333,7 +359,7 @@ const MarcacionScreen: React.FC<{
                 deleted: true,
                 synced: false // Forzamos resync para que la nube sepa que se borró (si implementamos sync de borrados)
             };
-            localStorage.setItem('marcaciones_star', JSON.stringify(existing));
+            safeLocalStorageSet('marcaciones_star', JSON.stringify(existing));
             setRecords(existing.filter(r => !r.deleted));
         }
 

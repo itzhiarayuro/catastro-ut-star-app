@@ -171,12 +171,15 @@ const GeoTracker: React.FC<GeoTrackerProps> = ({ initialCoords, onConfirm, onScr
                 const startTileY = Math.floor(yCenter - tilesY / 2);
 
                 const tilePromises: Promise<void>[] = [];
+                const prefix = mapType === 'osm' ? 'osm' : (mapType === 'bing' ? 'sat' : 'osm');
+
                 for (let tx = startTileX; tx < startTileX + tilesX; tx++) {
                     for (let ty = startTileY; ty < startTileY + tilesY; ty++) {
-                        const key = `osm_${currentZoom}_${tx}_${ty}`;
+                        const key = `${prefix}_${currentZoom}_${tx}_${ty}`;
                         tilePromises.push(
                             getTile(key).then(blob => {
                                 if (!blob) return;
+
                                 return new Promise<void>((resolve) => {
                                     const img = new Image();
                                     img.onload = () => {

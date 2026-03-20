@@ -115,3 +115,42 @@ const uploadBatch = async (batch: any[], onProgress: (p: SyncProgress) => void, 
         throw err;
     }
 };
+
+/**
+ * Descarga una foto desde Google Drive usando el Proxy de GAS
+ */
+export const fetchPhotoFromDrive = async (filename: string): Promise<string | null> => {
+    if (!GAS_URL) {
+        console.error("DRIVE_SYNC_URL no configurada");
+        return null;
+    }
+
+    try {
+        const response = await fetch(GAS_URL, {
+            method: 'POST',
+            // Usamos mode: 'cors' pero evitamos el preflight manual enviando el body como string sin Content-Type JSON
+            // GAS no maneja bien los preflight OPTIONS a menos que se configure explícitamente.
+            mode: 'cors', 
+            body: JSON.stringify({
+                token: SECRET_TOKEN,
+                action: 'download',
+                filename: filename
+            })
+        });
+
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        
+        const result = await response.json();
+        
+        if (result.success && result.base64) {
+            return result.base64;
+        } else {
+            console.warn(`Error descargando ${filename}:`, result.error || 'Unknown error');
+            return null;
+        }
+    } catch (err) {
+        console.error(`Fallo fetch de Drive para ${filename}:`, err);
+        return null;
+    }
+};
+

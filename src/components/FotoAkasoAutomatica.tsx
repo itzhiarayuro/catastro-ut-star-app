@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Camera, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
 import { procesarFoto } from '../utils/fotoProcessor';
 import { savePhotoToStorage } from '../utils/storageManager';
+import { safeLocalStorageGet } from '../utils/ui';
 
 interface FotoAkasoAutomaticaProps {
     pozoId: string;
@@ -51,9 +52,9 @@ const FotoAkasoAutomatica: React.FC<FotoAkasoAutomaticaProps> = ({ pozoId, filen
                     // Procesar y Guardar
                     const newFoto = procesarFoto(filename, pozoId, base64);
 
-                    const userStr = localStorage.getItem('ut_star_user');
-                    const inspector = userStr ? JSON.parse(userStr).name : 'Desconocido';
-                    const municipio = (window as any).CURRENT_MUNICIPIO || 'Sopó';
+                    const userStr = safeLocalStorageGet('ut_star_user');
+                    const inspector = userStr ? userStr.name : 'Desconocido';
+                    const municipio = (window as any).CURRENT_MUNICIPIO || 'SOPO';
 
                     await savePhotoToStorage({
                         id: newFoto.id,

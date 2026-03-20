@@ -10,7 +10,7 @@ import { Map, AdvancedMarker } from '@vis.gl/react-google-maps';
 import { useAppStore } from '../../hooks/useAppStore';
 import { numFocus } from '../../utils/ui';
 import {
-    AppState, Pipe, SISTEMAS, RASANTES, ESTADOS_POZO,
+    AppState, Pipe, Sumidero, SISTEMAS, RASANTES, ESTADOS_POZO,
     TIPOS_CAMARA
 } from '../../types/catastro';
 import { FotoRegistro } from '../../utils/fotoProcessor';
@@ -52,6 +52,52 @@ interface FormPageProps {
     /** Save a photo to local storage (for GeoTracker screenshot) */
     savePhotoToStorage?: (photo: any) => Promise<void>;
 }
+
+/** ── Helpers to find photos for specific components ── */
+const getPipePhoto = (p: Pipe, pipes: Pipe[], photos: FotoRegistro[]) => {
+    const orient = (p || {}).es?.toUpperCase() || '';
+    const isSalida = orient === 'SALIDA' || orient === 'S';
+    const isEntrada = orient === 'ENTRADA' || orient === 'E' || orient === '';
+    const isSum = orient === 'SUMIDERO' || orient === 'SUM';
+
+    let group: Pipe[] = [];
+    let prefix = '';
+    if (isSalida) {
+        group = pipes.filter(x => {
+            const o = (x.es || '').toUpperCase();
+            return o === 'SALIDA' || o === 'S';
+        });
+        prefix = 'S';
+    } else if (isEntrada) {
+        group = pipes.filter(x => {
+            const o = (x.es || '').toUpperCase();
+            return o === 'ENTRADA' || o === 'E' || o === '';
+        });
+        prefix = 'E';
+    } else if (isSum) {
+        group = pipes.filter(x => {
+            const o = (x.es || '').toUpperCase();
+            return o === 'SUMIDERO' || o === 'SUM';
+        });
+        prefix = 'SUM';
+    }
+
+    const idx = group.findIndex(x => x.id === p.id);
+    if (idx === -1) return null;
+    const label = `${prefix}${idx + 1}`;
+    
+    return (photos || []).find(f => f.subcategoria === label) || 
+           (photos || []).find(f => (f.subcategoria || '').startsWith(`${label}-`));
+};
+
+const getSumPhoto = (s: Sumidero, sums: Sumidero[], pipes: Pipe[], photos: FotoRegistro[]) => {
+    const idxInSums = (sums || []).findIndex(x => x.id === s.id);
+    if (idxInSums === -1) return null;
+    const label = `SUM${idxInSums + 1}`;
+    
+    return (photos || []).find(f => f.subcategoria === label) || 
+           (photos || []).find(f => (f.subcategoria || '').startsWith(`${label}-`));
+};
 
 const FormPage: React.FC<FormPageProps> = ({
     toast,
@@ -458,7 +504,7 @@ const FormPage: React.FC<FormPageProps> = ({
                         <ComponentEditor label="Tapa" data={state.tapa} onChange={(v) => updateState({ tapa: { ...state.tapa, ...v } })} materials={['CONCRETO', 'FERROCONCRETO', 'METAL', 'PLÁSTICO REFORZADO', 'PVC', 'OTRO']} />
                         <ComponentEditor label="Cargue" data={state.cargue} onChange={(v) => updateState({ cargue: { ...state.cargue, ...v } })} materials={['CONCRETO']} />
                         <ComponentEditor label="Cuerpo" data={state.cuerpo} onChange={(v) => updateState({ cuerpo: { ...state.cuerpo, ...v } })} materials={['MAMPOSTERIA', 'CONCRETO', 'PVC', 'GRP', 'OTRO']} />
-                        <ComponentEditor label="Cono" data={state.cono} onChange={(v) => updateState({ cono: { ...state.cono, ...v } })} materials={['CONCENTRICO', 'EXCENTRICO', 'OTRO']} isCono />
+                        <ComponentEditor label="Cono" data={state.cono} onChange={(v) => updateState({ cono: { ...state.cono, ...v } })} materials={['MAMPOSTERIA', 'PVC', 'CONCRETO', 'GRP', 'OTRO']} isCono />
                         <ComponentEditor label="Cañuela" data={state.canu} onChange={(v) => updateState({ canu: { ...state.canu, ...v } })} materials={['MAMPOSTERIA', 'CONCRETO', 'PVC', 'OTRO']} />
                         <ComponentEditor label="Peldaños" data={state.peld} onChange={(v) => updateState({ peld: { ...state.peld, ...v } })} materials={['METAL', 'PLÁSTICO REFORZADO', 'NO_TIENE']} />
                         <div className="btn-row">
@@ -527,20 +573,24 @@ const FormPage: React.FC<FormPageProps> = ({
                                 {state.pipes.length === 0 ? (
                                     <div className="text-center py-6 opacity-40 italic text-xs">No hay ramales configurados. Toca el diagrama arriba para agregar.</div>
                                 ) : (
-                                    state.pipes.map((p, idx) => (
-                                        <PipeCard
-                                            key={p.id}
-                                            pipe={p}
-                                            index={idx}
-                                            onUpdate={(upd) => {
-                                                const newPipes = [...state.pipes];
-                                                newPipes[idx] = { ...p, ...upd };
-                                                updateState({ pipes: newPipes });
-                                            }}
-                                            onDelete={() => updateState({ pipes: state.pipes.filter((_, i) => i !== idx) })}
-                                            numFocus={() => {}}
-                                        />
-                                    ))
+                                    state.pipes.map((p, idx) => {
+                                        const foto = getPipePhoto(p, state.pipes, state.fotoList);
+                                        return (
+                                            <PipeCard
+                                                key={p.id}
+                                                pipe={p}
+                                                index={idx}
+                                                foto={foto}
+                                                onUpdate={(upd) => {
+                                                    const newPipes = [...state.pipes];
+                                                    newPipes[idx] = { ...p, ...upd };
+                                                    updateState({ pipes: newPipes });
+                                                }}
+                                                onDelete={() => updateState({ pipes: state.pipes.filter((_, i) => i !== idx) })}
+                                                numFocus={numFocus}
+                                            />
+                                        );
+                                    })
                                 )}
                             </div>
                         </div>
@@ -548,19 +598,23 @@ const FormPage: React.FC<FormPageProps> = ({
                         <div className="card mt-4">
                             <div className="card-title">Sumideros (1-6)</div>
                             <div className="space-y-4">
-                                {state.sums.map((s, idx) => (
-                                    <SumideroCard
-                                        key={s.id}
-                                        sum={s}
-                                        index={idx}
-                                        onUpdate={(upd) => {
-                                            const newSums = [...state.sums];
-                                            newSums[idx] = { ...s, ...upd };
-                                            updateState({ sums: newSums });
-                                        }}
-                                        onDelete={() => updateState({ sums: state.sums.filter((_, i) => i !== idx) })}
-                                    />
-                                ))}
+                                {state.sums.map((s, idx) => {
+                                    const foto = getSumPhoto(s, state.sums, state.pipes, state.fotoList);
+                                    return (
+                                        <SumideroCard
+                                            key={s.id}
+                                            sum={s}
+                                            index={idx}
+                                            foto={foto}
+                                            onUpdate={(upd) => {
+                                                const newSums = [...state.sums];
+                                                newSums[idx] = { ...s, ...upd };
+                                                updateState({ sums: newSums });
+                                            }}
+                                            onDelete={() => updateState({ sums: state.sums.filter((_, i) => i !== idx) })}
+                                        />
+                                    );
+                                })}
                                 <button className="btn btn-orange btn-full btn-sm" onClick={() => {
                                     const id = `S_${Date.now()}`;
                                     updateState({ sums: [...state.sums, { id, tipo: '', matRejilla: '', matCaja: '', hSalida: '', hLlegada: '', estado: '', codEsquema: `S-${state.sums.length + 1}`, diamTub: '', matTub: '' }] });

@@ -8,10 +8,66 @@ import imageSize from "image-size";
 const db = () => admin.firestore();
 const storage = () => admin.storage();
 
+// ─────────────────────────────────────────────────────────────────────────────
+// UTILIDADES
+// ─────────────────────────────────────────────────────────────────────────────
+
+const TRANSLIT_MAP: Record<string, string> = {
+    '\u00E1': 'a', '\u00E9': 'e', '\u00ED': 'i', '\u00F3': 'o', '\u00FA': 'u',
+    '\u00C1': 'A', '\u00C9': 'E', '\u00CD': 'I', '\u00D3': 'O', '\u00DA': 'U',
+    '\u00F1': 'n', '\u00D1': 'N', '\u00FC': 'u', '\u00DC': 'U'
+};
+
+function sanitizeText(text: string | null | undefined): string {
+    if (!text) return '';
+    try {
+        const normalized = String(text).normalize('NFC');
+        return normalized.replace(
+            /[\u00E1\u00E9\u00ED\u00F3\u00FA\u00C1\u00C9\u00CD\u00D3\u00DA\u00F1\u00D1\u00FC\u00DC]/g,
+            (char) => TRANSLIT_MAP[char] || char
+        );
+    } catch {
+        return String(text);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COLECTOR DE LOGS — captura todos los mensajes para devolverlos al cliente
+// ─────────────────────────────────────────────────────────────────────────────
+let _pdfLogs: string[] = [];
+
+/** Reiniciar colector antes de cada generación */
+function resetLogs() { _pdfLogs = []; }
+
+/** Log informativo — también llama console.log para Firebase Console */
+function plog(msg: string) {
+    const line = `[INFO]  ${msg}`;
+    _pdfLogs.push(line);
+    console.log(msg);
+}
+
+/** Log de advertencia */
+function pwarn(msg: string) {
+    const line = `[WARN]  ${msg}`;
+    _pdfLogs.push(line);
+    console.warn(msg);
+}
+
+/** Log de error */
+function perr(msg: string) {
+    const line = `[ERROR] ${msg}`;
+    _pdfLogs.push(line);
+    console.error(msg);
+}
+
+/** Obtener snapshot de logs actuales */
+function getLogs(): string[] { return [..._pdfLogs]; }
+
 // ─────────────────────────────────────────────────
 // TIPOS
 // ─────────────────────────────────────────────────
 interface FichaData {
+    tipoRegistro?: string;
     pozo?: string;
     municipio?: string;
     barrio?: string;
@@ -39,21 +95,30 @@ interface FichaData {
 interface PipeData {
     id?: string;
     es?: string;
+    deA?: string;
     diam?: string | number;
     mat?: string;
     cotaZ?: string | number;
+    emboq?: string;
     orden?: number;
     estado?: string;
+    unit?: string;
 }
 
 interface SumData {
     id?: string;
     tipo?: string;
     esquema?: string;
+    codEsquema?: string;
     diam?: string | number;
+    diamTub?: string | number;
     material?: string;
+    matTub?: string;
+    matRejilla?: string;
+    matCaja?: string;
     hSalida?: string | number;
     hLlegada?: string | number;
+    estado?: string;
 }
 
 interface FotoData {
@@ -94,6 +159,7 @@ interface Placement {
     borderWidth?: number;
     borderRadius?: number;
     opacity?: number;
+    padding?: number;
 }
 
 interface ShapeElement {
@@ -114,6 +180,7 @@ interface ShapeElement {
     fontSize?: number;
     color?: string;
     opacity?: number;
+    padding?: number;
 }
 
 interface Group {
@@ -123,9 +190,11 @@ interface Group {
 }
 
 interface TechnicalGroup {
-    type: 'entrada' | 'salida' | 'sumidero';
+    type: 'tuberia' | 'sumidero';
     number: number;
-    elements: (Placement | ShapeElement & { _isShape: boolean })[];
+    realIdx: number;
+    kind: string;
+    elements: any[];
     hasRealData: boolean;
 }
 
@@ -151,10 +220,10 @@ function mapFirestoreToPozo(data: FichaData) {
             fecha: fv(data.fecha),
             levanto: fv(data.elaboro),
             estado: fv(data.estadoPozo),
-            coordenadaX: fv(data.gps?.x),
-            coordenadaY: fv(data.gps?.y),
-            latitud: fv(data.gps?.lat),
-            longitud: fv(data.gps?.lng),
+            coordenadaX: typeof data.gps?.x === 'number' ? data.gps.x.toFixed(3) : fv(data.gps?.x),
+            coordenadaY: typeof data.gps?.y === 'number' ? data.gps.y.toFixed(3) : fv(data.gps?.y),
+            latitud: typeof data.gps?.lat === 'number' ? data.gps.lat.toFixed(7) : fv(data.gps?.lat),
+            longitud: typeof data.gps?.lng === 'number' ? data.gps.lng.toFixed(7) : fv(data.gps?.lng),
         },
         ubicacion: {
             direccion: fv(data.direccion),
@@ -186,15 +255,38 @@ function mapFirestoreToPozo(data: FichaData) {
             tipoCamara: fv((data as any).tipoCamara),
         },
         observaciones: { observaciones: fv(data.obs) },
-        pipes: (data.pipes ?? []).map((p, i) => ({
-            id: fv(p.id ?? `T${i + 1}`),
-            tipo: (p.es ?? "").toLowerCase(),       // ENTRADA→entrada / SALIDA→salida
-            diam: fv(p.diam),
-            mat: fv(p.mat),
-            cota: fv(p.cotaZ),
-            orden: p.orden ?? i + 1,
-            estado: fv(p.estado),
-        })),
+        pipes: (data.pipes ?? [])
+            // Ordenar: ENTRADAS primero (por orden), luego SALIDAS (por orden)
+            .slice().sort((a, b) => {
+                const tipoA = (a.es ?? "").toUpperCase();
+                const tipoB = (b.es ?? "").toUpperCase();
+                // ENTRADA = 0, SALIDA = 1, otro = 2
+                const prioA = tipoA.startsWith("ENTRADA") ? 0 : tipoA.startsWith("SALIDA") ? 1 : 2;
+                const prioB = tipoB.startsWith("ENTRADA") ? 0 : tipoB.startsWith("SALIDA") ? 1 : 2;
+                if (prioA !== prioB) return prioA - prioB;
+                // Dentro del mismo tipo, ordenar por campo 'orden'
+                return (a.orden ?? 99) - (b.orden ?? 99);
+            })
+            .map((p, i) => {
+                const diamNum = parseFloat(String(p.diam ?? 0)) || 0;
+                const cotaNum = parseFloat(String(p.cotaZ ?? 0)) || 0;
+                // Batea = cotaZ + (diámetro_en_mm / 1000)
+                // Si el diámetro está en pulgadas, convertir: 1 pulgada = 25.4mm
+                const isInches = !p.unit || p.unit === 'in';
+                const diamMM = isInches ? diamNum * 25.4 : diamNum;
+                const batea = cotaNum > 0 ? cotaNum + (diamMM / 1000) : 0;
+                return {
+                    id: fv(p.deA ?? p.id ?? `T${i + 1}`),  // deA = pozo destino/origen (M035, etc)
+                    tipo: (p.es ?? "").toLowerCase(),       // ENTRADA→entrada / SALIDA→salida
+                    diam: fv(p.diam),
+                    mat: fv(p.mat),
+                    cota: fv(p.cotaZ),
+                    emboq: fv(p.emboq ?? "SI"),
+                    orden: p.orden ?? i + 1,
+                    estado: fv(p.estado),
+                    batea: batea > 0 ? batea.toFixed(4) : "-",
+                };
+            }),
         fotos: (data.fotoList ?? []).map((f, i) => ({
             id: f.id ?? `foto-${i}`,
             nombre: f.nombre ?? f.filename ?? `foto-${i}.jpg`,
@@ -203,11 +295,76 @@ function mapFirestoreToPozo(data: FichaData) {
         sums: (data.sums ?? []).map((s, i) => ({
             id: fv(s.id ?? `S${i + 1}`),
             tipo: fv(s.tipo),
-            diam: fv(s.diam),
-            mat: fv(s.material),
+            esquema: fv(s.codEsquema ?? s.esquema ?? `${i + 1}`),
+            diam: fv(s.diamTub ?? s.diam),
+            mat: fv(s.matTub ?? s.material),
             hSalida: fv(s.hSalida),
             hLlegada: fv(s.hLlegada),
         })),
+    };
+}
+
+function mapMarcacionToPozo(data: any) {
+    const fv = (v: unknown) => String(v ?? "-");
+
+    // Transformar el objeto de fotos de marcación en la lista que espera el reporte
+    const fotoList: any[] = [];
+    if (data.fotos) {
+        if (data.fotos.panoramica) fotoList.push({ ...data.fotos.panoramica, nombre: `${data.codigo}-P.JPG` });
+        if (data.fotos.tapa) fotoList.push({ ...data.fotos.tapa, nombre: `${data.codigo}-T.JPG` });
+        if (data.fotos.interna) fotoList.push({ ...data.fotos.interna, nombre: `${data.codigo}-I.JPG` });
+        if (data.fotos.batea) fotoList.push({ ...data.fotos.batea, nombre: `${data.codigo}-SUM1-B.JPG` });
+        if (data.fotos.puntoGPS) fotoList.push({ ...data.fotos.puntoGPS, nombre: `${data.codigo}-GPS.JPG` });
+    }
+
+    return {
+        identificacion: {
+            idPozo: fv(data.codigo),
+            fecha: fv(data.createdAt),
+            levanto: fv(data.inspector),
+            estado: "MARCACIÓN",
+            coordenadaX: "-",
+            coordenadaY: "-",
+            latitud: typeof data.gps?.lat === 'number' ? data.gps.lat.toFixed(7) : fv(data.gps?.lat),
+            longitud: typeof data.gps?.lng === 'number' ? data.gps.lng.toFixed(7) : fv(data.gps?.lng),
+        },
+        ubicacion: {
+            direccion: fv(data.obs ? data.obs.substring(0, 50) : "-"),
+            barrio: "-",
+            municipio: fv(data.municipio),
+            profundidad: "-",
+        },
+        componentes: {
+            estructuraPavimento: "-",
+            diametroCilindro: "-",
+            sistema: fv(data.tipoElemento),
+            existeTapa: "SÍ",
+            materialTapa: "-",
+            estadoTapa: "-",
+            existeCono: "-",
+            tipoCono: "-",
+            materialCono: "-",
+            estadoCono: "-",
+            existeCilindro: "-",
+            materialCilindro: "-",
+            estadoCilindro: "-",
+            existeCanuela: "-",
+            materialCanuela: "-",
+            estadoCanuela: "-",
+            existePeldanos: "-",
+            materialPeldanos: "-",
+            numeroPeldanos: "-",
+            estadoPeldanos: "-",
+            tipoCamara: fv(data.tipoElemento),
+        },
+        observaciones: { observaciones: fv(data.obs) },
+        pipes: [] as any[],
+        fotos: fotoList.map((f, i) => ({
+            id: f.id ?? `foto-${i}`,
+            nombre: f.nombre ?? f.filename ?? `foto-${i}.jpg`,
+            blobId: f.blobId ?? "",
+        })),
+        sums: [] as any[],
     };
 }
 
@@ -254,36 +411,137 @@ function getFieldValue(pozo: ReturnType<typeof mapFirestoreToPozo>, fieldId: str
 
     if (fieldId in MAP) return MAP[fieldId];
 
-    // Tuberías dinámicas: ent_diam_1, sal_mat_2, etc.
-    const pipeMatch = fieldId.match(/^(ent|sal)_([a-z]+)_(\d+)$/);
-    if (pipeMatch) {
-        const tipoTarget = pipeMatch[1] === "ent" ? "entrada" : "salida";
-        const prop = pipeMatch[2] as "diam" | "mat" | "cota" | "estado";
-        const idx = parseInt(pipeMatch[3]) - 1;
-        const pipes = pozo.pipes.filter(p => p.tipo.toLowerCase().startsWith(tipoTarget));
+    // ─── TUBERÍAS DINÁMICAS ───
+    // Formato de la plantilla: tub_N_prop, ent_N_prop, sal_N_prop
+    // tub_N = tuberías de entrada (1 a 5) (su foto asociada es foto_entrada_N)
+    // ent_N = entrada por número (6 y 7)
+    // sal_N = salida por número (1 y 2)
+    const PIPE_PROP_MAP: Record<string, string> = {
+        id: 'id', diametro: 'diam', material: 'mat',
+        z: 'cota', emboquillado: 'emboq', estado: 'estado', batea: 'batea',
+    };
+
+    // Función auxiliar para obtener propiedades de la tubería
+    const getPipeProp = (pipes: any[], idx: number, propKey: string): string => {
         const pipe = pipes[idx];
-        if (pipe) return pipe[prop] ?? "-";
+        if (pipe) {
+            let val = (pipe as any)[propKey] ?? "-";
+            if (propKey === 'id' && typeof val === 'string' && (val.startsWith('FOTO_') || val.startsWith('INF-'))) {
+                return "-";
+            }
+            return String(val);
+        }
+        return "-";
+    };
+
+    const tubMatch = fieldId.match(/^tub_(\d+)_([a-zA-Z]+)$/);
+    if (tubMatch) {
+        const idx = parseInt(tubMatch[1]) - 1;
+        const propKey = PIPE_PROP_MAP[tubMatch[2]] ?? tubMatch[2];
+        const pipes = pozo.pipes.filter(p => ((p as any).es || '').toLowerCase().startsWith('entrada'));
+        return getPipeProp(pipes, idx, propKey);
     }
 
-    // Fotos: foto_panoramica, foto_tapa, foto_interior, foto_shape, foto_entrada_1, foto_salida_2
-    const FOTO_CODE_MAP: Record<string, string> = {
+    const pipeMatch = fieldId.match(/^(ent|sal)_(\d+)_([a-zA-Z]+)$/);
+    if (pipeMatch) {
+        const tipoTarget = pipeMatch[1] === "ent" ? "entrada" : "salida";
+        const propKey = PIPE_PROP_MAP[pipeMatch[3]] ?? pipeMatch[3];
+        const idx = parseInt(pipeMatch[2]) - 1;
+        const pipes = pozo.pipes.filter(p => ((p as any).es || '').toLowerCase().startsWith(tipoTarget));
+        return getPipeProp(pipes, idx, propKey);
+    }
+
+    // ─── SUMIDEROS DINÁMICOS ───
+    // Formato: sum_N_prop (sum_1_id, sum_1_esquema, sum_1_tipo, sum_1_diametro, etc.)
+    const SUM_PROP_MAP: Record<string, string> = {
+        id: 'id', esquema: 'esquema', tipo: 'tipo',
+        diametro: 'diam', material: 'mat',
+        hSalida: 'hSalida', hLlegada: 'hLlegada',
+    };
+    const sumMatch = fieldId.match(/^sum_(\d+)_([a-zA-Z]+)$/);
+    if (sumMatch) {
+        const idx = parseInt(sumMatch[1]) - 1;
+        const propKey = SUM_PROP_MAP[sumMatch[2]] ?? sumMatch[2];
+        const sum = pozo.sums[idx];
+        if (sum) return (sum as any)[propKey] ?? "-";
+        return "-";
+    }
+
+    // ─── FOTOS ───
+    // Mapa: fieldId → código base (SIN sufijo -T para búsqueda)
+    // La lógica de resolución prioriza la foto principal (-T) sobre zoom (-Z, -AT)
+    const FOTO_BASE_CODE_MAP: Record<string, string> = {
         foto_panoramica: "P",
         foto_tapa: "T",
         foto_interior: "I",
-        foto_shape: "L",
-        foto_entrada_1: "E1", foto_entrada_2: "E2", foto_entrada_3: "E3", foto_entrada_4: "E4",
-        foto_salida_1: "S1", foto_salida_2: "S2", foto_salida_3: "S3",
+        foto_shape: "L",      // fallback también busca _ARGIS y ESQUEMA
+        foto_entrada_1: "E1", foto_entrada_2: "E2", foto_entrada_3: "E3",
+        foto_entrada_4: "E4", foto_entrada_5: "E5", foto_entrada_6: "E6",
+        foto_entrada_7: "E7",
+        foto_salida_1: "S1",  foto_salida_2: "S2",  foto_salida_3: "S3",
+        foto_salida_4: "S4",  foto_salida_5: "S5",  foto_salida_6: "S6",
+        foto_salida_7: "S7",
         foto_sumidero_1: "SUM1", foto_sumidero_2: "SUM2", foto_sumidero_3: "SUM3",
+        foto_sumidero_4: "SUM4", foto_sumidero_5: "SUM5", foto_sumidero_6: "SUM6",
+        foto_sumidero_7: "SUM7",
+        foto_sum_batea_1: "SUM1-B",
     };
 
-    if (fieldId in FOTO_CODE_MAP) {
-        const code = FOTO_CODE_MAP[fieldId];
-        const foto = pozo.fotos.find(f => {
+    if (fieldId in FOTO_BASE_CODE_MAP) {
+        const baseCode = FOTO_BASE_CODE_MAP[fieldId]; // e.g. "S1"
+
+        // Helper: ¿una foto es de tipo zoom (o auxiliar como diámetro/batea)?
+        const isZoom = (nombre: string) => {
+            const n = nombre.toUpperCase();
+            return n.endsWith('-Z.JPG') || n.endsWith('_Z.JPG') ||
+                   n.endsWith('-D.JPG') || n.endsWith('_D.JPG') ||
+                   n.endsWith('-B.JPG') || n.endsWith('_B.JPG') ||
+                   n.endsWith('-AT.JPG') || n.endsWith('_AT.JPG') ||
+                   n.includes('-Z-') || n.includes('_Z_');
+        };
+
+        // Helper: ¿una foto coincide con el código base?
+        const matchesCode = (nombre: string, code: string) => {
+            const n = nombre.toUpperCase();
+            // Coincidencia exacta: -S1. o -S1- o _S1.
+            if (new RegExp(`[-_]${code}[-_.]`).test(n)) return true;
+            // Coincidencia al final: -S1.JPG
+            if (new RegExp(`[-_]${code}\\.[A-Z]+$`).test(n)) return true;
+            return false;
+        };
+
+        // Caso especial foto_shape: buscar L, _ARGIS o ESQUEMA
+        if (fieldId === 'foto_shape') {
+            const allFotos = pozo.fotos.filter(f => {
+                const n = (f.nombre ?? '').toUpperCase();
+                return n.endsWith('-L.JPG') || n.includes('_ARGIS') ||
+                       n.includes('ESQUEMA') || n.endsWith('-L.PNG');
+            });
+            const foto = allFotos.find(f => f.blobId) ?? null;
+            plog(`[PDF-PHOTO] ${foto ? '✅' : '❌'} Field: ${fieldId} | Code: L | Found: ${foto ? (foto.nombre ?? '?') : 'MISSING (no _ARGIS/ESQUEMA found)'}`);
+            return foto?.blobId ?? null;
+        }
+
+        // Candidatos: todas las fotos que coinciden con el código base
+        const candidates = pozo.fotos.filter(f => {
             const n = (f.nombre ?? "").toUpperCase();
-            // Buscar por código al final del nombre antes de la extensión: P076-P.jpg, P076-E1.jpg
-            const match = n.match(/-([A-Z0-9]+)\.[A-Z]+$/);
-            return match ? match[1] === code : false;
+            return matchesCode(n, baseCode);
         });
+
+        let foto: typeof pozo.fotos[0] | undefined;
+
+        if (candidates.length > 0) {
+            // Priorizar foto principal (-T) sobre zoom (-Z, -AT)
+            const principal = candidates.find(f => !isZoom(f.nombre ?? ''));
+            foto = principal ?? candidates[0]; // fallback al primer candidato si todos son zoom
+        }
+
+        // Log diagnóstico
+        if (foto?.blobId) {
+            plog(`[PDF-PHOTO] ✅ Field: ${fieldId} | Match: ${baseCode} | File: ${foto.nombre ?? '?'}`);
+        } else {
+            pwarn(`[PDF-PHOTO] ❌ MISSING: ${fieldId} (Code: ${baseCode}) | candidates=${candidates.length} | fotos: ${pozo.fotos.map(f => f.nombre).join(', ')}`);
+        }
         return foto?.blobId ?? null;
     }
 
@@ -298,19 +556,18 @@ function checkIfPage2ShouldBeSkipped(pozo: ReturnType<typeof mapFirestoreToPozo>
     const hasPipes = pozo.pipes.length > 0;
     const hasSums = pozo.sums.length > 0;
 
-    const page2PhotoCodes = [
-        'E1', 'E2', 'E3', 'E4', 'E5', 'E6', 'E7', 'E8',
-        'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8',
-        'SUM1', 'SUM2', 'SUM3', 'SUM4', 'SUM5', 'SUM6', 'SUM7', 'SUM8'
-    ];
-
+    // Detectar fotos de Página 2 (entradas, salidas, sumideros)
+    // Acepta sufijos: -E1.JPG, -E1-T.JPG, -E1-Z.JPG, _E1.JPG, etc.
+    const page2PhotoRegex = /[-_](E|S|SUM)\d+(-[A-Z]+)?\.[A-Z]+$/i;
     const hasPage2Photos = pozo.fotos.some(f => {
-        const n = (f.nombre || "").toUpperCase();
-        const match = n.match(/-([A-Z0-9]+)\.[A-Z]+$/);
-        return match ? page2PhotoCodes.includes(match[1]) : false;
+        return page2PhotoRegex.test(f.nombre || "");
     });
 
-    return !hasPipes && !hasSums && !hasPage2Photos;
+    const shouldSkip = !hasPipes && !hasSums && !hasPage2Photos;
+    plog(`[PAGE2-CHECK] hasPipes=${hasPipes} hasSums=${hasSums} hasPage2Photos=${hasPage2Photos} → skip=${shouldSkip}`);
+    if (hasPipes) plog(`  Pipes: ${pozo.pipes.map(p => `${p.tipo}#${p.orden}(${p.id})`).join(', ')}`);
+    if (hasSums)  plog(`  Sums: ${pozo.sums.map(s => `${s.id}(${s.esquema})`).join(', ')}`);
+    return shouldSkip;
 }
 
 function applySmartLayout(elements: any[], design: Design, pozo: ReturnType<typeof mapFirestoreToPozo>): any[] {
@@ -320,30 +577,45 @@ function applySmartLayout(elements: any[], design: Design, pozo: ReturnType<type
 
     // Clasificar elementos de Página 2
     const technicalFields = page2Elements.filter(el => {
-        if (el._isShape) return false;
+        // NUEVO: incluir shapes con groupId para que fluyan con su grupo
+        if (el._isShape) return el.groupId != null;
         const fid = (el as Placement).fieldId;
-        return fid.startsWith("ent_") || fid.startsWith("sal_") || fid.startsWith("sum_") || fid.startsWith("foto_");
+        return fid.startsWith("tub_") || fid.startsWith("ent_") || fid.startsWith("sal_") || fid.startsWith("sum_") || fid.startsWith("foto_");
     });
     const decorativeElements = page2Elements.filter(el => !technicalFields.includes(el));
 
     // Agrupar técnicos
-    const groups = buildTechnicalGroups(technicalFields, pozo);
+    const groups = buildTechnicalGroups(page2Elements.filter(el => !el._isShape), pozo);
 
-    // Reposicionar en 3 columnas
-    const startY = 54; // Estimado, podrías hacerlo dinámico
-    const entries = groups.filter(g => g.type === 'entrada' && g.hasRealData);
-    const exits = groups.filter(g => g.type === 'salida' && g.hasRealData);
+    // NUEVO: Pasada 2 para asociar los shapes de página 2 a los grupos ya creados
+    page2Elements.forEach(el => {
+        if (el._isShape && el.groupId) {
+            const group = groups.find(g => 
+                g.elements.some(e => e.groupId === el.groupId)
+            );
+            if (group) {
+                group.elements.push(el);
+            }
+        }
+    });
+
+    // Reposicionar en Layout Fluido ("Entradas fluyen, seguidas por Salidas")
+    const startY = 46; // Inicio más arriba para dar espacio a más items por columna
+    const maxY = 250; // Limite inferior antes de saltar de columna
+
+    const tuberias = groups.filter(g => g.type === 'tuberia' && g.hasRealData);
     const sums = groups.filter(g => g.type === 'sumidero' && g.hasRealData);
 
-    const repoEntries = repositionGroupsInColumn(entries, 10, startY, 2);
-    const repoExits = repositionGroupsInColumn(exits, 74.67, startY, 2);
-    const repoSums = repositionGroupsInColumn(sums, 139.34, startY, 2);
+    // Tuberias fluyen a través de Columnas 1 y 2 (X: 10 y 74.67)
+    const repoTuberias = repositionGroupsFlow(tuberias, [10, 74.67], startY, maxY, 2);
+    
+    // Sumideros fluyen exclusivamente en Columna 3 (X: 139.34)
+    const repoSums = repositionGroupsFlow(sums, [139.34], startY, maxY, 2);
 
     return [
         ...page1Elements,
         ...decorativeElements,
-        ...repoEntries,
-        ...repoExits,
+        ...repoTuberias,
         ...repoSums,
         ...otherPageElements
     ];
@@ -354,24 +626,63 @@ function buildTechnicalGroups(elements: any[], pozo: ReturnType<typeof mapFirest
 
     elements.forEach(el => {
         const fid = el.fieldId as string;
-        let type: 'entrada' | 'salida' | 'sumidero' | null = null;
-        let num = 0;
+        let type: 'tuberia' | 'sumidero' | null = null;
+        let num = 0; // Orden secuencial: Entradas (1-7), Salidas (8-9)
+        let realIdx = 0; // Índice en arreglo filtrado (ej: 0 para la 1ra entrada, o 1ra salida)
+        let kind = 'entrada'; // 'entrada' | 'salida' | 'sumidero'
 
-        const pipeMatch = fid.match(/^(ent|sal)_[a-z]+_(\d+)$/);
+        const tubMatch = fid.match(/^tub_(\d+)_[a-zA-Z]+$/);
+        const pipeMatch = fid.match(/^(ent|sal)_(\d+)_[a-zA-Z]+$/);
+        const sumMatch = fid.match(/^sum_(\d+)_[a-zA-Z]+$/);
         const fotoMatch = fid.match(/^foto_(entrada|salida|sumidero)_(\d+)$/);
 
-        if (pipeMatch) {
-            type = pipeMatch[1] === "ent" ? "entrada" : "salida";
-            num = parseInt(pipeMatch[2]);
+        if (tubMatch) {
+            type = 'tuberia';
+            num = parseInt(tubMatch[1]);
+            realIdx = num - 1;
+            kind = 'entrada';
+        } else if (pipeMatch) {
+            type = 'tuberia';
+            const rawNum = parseInt(pipeMatch[2]);
+            if (pipeMatch[1] === 'ent') {
+                num = rawNum;
+                realIdx = rawNum - 1;
+                kind = 'entrada';
+            } else {
+                num = 7 + rawNum; // Desplazar Salidas para que se listen DESPUÉS de las 7 entradas
+                realIdx = rawNum - 1;
+                kind = 'salida';
+            }
+        } else if (sumMatch) {
+            type = 'sumidero';
+            num = parseInt(sumMatch[1]);
+            realIdx = num - 1;
+            kind = 'sumidero';
         } else if (fotoMatch) {
-            type = fotoMatch[1] === "entrada" ? "entrada" : fotoMatch[1] === "salida" ? "salida" : "sumidero";
-            num = parseInt(fotoMatch[2]);
+            const fotoKind = fotoMatch[1];
+            const rawNum = parseInt(fotoMatch[2]);
+            if (fotoKind === 'entrada') {
+                type = 'tuberia';
+                num = rawNum;
+                realIdx = rawNum - 1;
+                kind = 'entrada';
+            } else if (fotoKind === 'salida') {
+                type = 'tuberia';
+                num = 7 + rawNum;
+                realIdx = rawNum - 1;
+                kind = 'salida';
+            } else {
+                type = 'sumidero';
+                num = rawNum;
+                realIdx = rawNum - 1;
+                kind = 'sumidero';
+            }
         }
 
         if (type && num) {
             const key = `${type}_${num}`;
             if (!groupsMap[key]) {
-                groupsMap[key] = { type, number: num, elements: [], hasRealData: false };
+                groupsMap[key] = { type, number: num, realIdx, kind, elements: [], hasRealData: false };
             }
             groupsMap[key].elements.push(el);
         }
@@ -386,27 +697,77 @@ function buildTechnicalGroups(elements: any[], pozo: ReturnType<typeof mapFirest
 }
 
 function checkHasRealData(group: TechnicalGroup, pozo: ReturnType<typeof mapFirestoreToPozo>): boolean {
-    const idx = group.number - 1;
-    if (group.type === 'entrada') return !!pozo.pipes.filter(p => p.tipo === 'entrada')[idx];
-    if (group.type === 'salida') return !!pozo.pipes.filter(p => p.tipo === 'salida')[idx];
-    if (group.type === 'sumidero') return !!pozo.sums[idx];
+    if (group.type === 'tuberia') {
+        const pipeList = pozo.pipes.filter(p => (p as any).es?.startsWith(group.kind) || p.tipo.startsWith(group.kind));
+        const pipe = pipeList[group.realIdx];
+        
+        let isPhotoOnly = false;
+        let hasTechnicalData = false;
+        let deA = '';
+        let diam = 0;
+        let mat = '';
+
+        if (pipe) {
+            deA = String(pipe.id || '');
+            isPhotoOnly = deA.startsWith('FOTO_') || deA.startsWith('INF-');
+            diam = parseFloat(String(pipe.diam || '0'));
+            mat = String(pipe.mat || '').toUpperCase();
+            hasTechnicalData = diam > 0 || (mat && mat !== 'DESCONOCIDO' && mat !== '-');
+
+            if (hasTechnicalData && !isPhotoOnly) return true;
+        }
+
+        // Si es solo referencia de foto, o si no hay tubería, verificar si hay foto real
+        const code = (group.kind === 'entrada' ? 'E' : 'S') + group.number;
+        // Regex amplia: -E1.JPG, -E1-T.JPG, -E1-Z.JPG, _E1.JPG
+        const hasPhoto = pozo.fotos.some(f => {
+            const n = (f.nombre || '').toUpperCase();
+            return new RegExp(`[-_]${code}([-_][A-Z]+)?\\.[A-Z]+$`).test(n);
+        });
+
+        if (hasPhoto) {
+            plog(`  [LAYOUT] ${group.kind}#${group.number} → FOTO ENCONTRADA (${code}) → MOSTRAR`);
+            return true;
+        }
+
+        if (pipe) {
+             plog(`  [LAYOUT] ${group.kind}#${group.number} → isPhotoOnly=${isPhotoOnly} hasTechnicalData=${hasTechnicalData} → OCULTAR`);
+        } else {
+             plog(`  [LAYOUT] ${group.kind}#${group.number} → sin pipe ni foto → OCULTAR`);
+        }
+        return false;
+    }
+    if (group.type === 'sumidero') {
+        const has = !!pozo.sums[group.realIdx];
+        plog(`  [LAYOUT] sumidero#${group.number} (idx:${group.realIdx}) → ${has ? 'MOSTRAR' : 'OCULTAR'}`);
+        return has;
+    }
     return false;
 }
 
-function repositionGroupsInColumn(groups: TechnicalGroup[], colX: number, startY: number, pageNumber: number): any[] {
+function repositionGroupsFlow(groups: TechnicalGroup[], columnsX: number[], startY: number, maxY: number, pageNumber: number): any[] {
     let currentY = startY;
+    let colIdx = 0;
     const result: any[] = [];
-    const GROUP_GAP = 4;
+    const GROUP_GAP = 5;
 
-    groups.sort((a, b) => a.number - b.number);
+    groups.sort((a, b) => {
+        if (a.kind === 'entrada' && b.kind === 'salida') return -1;
+        if (a.kind === 'salida' && b.kind === 'entrada') return 1;
+        return a.number - b.number;
+    });
 
     groups.forEach(g => {
-        // Encontrar el elemento más a la izquierda del grupo original para calcular offsets relativos si fuera necesario
-        // Pero aquí simplificamos: alineamos todo a colX y apilamos.
-
-        // Calculamos offsets relativos de cada elemento dentro del grupo original
-        // para preservar su layout interno (label arriba, foto abajo, etc)
         const minY = Math.min(...g.elements.map(el => el.y));
+        const gHeight = Math.max(...g.elements.map(el => el.y + el.height)) - minY;
+
+        // Overflow: if moving to the next group exceeds maxY, go to next column
+        if (currentY + gHeight > maxY && colIdx < columnsX.length - 1) {
+            colIdx++;
+            currentY = startY;
+        }
+
+        const colX = columnsX[colIdx];
 
         g.elements.forEach(el => {
             const relY = el.y - minY;
@@ -418,7 +779,6 @@ function repositionGroupsInColumn(groups: TechnicalGroup[], colX: number, startY
             result.push(el);
         });
 
-        const gHeight = Math.max(...g.elements.map(el => el.y + el.height)) - currentY;
         currentY += gHeight + GROUP_GAP;
     });
 
@@ -432,6 +792,26 @@ async function generatePdf(design: Design, pozo: ReturnType<typeof mapFirestoreT
     const orientation = design.orientation === "landscape" ? "l" : "p";
     const format = (design.pageSize ?? "Letter").toLowerCase();
 
+    // Diagnóstico inicial
+    plog(`[PDF-START] Pipes: ${pozo.pipes.length} | Sums: ${pozo.sums.length} | Fotos: ${pozo.fotos.length}`);
+    pozo.fotos.forEach((f, i) => plog(`  [FOTO-${i}] ${f.nombre} blobId=${f.blobId ? f.blobId.substring(0, 20) + '..' : 'NULL'}`));
+
+    // 0. Prensa de Precisión: Normalizar todas las coordenadas y dimensiones
+    const round = (n: any) => typeof n === "number" ? Math.round(n * 100) / 100 : n;
+    plog(`🎯 Prensa de Precisión: Coordenadas y dimensiones normalizadas a 2 decimales.`);
+    if (design.placements) {
+        design.placements.forEach(p => {
+            p.x = round(p.x); p.y = round(p.y);
+            p.width = round(p.width); p.height = round(p.height);
+        });
+    }
+    if (design.shapes) {
+        design.shapes.forEach(s => {
+            s.x = round(s.x); s.y = round(s.y);
+            s.width = round(s.width); s.height = round(s.height);
+        });
+    }
+
     const doc = new jsPDF({ orientation, unit: "mm", format });
 
     let allElements = [
@@ -439,13 +819,26 @@ async function generatePdf(design: Design, pozo: ReturnType<typeof mapFirestoreT
         ...(design.placements ?? []).map((p: Placement) => ({ ...p, _isShape: false })),
     ];
 
+    // Diagnóstico de elementos por página
+    const p2elements = allElements.filter(el => (el as any).pageNumber === 2);
+    plog(`[PDF-DESIGN] Total elementos: ${allElements.length} | Página 2: ${p2elements.length}`);
+    if (p2elements.length === 0) {
+        pwarn(`[PDF-DESIGN] ⚠️ NO HAY ELEMENTOS CON pageNumber===2 en el diseño! Verificar JSON del diseño.`);
+    }
+
     // Aplicar Smart Layout
     const skipP2 = checkIfPage2ShouldBeSkipped(pozo);
-    allElements = applySmartLayout(allElements, design, pozo);
+    plog(`[PDF-PAGES] skipPage2=${skipP2}`);
+
+    if (!skipP2) {
+        plog(`📄 Aplicando Smart Layout para Página 2...`);
+        allElements = applySmartLayout(allElements, design, pozo);
+    }
 
     allElements.sort((a, b) => (Number(a.zIndex) || 0) - (Number(b.zIndex) || 0));
 
     const numPages = skipP2 ? 1 : (design.numPages || 1);
+    plog(`[PDF-PAGES] Renderizando ${numPages} página(s)`);
 
     for (let pageIdx = 1; pageIdx <= numPages; pageIdx++) {
         if (pageIdx > 1) doc.addPage();
@@ -507,7 +900,7 @@ function renderShape(doc: InstanceType<typeof jsPDF>, shape: ShapeElement) {
         } catch (_) { }
 
         const align = (shape as any).textAlign || "left";
-        const padding = 2; // 2mm padding to avoid touching borders
+        const padding = Number((shape as any).padding ?? 0);
 
         let textX = shape.x + padding;
         const availableWidth = Math.max(0, shape.width - (padding * 2));
@@ -521,8 +914,8 @@ function renderShape(doc: InstanceType<typeof jsPDF>, shape: ShapeElement) {
         const totalTextHeight = Math.max(0, (textLines.length - 1) * lineHeight);
 
         // Calculate Y so the middle of the block aligns to the center of the box
-        // We add +1.5 mm to push the text down roughly 5px as requested by the user
-        const startY = shape.y + (shape.height / 2) - (totalTextHeight / 2) + 1.5;
+        // Se elimina el offset hardcoded de +1.5 para permitir alineación perfecta
+        const startY = shape.y + (shape.height / 2) - (totalTextHeight / 2);
 
         doc.text(textLines, textX, startY, {
             align: align as any,
@@ -561,7 +954,9 @@ async function renderField(doc: InstanceType<typeof jsPDF>, pl: Placement, pozo:
     // Borde del campo
     if (pl.borderWidth && pl.borderWidth > 0 && isValidColor(pl.borderColor)) {
         doc.setDrawColor(pl.borderColor as string);
-        doc.setLineWidth(pl.borderWidth * 0.35); // px → mm aprox
+        // RESPETAR MILIMETROS: Si el diseño dice 1, es 1mm. 
+        // Se elimina la multiplicación por 0.3528 que reducía grosores.
+        doc.setLineWidth(pl.borderWidth); 
         doc.rect(pl.x, pl.y, pl.width, pl.height);
     }
 
@@ -576,66 +971,94 @@ async function renderField(doc: InstanceType<typeof jsPDF>, pl: Placement, pozo:
         }
         doc.setFontSize(lfs);
         doc.setTextColor(isValidColor(pl.labelColor) ? pl.labelColor : "#000000");
-        const labelText = pl.customLabel || pl.fieldId;
+
+        let labelText = pl.customLabel || pl.fieldId;
+        // Excepción Marinilla: eliminar el sufijo indicativo (P) de la etiqueta
+        if (pozo.ubicacion.municipio === "MARINILLA") {
+            labelText = labelText.replace(" (P)", "");
+        }
+
         doc.text(String(labelText), pl.x + pl.width / 2, pl.y + labelH / 2, { align: "center", baseline: "middle" });
     }
 
     const contentY = pl.y + labelH;
-    const contentH = pl.height - labelH;
+    const contentH = Math.max(1, pl.height - labelH);
 
     // Foto
-    if (pl.fieldId.startsWith("foto_") && value && value.startsWith("data:image")) {
-        try {
-            const base64Data = value.replace(/^data:image\/\w+;base64,/, "");
-            const imageBuffer = Buffer.from(base64Data, "base64");
-
-            // Usamos imageSize para leer metadatos (dimensiones originales)
-            const metadata = imageSize(imageBuffer);
-            const imgW = metadata.width || 100;
-            const imgH = metadata.height || 100;
-
-            // Calcular object-fit: contain
-            const ratioW = pl.width / imgW;
-            const ratioH = contentH / imgH;
-            const ratio = Math.min(ratioW, ratioH);
-
-            const finalW = imgW * ratio;
-            const finalH = imgH * ratio;
-
-            // Centrar la imagen en el contenedor
-            const xOffset = pl.x + (pl.width - finalW) / 2;
-            const yOffset = contentY + (contentH - finalH) / 2;
-
-            const fmt = value.includes("png") ? "PNG" : "JPEG";
-            doc.addImage(value, fmt, xOffset, yOffset, finalW, finalH, undefined, "FAST");
-        } catch (e) {
-            console.warn(`No se pudo añadir imagen ${pl.fieldId}:`, e);
-            // Fallback
-            try {
-                const fmt = value.includes("png") ? "PNG" : "JPEG";
-                doc.addImage(value, fmt, pl.x, contentY, pl.width, contentH, undefined, "FAST");
-            } catch (_) { }
+    if (pl.fieldId.startsWith("foto_") && value) {
+        let finalValue = String(value);
+        if (!finalValue.startsWith("data:image") && finalValue.length > 100) {
+            // Si parece base64 pero no tiene cabecera, asumimos JPEG
+            finalValue = "data:image/jpeg;base64," + finalValue;
+            plog(`[PDF-PHOTO] 🛠️ Autorepaired missing header for ${pl.fieldId}`);
         }
-        return;
+
+        if (finalValue.startsWith("data:image")) {
+            try {
+                const base64Data = finalValue.replace(/^data:image\/\w+;base64,/, "");
+                const imageBuffer = Buffer.from(base64Data, "base64");
+
+                // Usamos imageSize para leer metadatos (dimensiones originales)
+                const metadata = imageSize(imageBuffer);
+                const imgW = metadata.width || 100;
+                const imgH = metadata.height || 100;
+
+                const padding = Number((pl as any).padding ?? 0);
+                const fitW = Math.max(1, pl.width - (padding * 2));
+                const fitH = Math.max(1, contentH - (padding * 2));
+
+                // Calcular object-fit: contain dentro del área con padding
+                const ratioW = fitW / imgW;
+                const ratioH = fitH / imgH;
+                const ratio = Math.min(ratioW, ratioH);
+
+                const finalW = imgW * ratio;
+                const finalH = imgH * ratio;
+
+                // Centrar la imagen en el contenedor respectivo
+                const xOffset = pl.x + padding + (fitW - finalW) / 2;
+                const yOffset = contentY + padding + (fitH - finalH) / 2;
+
+                const fmt = finalValue.includes("png") ? "PNG" : "JPEG";
+                doc.addImage(finalValue, fmt, xOffset, yOffset, finalW, finalH, undefined, "FAST");
+            } catch (e) {
+                console.warn(`No se pudo añadir imagen ${pl.fieldId}:`, e);
+                // Fallback
+                try {
+                    const fmt = finalValue.includes("png") ? "PNG" : "JPEG";
+                    doc.addImage(finalValue, fmt, pl.x, contentY, pl.width, contentH, undefined, "FAST");
+                } catch (_) { }
+            }
+            return;
+        }
     }
 
-    // Texto
+    // Texto (con transliteración de acentos)
     doc.setFontSize(pl.fontSize || 10);
     doc.setTextColor(isValidColor(pl.color) ? pl.color : "#000000");
-    const valueStr = String(value || "-");
-    const padding = 2; // 2mm padding
+    const valueStr = sanitizeText(String(value || "-"));
+    
+    // Respetar padding del diseño (default a 0 para máxima precisión si no existe)
+    const padding = Number((pl as any).padding ?? 0);
     const availableWidth = Math.max(0, pl.width - (padding * 2));
-    const alignedX = pl.x + (pl.width / 2);
-
     const textLines = doc.splitTextToSize(valueStr, availableWidth);
     const lineHeight = doc.getLineHeight() * 0.3527; // mm
     const totalTextHeight = Math.max(0, (textLines.length - 1) * lineHeight);
 
-    // +1.5 mm to push the text down roughly 5px as requested
-    const startY = contentY + (contentH / 2) - (totalTextHeight / 2) + 1.5;
+    // Se elimina el offset de +1.5 para permitir ajuste milimétrico desde el diseñador
+    const startY = contentY + (contentH / 2) - (totalTextHeight / 2);
+
+    const textAlign = pl.textAlign || "center";
+    let alignedX = pl.x + (pl.width / 2); // Default center
+    
+    if (textAlign === "left") {
+        alignedX = pl.x + padding;
+    } else if (textAlign === "right") {
+        alignedX = pl.x + pl.width - padding;
+    }
 
     doc.text(textLines, alignedX, startY, {
-        align: "center",
+        align: textAlign as "left" | "center" | "right",
         baseline: "middle"
     });
 }
@@ -658,32 +1081,38 @@ export const generateFicha = functions
         };
 
         try {
+            // Reiniciar colector de logs para esta invocación
+            resetLogs();
+            plog(`═══════════════════════════════════════════`);
+            plog(`🚀 generateFicha iniciado: ${new Date().toISOString()}`);
+
             let baseData: FichaData;
 
             if (pozoDirect) {
-                console.log("� Usando datos enviados directamente desde el cliente");
+                plog(`📥 Usando datos enviados directamente desde el cliente`);
                 baseData = pozoDirect;
             } else if (fichaId) {
-                console.log(`📊 Buscando ficha en Firestore: ${fichaId}`);
+                plog(`📊 Buscando ficha en Firestore: ${fichaId}`);
                 const snap = await db().collection("fichas").doc(fichaId).get();
                 if (!snap.exists) {
                     throw new functions.https.HttpsError("not-found", `No se encontró la ficha: ${fichaId}`);
                 }
                 baseData = snap.data() as FichaData;
+                plog(`[FICHA-RAW] pipes=${(baseData.pipes ?? []).length} sums=${(baseData.sums ?? []).length} fotos=${(baseData.fotoList ?? []).length}`);
             } else {
                 throw new functions.https.HttpsError("invalid-argument", "Se requiere fichaId o datos del pozo.");
             }
 
             // 1. Obtener diseño
-            console.log(`🎨 Cargando diseño: ${disenoId}`);
+            plog(`🎨 Cargando diseño: ${disenoId}`);
             let disenoDoc = await db().collection("fichas_disenos").doc(disenoId).get();
 
             if (!disenoDoc.exists) {
-                console.warn(`⚠️ Diseño ${disenoId} no encontrado. Buscando alternativa...`);
+                pwarn(`⚠️ Diseño ${disenoId} no encontrado. Buscando alternativa...`);
                 const fallback = await db().collection("fichas_disenos").limit(1).get();
                 if (!fallback.empty) {
                     disenoDoc = fallback.docs[0];
-                    console.log(`✅ Usando diseño fallback: ${disenoDoc.id}`);
+                    plog(`✅ Usando diseño fallback: ${disenoDoc.id}`);
                 } else {
                     throw new functions.https.HttpsError("not-found", `Diseño no encontrado: ${disenoId} y no existen diseños en la colección.`);
                 }
@@ -691,8 +1120,13 @@ export const generateFicha = functions
 
             const design = disenoDoc.data() as Design;
 
-            // 2. Mapear datos
-            const pozoMapeado = mapFirestoreToPozo(baseData);
+            // 2. Mapear datos detectando el tipo de registro
+            const tipo = baseData.tipoRegistro || 'FICHA_TECNICA';
+            console.log(`🧭 Tipo de registro detectado: ${tipo}`);
+
+            const pozoMapeado = tipo === 'MARCACION_STAR'
+                ? mapMarcacionToPozo(baseData)
+                : mapFirestoreToPozo(baseData);
 
             // 3. Generar PDF
             console.log("📄 Renderizando PDF...");
@@ -707,7 +1141,8 @@ export const generateFicha = functions
                 success: true,
                 pdfBase64,
                 filename: `ficha_${idParaFichero}.pdf`,
-                id: idParaFichero
+                id: idParaFichero,
+                debugLogs: getLogs()
             };
 
         } catch (error: any) {

@@ -2,32 +2,35 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    
     // Security Hardening: Permitir acceso SÓLO si el usuario está autenticado por Firebase Auth real
-    // La persistencia offline seguirá funcionando con estas reglas activas ya que el caché local
-    // es autorizado por el token de sesión emitido una vez hayamos hecho login.
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
     match /fichas/{id} {
-        allow read: if true;                        // ← Excel lee sin auth
-        allow write: if request.auth != null;       // ← App sigue protegida
+        allow read, write: if isAuthenticated();
     }
     
     match /historial_fichas/{id} {
-        allow read, write: if request.auth != null;
+        allow read, write: if isAuthenticated();
     }
     
     match /marcaciones/{id} { 
-        allow read: if true;
-        allow write: if request.auth != null;
+        allow read, write: if isAuthenticated();
     }
+    
     match /historial_marcaciones/{id} {
-        allow read, write: if request.auth != null;
+        allow read, write: if isAuthenticated();
     }
-    match /tuberias/{id} { allow read, write: if request.auth != null; }
-    match /fotos/{id} { allow read, write: if request.auth != null; }
     
     match /fichas_disenos/{id} { 
-        allow read: if true; 
-        allow write: if request.auth != null; 
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated(); 
     }
+
+    match /tuberias/{id} { allow read, write: if isAuthenticated(); }
+    match /fotos/{id} { allow read, write: if isAuthenticated(); }
     
     // Default deny
     match /{document=**} {

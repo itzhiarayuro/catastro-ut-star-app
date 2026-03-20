@@ -30,9 +30,22 @@ const OfflineMapManager: React.FC<{
     center: { lat: number, lng: number };
     onClose: () => void;
 }> = ({ center, onClose }) => {
-    const [status, setStatus] = useState<'idle' | 'downloading' | 'done' | 'error'>('idle');
+    const [downloadType, setDownloadType] = useState<'street' | 'satellite' | 'both'>('street');
+    const [status, setStatus] = useState<'idle' | 'downloading' | 'done'>('idle');
     const [progress, setProgress] = useState(0);
     const [currentAction, setCurrentAction] = useState('');
+
+    const toQuadKey = (x: number, y: number, z: number) => {
+        let quadKey = '';
+        for (let i = z; i > 0; i--) {
+            let digit = 0;
+            const mask = 1 << (i - 1);
+            if ((x & mask) !== 0) digit += 1;
+            if ((y & mask) !== 0) digit += 2;
+            quadKey += digit.toString();
+        }
+        return quadKey;
+    };
 
     const downloadRange = async (rangeType: 'focus' | 'area' | 'urban' | 'regional') => {
         setStatus('downloading');
@@ -47,7 +60,9 @@ const OfflineMapManager: React.FC<{
 
         setCurrentAction(config.label);
 
-        const tilesToDownload: { z: number, x: number, y: number }[] = [];
+        const tilesToDownload: { z: number, x: number, y: number, type: 'street' | 'satellite' }[] = [];
+
+        const typesToDownload = downloadType === 'both' ? ['street', 'satellite'] : [downloadType];
 
         config.zooms.forEach(z => {
             const xCenter = Math.floor((center.lng + 180) / 360 * Math.pow(2, z));
@@ -55,7 +70,9 @@ const OfflineMapManager: React.FC<{
 
             for (let dx = -config.grid; dx <= config.grid; dx++) {
                 for (let dy = -config.grid; dy <= config.grid; dy++) {
-                    tilesToDownload.push({ z, x: xCenter + dx, y: yCenter + dy });
+                    typesToDownload.forEach(t => {
+                        tilesToDownload.push({ z, x: xCenter + dx, y: yCenter + dy, type: t as any });
+                    });
                 }
             }
         });
@@ -68,7 +85,8 @@ const OfflineMapManager: React.FC<{
         for (let i = 0; i < tilesToDownload.length; i += CHUNK_SIZE) {
             const chunk = tilesToDownload.slice(i, i + CHUNK_SIZE);
             await Promise.all(chunk.map(async (tile) => {
-                const key = `osm_${tile.z}_${tile.x}_${tile.y}`;
+                const prefix = tile.type === 'street' ? 'osm' : 'sat';
+                const key = `${prefix}_${tile.z}_${tile.x}_${tile.y}`;
                 try {
                     // Evitar redundancia
                     const existing = await getTile(key);
@@ -77,7 +95,15 @@ const OfflineMapManager: React.FC<{
                         return;
                     }
 
-                    const res = await fetch(`https://tile.openstreetmap.org/${tile.z}/${tile.x}/${tile.y}.png`);
+                    let url = '';
+                    if (tile.type === 'street') {
+                        url = `https://tile.openstreetmap.org/${tile.z}/${tile.x}/${tile.y}.png`;
+                    } else {
+                        const quadKey = toQuadKey(tile.x, tile.y, tile.z);
+                        url = `https://ecn.t3.tiles.virtualearth.net/tiles/a${quadKey}.jpeg?g=1`;
+                    }
+
+                    const res = await fetch(url);
                     if (res.ok) {
                         const blob = await res.blob();
                         await saveTile(key, blob);
@@ -115,36 +141,57 @@ const OfflineMapManager: React.FC<{
                 <div className="relative z-10">
                     {status === 'idle' && (
                         <div className="space-y-3">
-                            <p className="text-[11px] text-blue-300 font-bold mb-4 bg-blue-500/10 p-3 rounded-xl border border-blue-500/20">
-                                ℹ️ El mapa se descargará tomando como centro el punto que estás viendo actualmente.
+                            <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 mb-4">
+                                <button
+                                    onClick={() => setDownloadType('street')}
+                                    className={`flex-1 py-2 text-[10px] font-bold rounded-lg transition-all ${downloadType === 'street' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
+                                >
+                                    CALLE
+                                </button>
+                                <button
+                                    onClick={() => setDownloadType('satellite')}
+                                    className={`flex-1 py-2 text-[10px] font-bold rounded-lg transition-all ${downloadType === 'satellite' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
+                                >
+                                    SATÉLITE
+                                </button>
+                                <button
+                                    onClick={() => setDownloadType('both')}
+                                    className={`flex-1 py-2 text-[10px] font-bold rounded-lg transition-all ${downloadType === 'both' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
+                                >
+                                    AMBOS
+                                </button>
+                            </div>
+
+                            <p className="text-[11px] text-blue-300 font-bold mb-4 bg-blue-500/10 p-3 rounded-xl border border-blue-500/20 leading-tight">
+                                ℹ️ El mapa <span className="text-white underline">{downloadType === 'both' ? 'Calle y Satélite' : downloadType.toUpperCase()}</span> se descargará tomando como centro el punto actual.
                             </p>
 
                             <OfflineAreaCard
                                 icon="🎯"
                                 title="Foco (Radio 1km)"
                                 desc="Detalle máximo de todos los pozos y calles. Ideal para una inspección precisa."
-                                size="~5MB"
+                                size={downloadType === 'both' ? '~10MB' : '~5MB'}
                                 onClick={() => downloadRange('focus')}
                             />
                             <OfflineAreaCard
                                 icon="🗺️"
                                 title="Área de Trabajo (Radio 5km)"
                                 desc="Cubre el área inmediata con detalle alto. Balance óptimo."
-                                size="~30MB"
+                                size={downloadType === 'both' ? '~60MB' : '~30MB'}
                                 onClick={() => downloadRange('area')}
                             />
                             <OfflineAreaCard
                                 icon="🏙️"
                                 title="Municipio Completo (+12km)"
                                 desc="Toda la zona urbana del municipio con detalle nivel calle."
-                                size="~85MB"
+                                size={downloadType === 'both' ? '~170MB' : '~85MB'}
                                 onClick={() => downloadRange('urban')}
                             />
                             <OfflineAreaCard
                                 icon="🌎"
                                 title="Mapa Regional (20km+)"
                                 desc="Cubre toda la ciudad y alrededores. Ideal para recorridos largos."
-                                size="~160MB"
+                                size={downloadType === 'both' ? '~320MB' : '~160MB'}
                                 onClick={() => downloadRange('regional')}
                             />
 
@@ -156,6 +203,7 @@ const OfflineMapManager: React.FC<{
                             </div>
                         </div>
                     )}
+
 
                     {status === 'downloading' && (
                         <div className="py-12 flex flex-col items-center text-center">

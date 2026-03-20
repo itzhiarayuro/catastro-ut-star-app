@@ -42,7 +42,7 @@ import { useCloudRestore } from './hooks/useCloudRestore';
 import { useBackgroundSync } from './hooks/useBackgroundSync';
 import { useFichaActions } from './hooks/useFichaActions';
 
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.5.2';
 
 /* ═══════════════════════════════════════════════════════════
    MAIN COMPONENT
@@ -249,7 +249,9 @@ const App: React.FC = () => {
                         setShowGeoTracker={setShowGeoTracker} startNewFicha={startNewFicha} />
                 )}
                 {activeScreen === 'sMaps' && <MapasScreen onEditFicha={handleEditFromMap} onBack={() => setActiveScreen('s0')} />}
-                {activeScreen === 'sFichasViewer' && <FichasViewerPage />}
+                {activeScreen === 'sFichasViewer' && (
+                    <FichasViewerPage toast={toast} handlePDF={onHandlePDF} pdfLoading={pdfLoading} />
+                )}
 
                 {/* ── Overlays ─────────────────────────────── */}
                 {showSyncScreen && (

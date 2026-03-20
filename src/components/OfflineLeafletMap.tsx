@@ -19,13 +19,33 @@ import OfflineMapManager from './OfflineMapManager';
 
 // Custom TileLayer que busca en IndexedDB primero
 class IDBTileLayer extends L.TileLayer {
+    private mapType: 'street' | 'satellite';
+
+    constructor(url: string, type: 'street' | 'satellite', options?: L.TileLayerOptions) {
+        super(url, options);
+        this.mapType = type;
+    }
+
+    private toQuadKey(x: number, y: number, z: number): string {
+        let quadKey = '';
+        for (let i = z; i > 0; i--) {
+            let digit = 0;
+            const mask = 1 << (i - 1);
+            if ((x & mask) !== 0) digit += 1;
+            if ((y & mask) !== 0) digit += 2;
+            quadKey += digit.toString();
+        }
+        return quadKey;
+    }
+
     createTile(coords: L.Coords, done: L.DoneCallback): HTMLElement {
         const tile = document.createElement('img');
         tile.setAttribute('role', 'presentation');
         tile.style.width = '256px';
         tile.style.height = '256px';
 
-        const key = `osm_${coords.z}_${coords.x}_${coords.y}`;
+        const prefix = this.mapType === 'street' ? 'osm' : 'sat';
+        const key = `${prefix}_${coords.z}_${coords.x}_${coords.y}`;
 
         getTile(key).then(blob => {
             if (blob) {
@@ -34,14 +54,21 @@ class IDBTileLayer extends L.TileLayer {
                 tile.onerror = () => done(new Error('Tile load error'), tile);
             } else {
                 // Si no está en cache, intentar cargar online
-                const url = `https://tile.openstreetmap.org/${coords.z}/${coords.x}/${coords.y}.png`;
+                let url = '';
+                if (this.mapType === 'street') {
+                    url = `https://tile.openstreetmap.org/${coords.z}/${coords.x}/${coords.y}.png`;
+                } else {
+                    const qk = this.toQuadKey(coords.x, coords.y, coords.z);
+                    url = `https://ecn.t3.tiles.virtualearth.net/tiles/a${qk}.jpeg?g=1`;
+                }
+
                 tile.crossOrigin = 'anonymous';
                 tile.src = url;
                 tile.onload = () => done(undefined, tile);
                 tile.onerror = () => {
                     // Si tampoco carga online, mostrar tile vacío
                     tile.src = '';
-                    tile.style.background = '#1a1f2e';
+                    tile.style.background = this.mapType === 'street' ? '#1a1f2e' : '#0b0e14';
                     tile.style.border = '1px solid rgba(255,255,255,0.03)';
                     done(undefined, tile);
                 };
@@ -78,11 +105,13 @@ const OfflineLeafletMap: React.FC<OfflineLeafletMapProps> = ({
     const [isLocating, setIsLocating] = useState(false);
     const [isDragging, setIsDragging] = useState(false);
     const [isCapturing, setIsCapturing] = useState(false);
+    const [mapType, setMapType] = useState<'street' | 'satellite'>('street');
     const [showOfflineManager, setShowOfflineManager] = useState(false);
     const [localToast, setLocalToast] = useState<string | null>(null);
     const watchIdRef = useRef<number | null>(null);
     const gpsMarkerRef = useRef<L.CircleMarker | null>(null);
     const accuracyCircleRef = useRef<L.Circle | null>(null);
+    const tileLayerRef = useRef<IDBTileLayer | null>(null);
 
     const toast = (msg: string) => {
         if (parentToast) parentToast(msg);
@@ -91,6 +120,25 @@ const OfflineLeafletMap: React.FC<OfflineLeafletMapProps> = ({
 
     const isGoodAccuracy = accuracy > 0 && accuracy <= 20;
     const isBadAccuracy = accuracy > 20;
+
+    // Actualizar capa de mapa
+    useEffect(() => {
+        if (!mapRef.current) return;
+
+        if (tileLayerRef.current) {
+            tileLayerRef.current.remove();
+        }
+
+        const url = mapType === 'street'
+            ? 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
+            : 'https://ecn.t3.tiles.virtualearth.net/tiles/a{q}.jpeg?g=1';
+
+        tileLayerRef.current = new IDBTileLayer(url, mapType, {
+            maxZoom: 19,
+            tileSize: 256,
+        }).addTo(mapRef.current);
+
+    }, [mapType]);
 
     // Inicializar Leaflet
     useEffect(() => {
@@ -103,11 +151,10 @@ const OfflineLeafletMap: React.FC<OfflineLeafletMapProps> = ({
             attributionControl: false,
         });
 
-        // Usar nuestro TileLayer personalizado que busca en IndexedDB
-        new IDBTileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 19,
-            tileSize: 256,
-        }).addTo(map);
+        mapRef.current = map;
+
+        // Forzar primera carga de capa
+        setMapType('street');
 
         map.on('moveend', () => {
             const c = map.getCenter();
@@ -116,6 +163,7 @@ const OfflineLeafletMap: React.FC<OfflineLeafletMapProps> = ({
         });
 
         map.on('movestart', () => setIsDragging(true));
+
 
         mapRef.current = map;
 
@@ -219,9 +267,11 @@ const OfflineLeafletMap: React.FC<OfflineLeafletMapProps> = ({
 
             // Cargar y dibujar cada tile
             const promises: Promise<void>[] = [];
+            const prefix = mapType === 'street' ? 'osm' : 'sat';
+
             for (let tx = tileXMin; tx <= tileXMax; tx++) {
                 for (let ty = tileYMin; ty <= tileYMax; ty++) {
-                    const key = `osm_${zoom}_${tx}_${ty}`;
+                    const key = `${prefix}_${zoom}_${tx}_${ty}`;
                     promises.push(
                         getTile(key).then(blob => {
                             if (!blob) return;
@@ -270,7 +320,7 @@ const OfflineLeafletMap: React.FC<OfflineLeafletMapProps> = ({
             ctx.fillText(`${mapCenter.lat.toFixed(7)}, ${mapCenter.lng.toFixed(7)}`, centerX, canvas.height - 22);
             ctx.font = '18px sans-serif';
             ctx.fillStyle = '#93c5fd';
-            ctx.fillText(`Pozo: ${pozoId || 'N/A'} | Zoom: ${zoom}`, centerX, canvas.height - 46);
+            ctx.fillText(`Pozo: ${pozoId || 'N/A'} | Map: ${mapType.toUpperCase()} | Zoom: ${zoom}`, centerX, canvas.height - 46);
 
             // Convertir a base64
             const base64data = canvas.toDataURL('image/jpeg', 0.85);
@@ -289,7 +339,7 @@ const OfflineLeafletMap: React.FC<OfflineLeafletMapProps> = ({
             onScreenshot({ ...newFoto, blobId: base64data });
 
             setIsCapturing(false);
-            toast("📸 Mapa capturado (modo offline)");
+            toast(`📸 Mapa ${mapType === 'street' ? 'calle' : 'satélite'} capturado`);
         } catch (err) {
             console.error("Error capturando mapa offline:", err);
             setIsCapturing(false);
@@ -302,9 +352,19 @@ const OfflineLeafletMap: React.FC<OfflineLeafletMapProps> = ({
             <div style={{ position: 'relative', width: '100%', maxWidth: '480px', height: '100dvh', maxHeight: '100dvh', background: '#000', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
                 {/* ── TOP BAR ─── */}
-                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 1000, padding: '14px 14px 0', display: 'flex', alignItems: 'center', gap: '10px', pointerEvents: 'none' }}>
+                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 1000, padding: '14px 14px 0', display: 'flex', alignItems: 'center', gap: '8px', pointerEvents: 'none' }}>
                     <button onClick={onClose} style={{ pointerEvents: 'auto', background: 'rgba(0,0,0,0.8)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '14px', padding: '10px', color: '#fff', display: 'flex' }}>
                         <X size={18} />
+                    </button>
+
+                    <button
+                        onClick={() => setMapType(mapType === 'street' ? 'satellite' : 'street')}
+                        style={{ pointerEvents: 'auto', background: 'rgba(0,0,0,0.8)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '14px', padding: '10px 14px', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}
+                    >
+                        <Layers size={18} />
+                        <span style={{ fontSize: '9px', fontWeight: 'bold', textTransform: 'uppercase' }}>
+                            {mapType === 'street' ? 'Satélite' : 'Calle'}
+                        </span>
                     </button>
 
                     <button onClick={() => setShowOfflineManager(true)} style={{ pointerEvents: 'auto', background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: '14px', padding: '10px', color: '#60a5fa', display: 'flex' }} title="Descargar área offline">
@@ -313,7 +373,7 @@ const OfflineLeafletMap: React.FC<OfflineLeafletMapProps> = ({
 
                     <div style={{ flex: 1, background: 'rgba(0,0,0,0.8)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '14px', padding: '8px 12px', textAlign: 'center' }}>
                         <div style={{ fontSize: '9px', color: '#f59e0b', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                            📡 MODO OFFLINE — Leaflet
+                            📡 MODO OFFLINE
                         </div>
                         <div style={{ fontFamily: 'monospace', fontSize: '11px', color: '#fff', marginTop: '2px' }}>
                             {mapCenter.lat.toFixed(7)}, {mapCenter.lng.toFixed(7)}
@@ -379,6 +439,7 @@ const OfflineLeafletMap: React.FC<OfflineLeafletMapProps> = ({
                         )}
                     </div>
                 </div>
+
 
                 {/* ── BOTTOM PANEL ─── */}
                 <div style={{ background: '#0d1117', borderTop: '1px solid rgba(255,255,255,0.08)', padding: '14px 14px 24px' }}>

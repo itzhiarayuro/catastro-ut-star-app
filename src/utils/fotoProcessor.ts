@@ -1,16 +1,5 @@
-export interface FotoRegistro {
-    id: string;
-    idPozo: string;
-    tipo: "general" | "tapa" | "interior" | "medicion" | "entrada" | "salida" | "sumidero" | "esquema" | "ubicacion";
-    categoria: "PRINCIPAL" | "ENTRADA" | "SALIDA" | "SUMIDERO" | "OTRO";
-    subcategoria: string;
-    filename: string;
-    sumideroAsociado?: string;
-    esMedicion: boolean;
-    esExcluido: boolean;
-    motivoExclusion?: string;
-    blobId: string;
-}
+import type { FotoRegistro } from '../types/catastro';
+export type { FotoRegistro };
 
 /**
  * Normaliza un texto: Mayúsculas y sin tildes/acentos.
@@ -138,8 +127,8 @@ export const procesarFoto = (filename: string, idPozo: string, base64String: str
         subcategoria = "P";
         tipo = "general";
     }
-    else if (/-T\.JPG$/.test(cleanFilename) && !/-(E|S)\d+-T\.JPG$/.test(cleanFilename)) {
-        // Es una tapa principal si termina en -T.JPG y el bloque anterior no es un E1, S2, etc.
+    else if (/-T\.JPG$/.test(cleanFilename) && !/-(E|S|SUM)\d+-T\.JPG$/.test(cleanFilename)) {
+        // Es una tapa principal si termina en -T.JPG y el bloque anterior no es un E1, S2, sum1, etc.
         categoria = "PRINCIPAL";
         subcategoria = "T";
         tipo = "tapa";
@@ -164,32 +153,59 @@ export const procesarFoto = (filename: string, idPozo: string, base64String: str
         subcategoria = "AT";
         tipo = "medicion"; // El motivo Excluido ya se asignó arriba
     }
-    // REGLAS 2 Y 3: TUBERÍAS ENTRADA / SALIDA
+    // REGLAS 2 Y 3: TUBERÍAS ENTRADA / SALIDA / SUMIDERO
     else {
-        // Buscar el patrón fundamental -(E|S)#-(T|Z)
-        const matchTub = cleanFilename.match(/-(E|S)(\d+)-(T|Z)/);
+        // Buscar el patrón fundamental -(E|S|SUM)#-(T|Z|B)
+        const matchTub = cleanFilename.match(/-(E|S|SUM)(\d+)-(T|Z|B)/);
         if (matchTub) {
-            const letter = matchTub[1];
+            const letter = matchTub[1]; // "E", "S" o "SUM"
             const num = matchTub[2];
-            const vista = matchTub[3];
+            const vista = matchTub[3]; // "T", "Z", "B", "D" o "P"
 
             if (letter === "E") {
                 categoria = "ENTRADA";
                 if (vista === "T") {
                     subcategoria = `E${num}`;
-                    tipo = "entrada";
+                    tipo = "tuberia_tapa";
                 } else if (vista === "Z") {
                     subcategoria = `E${num}-Z`;
                     tipo = "medicion";
+                } else if (vista === "D") {
+                    subcategoria = `E${num}-D`;
+                    tipo = "diametro";
+                } else if (vista === "P") {
+                    subcategoria = `E${num}-P`;
+                    tipo = "general";
                 }
             } else if (letter === "S") {
                 categoria = "SALIDA";
                 if (vista === "T") {
                     subcategoria = `S${num}`;
-                    tipo = "salida";
+                    tipo = "tuberia_tapa";
                 } else if (vista === "Z") {
                     subcategoria = `S${num}-Z`;
                     tipo = "medicion";
+                } else if (vista === "D") {
+                    subcategoria = `S${num}-D`;
+                    tipo = "diametro";
+                } else if (vista === "P") {
+                    subcategoria = `S${num}-P`;
+                    tipo = "general";
+                }
+            } else if (letter === "SUM") {
+                categoria = "SUMIDERO";
+                if (vista === "T") {
+                    subcategoria = `SUM${num}`;
+                    tipo = "sumidero_tapa";
+                } else if (vista === "Z") {
+                    subcategoria = `SUM${num}-Z`;
+                    tipo = "medicion";
+                } else if (vista === "D") {
+                    subcategoria = `SUM${num}-D`;
+                    tipo = "diametro";
+                } else if (vista === "B") {
+                    subcategoria = `SUM${num}-B`;
+                    tipo = "batea";
                 }
             }
         }
@@ -198,6 +214,7 @@ export const procesarFoto = (filename: string, idPozo: string, base64String: str
     return {
         id: `foto_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
         idPozo: idPozo.toUpperCase(),
+        pozoId: idPozo.toUpperCase(),
         tipo,
         categoria,
         subcategoria,

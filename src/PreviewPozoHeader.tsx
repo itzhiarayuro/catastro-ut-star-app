@@ -3,7 +3,7 @@ import PozoHeader from './components/PozoHeader';
 
 const PreviewPozoHeader: React.FC = () => {
     const [headerData, setHeaderData] = useState({
-        municipio: 'Sopó',
+        municipio: 'SOPO',
         pozoNo: '',
         estado: 'Sin represamiento'
     });

@@ -17,13 +17,26 @@ const PozoHeader: React.FC<PozoHeaderProps> = ({
     onDataChange,
     syncStatus = 'local'
 }) => {
-    const [municipio, setMunicipio] = useState('Sopó');
+    const [municipio, setMunicipio] = useState('SOPO');
     const [pozoNo, setPozoNo] = useState('');
     const [estado, setEstado] = useState('Sin represamiento');
     const [isMunicipioOpen, setIsMunicipioOpen] = useState(false);
     const [isEstadoOpen, setIsEstadoOpen] = useState(false);
 
-    const municipios = ['Sopó', 'Sibaté', 'Granada'];
+    const municipios = [
+        'AGUA DE DIOS',
+        'ANOLAIMA',
+        'QUIPILE',
+        'SAN ANTONIO DEL TEQUENDAMA',
+        'CACHIPAY - SAN MATEO',
+        'CACHIPAY - PENA NEGRA',
+        'RICAURTE',
+        'ANAPOIMA',
+        'SOPO',
+        'SIBATE',
+        'GRANADA',
+        'MARINILLA'
+    ];
     const estados = ['Sin represamiento', 'Inundado', 'Colmatado', 'Sellado'];
 
     const handleMunicipioSelect = (m: string) => {

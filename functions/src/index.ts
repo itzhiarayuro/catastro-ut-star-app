@@ -178,3 +178,6 @@ export const syncMarcacionPhotosToDrive = functions.runWith({
 // EXPORTACIÓN DE LA FUNCIÓN DE GENERACIÓN DE FICHA
 // ─────────────────────────────────────────────────
 export { generateFicha } from "./generateFicha";
+export { firestoreProxy } from "./firestoreProxy";
+export { fixOrdenInExistingFichas } from "./maintenance";
+export { cleanDriveDuplicates, trashDriveFile } from "./driveDuplicateCleaner";

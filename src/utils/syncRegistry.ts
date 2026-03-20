@@ -1,14 +1,8 @@
 import { db, persistFicha } from '../lib/firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import { stripBinaryData } from './fotoProcessor';
-
-export interface AppState {
-    id: string | null;
-    pozo: string;
-    municipio: string;
-    synced: boolean;
-    [key: string]: any;
-}
+import { safeLocalStorageSet, safeLocalStorageGet } from './ui';
+import { AppState } from '../types/catastro';
 
 export const validateFicha = (f: any): boolean => {
     // Paso 1
@@ -60,7 +54,7 @@ export const syncFichasToFirestore = async (
 export const syncMarcacionesToFirestore = async (
     onProgress?: (progress: { total: number; current: number; msg: string }) => void
 ): Promise<void> => {
-    const existing: any[] = JSON.parse(localStorage.getItem('marcaciones_star') || '[]');
+    const existing: any[] = safeLocalStorageGet('marcaciones_star', []);
     const pending = existing.filter(m => !m.synced && !m.deleted);
     const total = pending.length;
     let current = 0;
@@ -77,11 +71,11 @@ export const syncMarcacionesToFirestore = async (
             await setDoc(doc(db, path), { ...cleanMarc, synced: true, lastSync: new Date().toISOString() });
 
             // Actualizar en localStorage
-            const updated = JSON.parse(localStorage.getItem('marcaciones_star') || '[]');
+            const updated = safeLocalStorageGet('marcaciones_star', []);
             const idx = updated.findIndex((m: any) => m.codigo === Marc.codigo && m.municipio === Marc.municipio);
             if (idx >= 0) {
                 updated[idx].synced = true;
-                localStorage.setItem('marcaciones_star', JSON.stringify(updated));
+                safeLocalStorageSet('marcaciones_star', JSON.stringify(updated));
             }
         } catch (err) {
             console.error(`Error sincronizando marcación ${Marc.codigo}:`, err);

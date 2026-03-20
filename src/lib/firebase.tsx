@@ -1,5 +1,6 @@
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
+import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
 import {
     initializeFirestore,
     persistentLocalCache,
@@ -11,6 +12,7 @@ import {
 import React, { useState, useEffect, createContext, useContext } from 'react';
 
 import { stripBinaryData } from '../utils/fotoProcessor';
+import { safeLocalStorageSet } from '../utils/ui';
 
 // Your web app's Firebase configuration - Extraído de Variables de Entorno y GitIgnore (.env.local)
 const firebaseConfig = {
@@ -29,13 +31,20 @@ const db = initializeFirestore(app, {
     })
 });
 const auth = getAuth(app);
+const functions = getFunctions(app);
+
+// LOCAL DEVELOPMENT ONLY: Connect frontend to local Cloud Functions emulator
+if (import.meta.env.DEV) {
+    connectFunctionsEmulator(functions, "127.0.0.1", 5001);
+    console.warn("🔧 CONECTADO AL EMULADOR LOCAL DE FIREBASE FUNCTIONS 🔧");
+}
 
 interface AuthContextType {
     user: { email: string; name: string } | null;
     loading: boolean;
     isAuthorized: boolean;
     login: (email: string, pin: string) => Promise<any>;
-    logout: () => void;
+    logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -93,7 +102,7 @@ export const useAuth = () => {
     return context;
 };
 
-export { db, auth };
+export { db, auth, functions };
 
 /**
  * Helper unificado para guardar una ficha en Firestore asegurando historial completo.
@@ -128,6 +137,7 @@ export const persistFicha = async (ficha: any) => {
     const dataToSave = {
         ...cleanFicha, // Usamos la versión limpia sin binarios
         ...auditoria,
+        tipoRegistro: 'FICHA_TECNICA',
         lastSync: new Date().toISOString()
     };
 
@@ -166,7 +176,7 @@ export function useFirestoreDoc(path: string) {
     const saveData = async (newData: any) => {
         if (!path) return;
         // Backup local extra por seguridad
-        localStorage.setItem(`backup_${path.replace(/\//g, '_')}`, JSON.stringify(newData));
+        safeLocalStorageSet(`backup_${path.replace(/\//g, '_')}`, JSON.stringify(newData));
 
         // Usamos el persistFicha que maneja master + historial
         await persistFicha(newData);
