@@ -100,7 +100,12 @@ const PortalPage: React.FC<PortalPageProps> = ({ setShowLogoutModal }) => {
                         <ChevronRight className="text-blue-500/30 group-hover:text-blue-400" />
                     </button>
 
-                    {/* Sistema de Fichas (Admin/PDF) */}
+                    {/* ⚠️ SISTEMA DE FICHAS — NO MODIFICAR ESTE onClick ⚠️
+                        Este botón abre una app Next.js SEPARADA en otra pestaña.
+                        Proyecto: scratch/sistema-fichas-tecnicas/sistema-fichas-tecnicas/
+                        NO reemplazar con setActiveScreen() — causará loop infinito.
+                        Para redesplegar esa app: cd a ese proyecto y correr firebase deploy --only hosting:sistema-fichas-tecnicas
+                        Historial: roto 3 veces. Comprometido preservarlo. */}
                     <button
                         onClick={() => window.open('https://sistema-fichas-tecnicas.web.app', '_blank')}
                         style={{
