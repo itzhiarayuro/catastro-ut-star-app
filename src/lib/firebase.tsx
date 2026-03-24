@@ -14,6 +14,10 @@ import React, { useState, useEffect, createContext, useContext } from 'react';
 import { stripBinaryData } from '../utils/fotoProcessor';
 import { safeLocalStorageSet } from '../utils/ui';
 
+// Helper para normalizar texto (quitar tildes y pasar a mayúsculas)
+const normalizeText = (text: string) => 
+    text ? text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase() : "";
+
 // Your web app's Firebase configuration - Extraído de Variables de Entorno y GitIgnore (.env.local)
 const firebaseConfig = {
     apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -117,8 +121,8 @@ export const persistFicha = async (ficha: any) => {
     const cleanFicha = stripBinaryData(ficha);
     // ---------------------------------------------------------
 
-    const pozoId = ficha.pozo.replace(/\s+/g, '').toUpperCase();
-    const mun = ficha.municipio.toUpperCase();
+    const pozoId = normalizeText(ficha.pozo).replace(/\s+/g, '');
+    const mun = normalizeText(ficha.municipio);
 
     // Ruta Maestra (Siempre la última versión)
     const masterPath = `fichas/${mun}_${pozoId}`;
@@ -138,6 +142,7 @@ export const persistFicha = async (ficha: any) => {
         ...cleanFicha, // Usamos la versión limpia sin binarios
         ...auditoria,
         tipoRegistro: 'FICHA_TECNICA',
+        municipio: mun, // Aseguramos que el campo también esté limpio
         lastSync: new Date().toISOString()
     };
 
@@ -159,7 +164,10 @@ export const persistMarcacion = async (marc: any) => {
     if (!marc.codigo || !marc.municipio) return;
 
     const cleanMarc = stripBinaryData(marc);
-    const path = `marcaciones/${marc.municipio.toUpperCase()}_${marc.codigo}`;
+    const mun = normalizeText(marc.municipio);
+    const cod = normalizeText(marc.codigo);
+    
+    const path = `marcaciones/${mun}_${cod}`;
 
     const currentUser = auth.currentUser;
     const auditoria = currentUser ? {
@@ -171,6 +179,7 @@ export const persistMarcacion = async (marc: any) => {
     const dataToSave = {
         ...cleanMarc,
         ...auditoria,
+        municipio: mun, // Aseguramos que el campo también esté limpio
         synced: true,
         lastSync: new Date().toISOString()
     };
