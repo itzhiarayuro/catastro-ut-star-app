@@ -65,8 +65,8 @@ export const syncPhotosToDrive = functions.runWith({
 
         try {
             const municipioId = await getOrCreateFolder(drive, municipio.toUpperCase(), driveRootId);
-            const barrioId = await getOrCreateFolder(drive, barrio.toUpperCase(), municipioId);
-            const pozoIdFolder = await getOrCreateFolder(drive, pozo.toUpperCase(), barrioId);
+            const catastroId = await getOrCreateFolder(drive, "CATASTRO", municipioId);
+            const pozoIdFolder = await getOrCreateFolder(drive, pozo.toUpperCase(), catastroId);
 
             const updatedFotoList = [...data.fotoList];
             let hasChanges = false;
@@ -132,8 +132,10 @@ export const syncMarcacionPhotosToDrive = functions.runWith({
 
         try {
             const municipio = data.municipio || "SIN_MUNICIPIO";
-            const marcacionDirId = await getOrCreateFolder(drive, "MARCACION", driveRootId);
-            const municipioId = await getOrCreateFolder(drive, municipio.toUpperCase(), marcacionDirId);
+            const pozo = data.codigo || "SIN_CODIGO";
+            const municipioId = await getOrCreateFolder(drive, municipio.toUpperCase(), driveRootId);
+            const marcacionDirId = await getOrCreateFolder(drive, "MARCACION", municipioId);
+            const pozoIdFolder = await getOrCreateFolder(drive, pozo.toUpperCase(), marcacionDirId);
 
             const fotoKeys = ["panoramica", "tapa"] as const;
             let hasChanges = false;
@@ -150,7 +152,7 @@ export const syncMarcacionPhotosToDrive = functions.runWith({
                 stream.push(null);
 
                 const driveFile = await drive.files.create({
-                    requestBody: { name: foto.filename, parents: [municipioId] },
+                    requestBody: { name: foto.filename, parents: [pozoIdFolder] },
                     media: { mimeType: "image/jpeg", body: stream },
                     fields: "id",
                 });
