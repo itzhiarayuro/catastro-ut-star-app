@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useAppStore } from './useAppStore';
 import { AppState } from '../types/catastro';
-import { db } from '../lib/firebase';
+import { db, auth } from '../lib/firebase';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { 
     saveFichaToStorage, 
@@ -25,8 +25,11 @@ export const useFirebaseSync = () => {
         setPendingCount(count);
 
         const savedMarc = safeLocalStorageGet('marcaciones_star', []);
-        const pendingM = (savedMarc as any[]).filter(m => !m.synced && !m.deleted).length;
-        setPendingMarcaciones(pendingM);
+        const currentUser = auth.currentUser;
+        const myPendingMarcaciones = (savedMarc as any[]).filter(m => 
+            !m.synced && !m.deleted && (!m.createdBy || m.createdBy === currentUser?.uid)
+        );
+        setPendingMarcaciones(myPendingMarcaciones.length);
     };
 
     const backgroundSync = async () => {

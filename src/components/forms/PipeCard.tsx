@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { ChevronRight, Trash2, ArrowDown, ArrowUp } from 'lucide-react';
-import { Pipe } from '../../types/catastro';
+import { Pipe, FotoRegistro } from '../../types/catastro';
 import ThumbnailImage from '../ThumbnailImage';
+import { PipePhotoGroup } from './PipePhotoGroup';
 
 interface PipeCardProps {
     pipe: Pipe;
@@ -10,11 +11,37 @@ interface PipeCardProps {
     onDelete: () => void;
     numFocus: (e: any) => void;
     foto?: any;
+    // New props for photos
+    photos: FotoRegistro[];
+    allPipes: Pipe[];
+    onAddPhoto: (foto: FotoRegistro) => void;
+    onDeletePhoto: (id: string) => void;
+    onPreviewPhoto: (photo: FotoRegistro) => void;
+    pozoId: string;
+    isLocked: boolean;
 }
 
-const PipeCard: React.FC<PipeCardProps> = ({ pipe, index, onUpdate, onDelete, numFocus, foto }) => {
+const PipeCard: React.FC<PipeCardProps> = ({ 
+    pipe, index, onUpdate, onDelete, numFocus, foto,
+    photos, allPipes, onAddPhoto, onDeletePhoto, onPreviewPhoto, pozoId, isLocked
+}) => {
     const [isOpen, setIsOpen] = useState(false);
     
+    let label = '';
+    let isSumidero = false;
+    let tipoStr: 'ENTRADA' | 'SALIDA' | 'SUMIDERO' = 'ENTRADA';
+
+    if (pipe.es === 'SUMIDERO') {
+        const sumIndex = allPipes.filter(p => p.es === 'SUMIDERO').findIndex(p => p.id === pipe.id);
+        label = `SUM${sumIndex + 1}`;
+        tipoStr = 'SUMIDERO';
+        isSumidero = true;
+    } else {
+        label = `${pipe.es === 'SALIDA' ? 'S' : 'E'}${pipe.orden || index + 1}`;
+        tipoStr = pipe.es === 'SALIDA' ? 'SALIDA' : 'ENTRADA';
+        isSumidero = false;
+    }
+
     return (
         <div className="pipe-card mb-3">
             <div className="pipe-card-header cursor-pointer p-3 bg-gray-900 flex justify-between items-center rounded-t-lg" onClick={() => setIsOpen(!isOpen)}>
@@ -50,6 +77,23 @@ const PipeCard: React.FC<PipeCardProps> = ({ pipe, index, onUpdate, onDelete, nu
                     >
                         <ArrowUp size={14} /> SALIDA
                     </button>
+                </div>
+
+                {/* Integration of Photo Capture directly in Step 4 */}
+                <div className="mb-4">
+                    <PipePhotoGroup
+                        pozoId={pozoId}
+                        label={label}
+                        tipo={tipoStr}
+                        diam={pipe.diam}
+                        mat={pipe.mat}
+                        isSumidero={isSumidero}
+                        photos={photos}
+                        onAdd={onAddPhoto}
+                        onDelete={onDeletePhoto}
+                        onPreview={onPreviewPhoto}
+                        isLocked={isLocked}
+                    />
                 </div>
                 
                 <div className="field-row grid grid-cols-2 gap-3 mb-3">
@@ -195,3 +239,4 @@ const PipeCard: React.FC<PipeCardProps> = ({ pipe, index, onUpdate, onDelete, nu
 };
 
 export default PipeCard;
+

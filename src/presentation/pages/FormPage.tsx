@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     ChevronLeft, ChevronRight, Check, Plus, RefreshCw,
     Navigation, AlertTriangle, Globe, List, Save,
-    FileJson, FileText, Download
+    FileJson, FileText, Download, Trash2
 } from 'lucide-react';
 import { Crosshair, LocateFixed, Signal } from 'lucide-react';
 import { Map, AdvancedMarker } from '@vis.gl/react-google-maps';
@@ -20,6 +20,7 @@ import WellDiagram from '../components/WellDiagram';
 import ComponentEditor from '../components/ComponentEditor';
 import PipeCard from '../../components/forms/PipeCard';
 import SumideroCard from '../../components/forms/SumideroCard';
+import { getHybridModeStatus } from '../../utils/storageManager';
 
 const POZO_PREFIX = 'P';
 
@@ -116,6 +117,15 @@ const FormPage: React.FC<FormPageProps> = ({
         currentStep, setCurrentStep,
         ...state
     } = store;
+
+    const [previewPhoto, setPreviewPhoto] = useState<FotoRegistro | null>(null);
+    const [storageInfo, setStorageInfo] = useState({ mode: 'FULL', info: '' });
+
+    useEffect(() => {
+        getHybridModeStatus(state.fotoList.length).then(setStorageInfo);
+    }, [state.fotoList.length]);
+
+    const isLocked = storageInfo.mode === 'LOCKED';
 
     /* ── Local helpers ── */
     const updateState = (updates: Partial<AppState>) => {
@@ -579,8 +589,15 @@ const FormPage: React.FC<FormPageProps> = ({
                                             <PipeCard
                                                 key={p.id}
                                                 pipe={p}
+                                                allPipes={state.pipes}
                                                 index={idx}
                                                 foto={foto}
+                                                pozoId={state.pozo}
+                                                photos={state.fotoList}
+                                                onAddPhoto={(foto: FotoRegistro) => updateState({ fotoList: [...state.fotoList, foto] })}
+                                                onDeletePhoto={(id: string) => updateState({ fotoList: state.fotoList.filter(f => f.id !== id) })}
+                                                onPreviewPhoto={setPreviewPhoto}
+                                                isLocked={isLocked}
                                                 onUpdate={(upd) => {
                                                     const newPipes = [...state.pipes];
                                                     newPipes[idx] = { ...p, ...upd };
@@ -606,6 +623,12 @@ const FormPage: React.FC<FormPageProps> = ({
                                             sum={s}
                                             index={idx}
                                             foto={foto}
+                                            pozoId={state.pozo}
+                                            photos={state.fotoList}
+                                            onAddPhoto={(foto: FotoRegistro) => updateState({ fotoList: [...state.fotoList, foto] })}
+                                            onDeletePhoto={(id: string) => updateState({ fotoList: state.fotoList.filter(f => f.id !== id) })}
+                                            onPreviewPhoto={setPreviewPhoto}
+                                            isLocked={isLocked}
                                             onUpdate={(upd) => {
                                                 const newSums = [...state.sums];
                                                 newSums[idx] = { ...s, ...upd };
@@ -655,6 +678,8 @@ const FormPage: React.FC<FormPageProps> = ({
                                 sums={state.sums}
                                 onAddPhoto={(foto: FotoRegistro) => updateState({ fotoList: [...state.fotoList, foto] })}
                                 onDeletePhoto={(id: string) => updateState({ fotoList: state.fotoList.filter(f => f.id !== id) })}
+                                readOnlyComponents={true}
+                                estadoPozo={state.estadoPozo}
                             />
                         </div>
 
@@ -763,6 +788,27 @@ const FormPage: React.FC<FormPageProps> = ({
                                 <Plus size={16} /> Nueva Ficha
                             </button>
                         </div>
+                    </div>
+                )}
+                {/* Modal Previsualización */}
+                {previewPhoto && (
+                    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.97)', display: 'flex', flexDirection: 'column', padding: '16px' }}
+                        onClick={() => setPreviewPhoto(null)}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                            <span style={{ color: 'white', fontWeight: '700', fontSize: '13px', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{previewPhoto.filename}</span>
+                            <button style={{ background: '#da3633', color: 'white', border: 'none', padding: '10px', borderRadius: '50%', cursor: 'pointer', display: 'flex', marginLeft: '12px' }}
+                                onClick={(e) => { 
+                                    e.stopPropagation(); 
+                                    updateState({ fotoList: state.fotoList.filter(f => f.id !== previewPhoto.id) });
+                                    setPreviewPhoto(null); 
+                                }}>
+                                <Trash2 size={20} />
+                            </button>
+                        </div>
+                        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                            <img src={previewPhoto.blobId} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} alt="Preview" />
+                        </div>
+                        <p style={{ textAlign: 'center', color: '#555', fontSize: '10px', marginTop: '12px', textTransform: 'uppercase', letterSpacing: '2px' }}>Toca para cerrar</p>
                     </div>
                 )}
             </div>

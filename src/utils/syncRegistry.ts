@@ -1,4 +1,4 @@
-import { db, persistFicha } from '../lib/firebase';
+import { db, persistFicha, persistMarcacion, auth } from '../lib/firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import { stripBinaryData } from './fotoProcessor';
 import { safeLocalStorageSet, safeLocalStorageGet } from './ui';
@@ -55,7 +55,10 @@ export const syncMarcacionesToFirestore = async (
     onProgress?: (progress: { total: number; current: number; msg: string }) => void
 ): Promise<void> => {
     const existing: any[] = safeLocalStorageGet('marcaciones_star', []);
-    const pending = existing.filter(m => !m.synced && !m.deleted);
+    const currentUser = auth.currentUser;
+    const pending = existing.filter(m => 
+        !m.synced && !m.deleted && (!m.createdBy || m.createdBy === currentUser?.uid)
+    );
     const total = pending.length;
     let current = 0;
 
@@ -66,9 +69,7 @@ export const syncMarcacionesToFirestore = async (
         }
 
         try {
-            const path = `marcaciones/${Marc.municipio.toUpperCase()}_${Marc.codigo}`;
-            const cleanMarc = stripBinaryData(Marc);
-            await setDoc(doc(db, path), { ...cleanMarc, synced: true, lastSync: new Date().toISOString() });
+            await persistMarcacion(Marc);
 
             // Actualizar en localStorage
             const updated = safeLocalStorageGet('marcaciones_star', []);

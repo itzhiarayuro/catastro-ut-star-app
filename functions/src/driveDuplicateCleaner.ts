@@ -44,14 +44,19 @@ export const cleanDriveDuplicates = functions.runWith({
             let pageToken: string | undefined = undefined;
 
             do {
+                console.log(`Buscando en la carpeta: ${currentFolderId}`);
                 const results: any = await drive.files.list({
                     q: `'${currentFolderId}' in parents and trashed=false`,
                     pageSize: 1000,
                     fields: "nextPageToken, files(id,name,size,mimeType,parents,md5Checksum,createdTime)",
                     pageToken,
+                    supportsAllDrives: true,
+                    includeItemsFromAllDrives: true,
+                    corpora: "allDrives"
                 });
 
                 const items = results.data.files || [];
+                console.log(`Se encontraron ${items.length} elementos en ${currentFolderId}`);
                 
                 for (const item of items) {
                     if (item.mimeType === 'application/vnd.google-apps.folder') {
@@ -106,7 +111,8 @@ export const cleanDriveDuplicates = functions.runWith({
                     // SE MUEVE A LA PAPELERA
                     await drive.files.update({
                         fileId: dup.id,
-                        requestBody: { trashed: true }
+                        requestBody: { trashed: true },
+                        supportsAllDrives: true
                     });
                 }
                 totalDeleted++;

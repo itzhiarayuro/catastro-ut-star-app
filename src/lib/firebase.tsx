@@ -40,7 +40,7 @@ if (import.meta.env.DEV) {
 }
 
 interface AuthContextType {
-    user: { email: string; name: string } | null;
+    user: { email: string; name: string; uid: string } | null;
     loading: boolean;
     isAuthorized: boolean;
     login: (email: string, pin: string) => Promise<any>;
@@ -50,7 +50,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [user, setUser] = useState<{ email: string; name: string } | null>(null);
+    const [user, setUser] = useState<{ email: string; name: string; uid: string } | null>(null);
     const [loading, setLoading] = useState(true);
     const [isAuthorized, setIsAuthorized] = useState(false);
 
@@ -59,7 +59,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (firebaseUser) {
                 const userEmail = firebaseUser.email || '';
                 const userName = firebaseUser.displayName || userEmail.split('@')[0];
-                setUser({ email: userEmail, name: userName });
+                setUser({ email: userEmail, name: userName, uid: firebaseUser.uid });
                 setIsAuthorized(true);
             } else {
                 setUser(null);
@@ -150,6 +150,32 @@ export const persistFicha = async (ficha: any) => {
         versionId: timestamp,
         tipoRegistro: 'HISTORIAL'
     });
+};
+
+/**
+ * Helper para guardar una marcación en Firestore con auditoría.
+ */
+export const persistMarcacion = async (marc: any) => {
+    if (!marc.codigo || !marc.municipio) return;
+
+    const cleanMarc = stripBinaryData(marc);
+    const path = `marcaciones/${marc.municipio.toUpperCase()}_${marc.codigo}`;
+
+    const currentUser = auth.currentUser;
+    const auditoria = currentUser ? {
+        createdBy: currentUser.uid,
+        creatorEmail: currentUser.email || '',
+        creatorDisplayName: currentUser.displayName || (currentUser.email ? currentUser.email.split('@')[0] : 'Desconocido')
+    } : {};
+
+    const dataToSave = {
+        ...cleanMarc,
+        ...auditoria,
+        synced: true,
+        lastSync: new Date().toISOString()
+    };
+
+    await setDoc(doc(db, path), dataToSave, { merge: true });
 };
 
 export function useFirestoreDoc(path: string) {

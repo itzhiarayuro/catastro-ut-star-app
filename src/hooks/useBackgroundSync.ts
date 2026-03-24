@@ -5,7 +5,7 @@ import {
     saveFichaToStorage,
 } from '../utils/storageManager';
 import { useAppStore } from './useAppStore';
-import { safeLocalStorageGet } from '../utils/ui';
+import { safeLocalStorageGet, safeLocalStorageRemove } from '../utils/ui';
 
 interface UseBackgroundSyncParams {
     safeSaveAllFichas: (fichas: Record<string, AppState>) => Promise<void>;
@@ -39,7 +39,10 @@ export const useBackgroundSync = ({ safeSaveAllFichas }: UseBackgroundSyncParams
                     for (const f of Object.values(lsFichas) as any[]) {
                         await saveFichaToStorage(f);
                     }
-                    console.log("💾 Migración de fondo (LS -> IDB) exitosa");
+                    // ✅ Remove from localStorage after successful IDB migration
+                    // to prevent QuotaExceededError loop on every sync cycle
+                    safeLocalStorageRemove('fichas_star');
+                    console.log("💾 Migración de fondo (LS -> IDB) exitosa. LS limpiado.");
                 } catch (e) { }
             }
 

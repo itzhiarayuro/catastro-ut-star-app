@@ -77,12 +77,14 @@ export const useFichaActions = ({ toast, safeSaveAllFichas }: UseFichaActionsPar
             }
         }
         const id = `F_${Date.now()}`;
-        const newState = {
+        const newState: AppState = {
             ...INITIAL_STATE,
             id,
             createdAt: new Date().toISOString(),
             municipio: currentMuni,
-            elaboro: currentElaboro
+            elaboro: currentElaboro || user?.name || 'Desconocido',
+            createdBy: user?.uid || undefined,
+            creatorEmail: user?.email || undefined
         };
         setState(newState);
         safeSetDraft('catastro_draft', newState);
@@ -149,10 +151,20 @@ export const useFichaActions = ({ toast, safeSaveAllFichas }: UseFichaActionsPar
 
         // FIRST: Always save locally
         const updatedFichas = { ...fichas, [id]: finalData };
-        setFichas(updatedFichas);
+        
+        // Filter by user UID to ensure isolation on shared devices
+        const filteredFichas: Record<string, AppState> = {};
+        Object.entries(updatedFichas).forEach(([fichaId, f]) => {
+            // If the ficha belongs to the current user OR it lacks a creator (legacy)
+            if (!f.createdBy || f.createdBy === user?.uid) {
+                filteredFichas[fichaId] = f;
+            }
+        });
+
+        setFichas(filteredFichas);
 
         await saveFichaToStorage(finalData);
-        await safeSaveAllFichas(updatedFichas);
+        await safeSaveAllFichas(filteredFichas); // Save the filtered set
 
         // VALIDATION CHECK
         const missingFields: string[] = [];

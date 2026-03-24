@@ -7,8 +7,8 @@ import {
     ControlPosition,
     useMap
 } from '@vis.gl/react-google-maps';
-import { collection, onSnapshot, query } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { db, useAuth } from '../lib/firebase';
 import {
     Maximize2,
     Minimize2,
@@ -43,6 +43,7 @@ const MapasScreen: React.FC<{
     onEditFicha?: (ficha: any) => void;
     onBack?: () => void;
 }> = ({ onEditFicha, onBack }) => {
+    const { user } = useAuth();
     const map = useMap();
     const [fichas, setFichas] = useState<FichaMapItem[]>([]);
     const [marcaciones, setMarcaciones] = useState<any[]>([]);
@@ -60,15 +61,26 @@ const MapasScreen: React.FC<{
 
 
     useEffect(() => {
-        // Fetch Fichas
-        const qFichas = query(collection(db, 'fichas'));
+        if (!user?.uid) return; // Ensure user is logged in
+
+        const isAdmin = user?.email === 'juanvegas003@gmail.com' || user?.email === 'juan.vega.icya@gmail.com';
+
+        // FICHAS: Filtrar por usuario si no es admin
+        const qFichas = isAdmin
+            ? query(collection(db, 'fichas'))
+            : query(collection(db, 'fichas'), where('createdBy', '==', user.uid));
+
         const unsubFichas = onSnapshot(qFichas, (snapshot) => {
             const items = snapshot.docs
                 .map(doc => {
                     const data = doc.data();
+                    // Check for deleted status first
+                    if (data.deleted) return null;
+
                     const lat = data.gps?.lat || data.header?.gps?.lat;
                     const lng = data.gps?.lng || data.header?.gps?.lng;
-                    if (!lat || !lng) return null;
+                    if (!lat || !lng) return null; // Ensure valid GPS coordinates
+
                     return {
                         id: doc.id,
                         pozo: data.pozo || data.header?.pozoNo || 'S/N',
@@ -77,7 +89,7 @@ const MapasScreen: React.FC<{
                         gps: { lat, lng },
                         direccion: data.direccion || '',
                         fullData: data
-                    };
+                    } as FichaMapItem;
                 })
                 .filter(item => item !== null) as FichaMapItem[];
             setFichas(items);
@@ -86,12 +98,15 @@ const MapasScreen: React.FC<{
             }
         });
 
-        // Fetch Marcaciones
-        const qMarc = query(collection(db, 'marcaciones'));
+        // MARCACIONES: Filtrar por usuario si no es admin
+        const qMarc = isAdmin
+            ? query(collection(db, 'marcaciones'))
+            : query(collection(db, 'marcaciones'), where('createdBy', '==', user.uid));
+
         const unsubMarc = onSnapshot(qMarc, (snapshot) => {
             const items = snapshot.docs.map(doc => ({
                 id: doc.id,
-                ...doc.data()
+                ...(doc.data() as object)
             }));
             setMarcaciones(items);
         });
@@ -106,7 +121,7 @@ const MapasScreen: React.FC<{
             unsubMarc();
             clearTimeout(timer);
         };
-    }, [initialCenterDone]);
+    }, [user, initialCenterDone]);
 
     useEffect(() => {
         if (map && userPos && !initialCenterDone) {

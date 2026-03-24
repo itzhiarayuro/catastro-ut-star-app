@@ -41,6 +41,8 @@ export interface SavedMarcacion {
     deleted?: boolean;
     coordenada_x?: number;
     coordenada_y?: number;
+    createdBy?: string;
+    creatorEmail?: string;
     fotos: {
         panoramica: any | null;
         tapa: any | null;
@@ -181,8 +183,12 @@ const MarcacionScreen: React.FC<{
     /* ── Cargar historial local ── */
     useEffect(() => {
         const saved = safeLocalStorageGet('marcaciones_star', []);
-        setRecords(saved.filter((r: any) => !r.deleted));
-    }, []);
+        // Isolation: Only show records that belong to current user (or legacy records without creator)
+        const myRecords = saved.filter((r: any) => 
+            !r.deleted && (!r.createdBy || r.createdBy === user?.uid)
+        );
+        setRecords(myRecords);
+    }, [user]);
 
     useEffect(() => {
         const on = () => setIsOnline(true);
@@ -315,7 +321,9 @@ const MarcacionScreen: React.FC<{
             createdAt: creationDate || new Date().toISOString(),
             synced: false,
             coordenada_x,
-            coordenada_y
+            coordenada_y,
+            createdBy: user?.uid,
+            creatorEmail: user?.email
         };
 
         // 1️⃣ Guardar LOCAL siempre (no falla)

@@ -39,14 +39,15 @@ const ThumbnailImage: React.FC<{ foto: any, alt: string }> = ({ foto, alt }) => 
         }
     }, [foto?.id, foto?.blobId]);
 
-    if (loading) return <div className="w-8 h-8 bg-gray-800 rounded animate-pulse" />;
-    if (!src) return <div className="w-8 h-8 bg-gray-800 rounded border border-gray-700 flex items-center justify-center text-[8px] text-gray-500 uppercase">No foto</div>;
+    if (loading) return <div style={{ width: '32px', height: '32px', minWidth: '32px', background: '#222', borderRadius: '4px' }} className="animate-pulse" />;
+    if (!src) return <div style={{ width: '32px', height: '32px', minWidth: '32px', background: '#222', borderRadius: '4px', border: '1px solid #444', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', color: '#888', textTransform: 'uppercase' }}>Ø</div>;
     
     return (
         <img 
             src={src} 
             alt={alt} 
-            className="w-8 h-8 object-cover rounded border border-gray-600 shadow-sm"
+            style={{ width: '32px', height: '32px', minWidth: '32px', objectFit: 'cover', borderRadius: '4px', border: '1px solid #444' }}
+            className="shadow-sm"
         />
     );
 };

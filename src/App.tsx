@@ -14,6 +14,7 @@ import {
 } from './utils/storageManager';
 import { APIProvider } from '@vis.gl/react-google-maps';
 import { useRegisterSW } from 'virtual:pwa-register/react';
+import { auth } from './lib/firebase'; // Added import for auth
 
 // ── Page Components ──────────────────────────────────────────
 import FormPage from './presentation/pages/FormPage';
@@ -31,7 +32,7 @@ import BottomNav from './components/BottomNav';
 import { safeLocalStorageSet, safeLocalStorageGet, safeLocalStorageRemove } from './utils/ui';
 
 // ── Types & Config ──────────────────────────────────────────
-import { AppState, MUNICIPIOS } from './types/catastro';
+import { AppState, INITIAL_STATE, MUNICIPIOS } from './types/catastro';
 
 // ── Hooks ───────────────────────────────────────────────────
 import { useAppStore } from './hooks/useAppStore';
@@ -42,7 +43,7 @@ import { useCloudRestore } from './hooks/useCloudRestore';
 import { useBackgroundSync } from './hooks/useBackgroundSync';
 import { useFichaActions } from './hooks/useFichaActions';
 
-const APP_VERSION = '1.5.2';
+const APP_VERSION = '1.6.1';
 
 /* ═══════════════════════════════════════════════════════════
    MAIN COMPONENT
@@ -88,32 +89,16 @@ const App: React.FC = () => {
     const { handlePDF, pdfLoading, setPdfDebugLogs, pdfDebugLogs } = usePdfExport(toast);
     useRulesEngine(state as any, setState as any);
 
-    /** Guarda las fichas en ambos storages (LS e IDB). */
+    /** Guarda las fichas en IndexedDB (storage principal, sin límite de tamaño). */
     const safeSaveAllFichas = async (updatedFichas: Record<string, AppState>) => {
         setFichas(updatedFichas);
+        // IDB is the primary and only storage - no localStorage writes to avoid QuotaExceededError
         for (const f of Object.values(updatedFichas)) {
             await saveFichaToStorage(f);
         }
-        try {
-            safeLocalStorageSet('fichas_star', JSON.stringify(updatedFichas));
-            safeLocalStorageRemove('fichas_star_meta');
-        } catch (e: any) {
-            if (e.name === 'QuotaExceededError' || e.message?.includes('exceeded the quota')) {
-                console.warn("⚠️ QuotaExceeded en LocalStorage. Usando fallback de metadatos.");
-                const metadata: Record<string, any> = {};
-                Object.values(updatedFichas).forEach(f => {
-                    metadata[f.id!] = { id: f.id, pozo: f.pozo, synced: f.synced, savedAt: f.savedAt || f.createdAt, municipio: f.municipio };
-                });
-                try {
-                    safeLocalStorageSet('fichas_star_meta', JSON.stringify(metadata));
-                    safeLocalStorageRemove('fichas_star');
-                } catch (inner) {
-                    console.error("❌ Fallo crítico de storage:", inner);
-                }
-            } else {
-                console.error("❌ Error al persistir fichas:", e);
-            }
-        }
+        // One-time cleanup: remove legacy localStorage keys that cause QuotaExceededError
+        safeLocalStorageRemove('fichas_star');
+        safeLocalStorageRemove('fichas_star_meta');
     };
 
     // ── Extracted Business Logic Hooks ────────────────────────
@@ -141,8 +126,12 @@ const App: React.FC = () => {
         const checkPending = async () => {
             const count = await getPendingPhotosCount();
             setPendingCount(count);
-            const savedMarc = safeLocalStorageGet('marcaciones_star', []);
-            setPendingMarcaciones((savedMarc as any[]).filter(m => !m.synced && !m.deleted).length);
+            const existing: any[] = safeLocalStorageGet('marcaciones_star', []);
+            const currentUser = auth.currentUser;
+            const pending = existing.filter(m => 
+                !m.synced && !m.deleted && (!m.createdBy || m.createdBy === currentUser?.uid)
+            );
+            setPendingMarcaciones(pending.length);
         };
         const interval = setInterval(checkPending, 30000);
         checkPending();
@@ -166,7 +155,16 @@ const App: React.FC = () => {
                     console.log("🚚 Migradas fichas de LocalStorage a IndexedDB");
                 } catch (e) { console.error("Error parsing fichas from LS", e); }
             }
-            setFichas(combinedFichas);
+            // Filter by user UID to ensure isolation on shared devices
+            const filteredFichas: Record<string, AppState> = {};
+            Object.entries(combinedFichas).forEach(([id, f]) => {
+                // If the ficha belongs to the current user OR it lacks a creator (legacy)
+                if (!f.createdBy || f.createdBy === user?.uid) {
+                    filteredFichas[id] = f;
+                }
+            });
+
+            setFichas(filteredFichas);
         };
         loadAllFichas();
 
@@ -284,8 +282,21 @@ const App: React.FC = () => {
                         user={user} pendingCount={pendingCount} loggingOut={loggingOut}
                         onConfirm={async () => {
                             setLoggingOut(true);
+                            // Clear session data from store
+                            setFichas({});
+                            setPendingCount(0);
+                            setPendingMarcaciones(0);
+                            setState(INITIAL_STATE);
+                            
+                            // Clear persistent local storage bits that shouldn't persist across users
                             safeLocalStorageRemove('catastro_active_screen');
-                            setActiveScreen('sActivity');
+                            safeLocalStorageRemove('catastro_current_step');
+                            safeLocalStorageRemove('catastro_draft');
+                            safeLocalStorageRemove('fichas_star'); // Legacy
+                            safeLocalStorageRemove('fichas_star_meta'); // Legacy
+                            
+                            // Navigation and Auth
+                            setActiveScreen('sPortal');
                             await logout();
                             setShowLogoutModal(false);
                             setLoggingOut(false);

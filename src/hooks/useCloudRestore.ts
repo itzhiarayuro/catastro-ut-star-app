@@ -1,5 +1,5 @@
 import { db, useAuth } from '../lib/firebase';
-import { collection, query, getDocs } from 'firebase/firestore';
+import { collection, query, getDocs, where } from 'firebase/firestore';
 import { AppState } from '../types/catastro';
 import { fetchPhotoFromDrive } from '../utils/driveSync';
 import { savePhotoToStorage } from '../utils/storageManager';
@@ -24,23 +24,53 @@ export const useCloudRestore = ({ toast, safeSaveAllFichas }: UseCloudRestorePar
 
         toast("🔄 Descargando desde la nube...");
         try {
-            // Fichas: Fetch ALL
-            const q = query(collection(db, 'fichas')); 
+            // Fichas: Fetch ONLY for current user
+            if (!user?.uid) throw new Error("No user UID found");
+            const q = query(collection(db, 'fichas'), where('createdBy', '==', user.uid)); 
             const snapshot = await getDocs(q);
-            const recovered: Record<string, AppState> = {};
-            snapshot.forEach(doc => {
-                const data = doc.data() as AppState;
-                recovered[doc.id] = { ...data, synced: true };
+            const currentFichas = useAppStore.getState().fichas;
+            const updatedFichas: Record<string, AppState> = { ...currentFichas };
+            const downloadedFichas: AppState[] = [];
+            let countRestored = 0;
+
+            snapshot.forEach(docSnap => {
+                const data = docSnap.data() as AppState;
+                if (!data || data.deleted) return;
+
+                // Identify best ID to avoid duplicates (ID original vs Firestore Mun_Pozo ID)
+                const finalId = data.id || docSnap.id;
+                
+                // Deduplication by Pozo name + Municipality
+                const normPozo = (data.pozo || '').toUpperCase().trim();
+                const normMun = (data.municipio || '').toUpperCase().trim();
+                
+                // Find any local ficha that matches this POZO/MUN even if it has a different ID
+                const duplicateKey = Object.entries(updatedFichas).find(([_, f]) => {
+                    const fPozo = (f.pozo || '').toUpperCase().trim();
+                    const fMun = (f.municipio || '').toUpperCase().trim();
+                    return fPozo === normPozo && fMun === normMun;
+                })?.[0];
+
+                // If found a duplicate by name, we prioritize the master ID from Cloud/previous local session
+                if (duplicateKey && duplicateKey !== finalId) {
+                    delete updatedFichas[duplicateKey];
+                }
+
+                const fichaFinal = { ...data, id: finalId, synced: true };
+                updatedFichas[finalId] = fichaFinal;
+                downloadedFichas.push(fichaFinal);
+                countRestored++;
             });
-            if (Object.keys(recovered).length === 0) {
+
+            if (countRestored === 0) {
                 toast("ℹ️ No se encontraron fichas en la nube");
                 return;
             }
-            await safeSaveAllFichas(recovered);
-            toast(`✅ Restauradas ${Object.keys(recovered).length} fichas (Todos los usuarios)`);
+            await safeSaveAllFichas(updatedFichas);
+            toast(`✅ Restauradas/Sincronizadas ${countRestored} fichas`);
 
-            // Hidratar fotos en segundo plano
-            Object.values(recovered).forEach(async (ficha) => {
+            // Hidratar fotos en segundo plano solo de las descargadas
+            downloadedFichas.forEach(async (ficha) => {
                 if (ficha.fotoList && Array.isArray(ficha.fotoList)) {
                     for (const foto of ficha.fotoList) {
                         if (foto.id && foto.filename) {
@@ -78,8 +108,11 @@ export const useCloudRestore = ({ toast, safeSaveAllFichas }: UseCloudRestorePar
 
         toast("🔄 Descargando marcaciones...");
         try {
-            // Marcaciones: Fetch ALL
-            const q = query(collection(db, 'marcaciones'));
+            // Marcaciones: Fetch ONLY for current user (if createdBy is stored)
+            // Note: If marcaciones don't have createdBy, we'll need to check how they are stored.
+            // Based on persistFicha in firebase.tsx, they SHOULD have createdBy.
+            if (!user?.uid) throw new Error("No user UID found");
+            const q = query(collection(db, 'marcaciones'), where('createdBy', '==', user.uid));
             const snapshot = await getDocs(q);
             const recovered: any[] = [];
 
@@ -103,7 +136,7 @@ export const useCloudRestore = ({ toast, safeSaveAllFichas }: UseCloudRestorePar
             safeLocalStorageSet('marcaciones_star', JSON.stringify(updated));
             setPendingMarcaciones(updated.filter(m => !m.synced && !m.deleted).length);
 
-            toast(`✅ Recuperadas ${recovered.length} marcaciones (Todos los usuarios)`);
+            toast(`✅ Recuperadas ${recovered.length} marcaciones propias`);
 
             // Hidratar fotos de marcaciones en segundo plano
             recovered.forEach(async (m) => {

@@ -50,41 +50,6 @@
           ]
         }
       ]
-    },
-    {
-      "site": "sistema-fichas-tecnicas",
-      "public": "dist",
-      "ignore": [
-        "firebase.json",
-        "**/.*",
-        "**/node_modules/**"
-      ],
-      "rewrites": [
-        {
-          "source": "**",
-          "destination": "/index.html"
-        }
-      ],
-      "headers": [
-        {
-          "source": "/**/*.{js,css,png,svg,json,woff2,html}",
-          "headers": [
-            {
-              "key": "Cache-Control",
-              "value": "max-age=3600, must-revalidate"
-            }
-          ]
-        },
-        {
-          "source": "/(index.html|sw.js|manifest.webmanifest)",
-          "headers": [
-            {
-              "key": "Cache-Control",
-              "value": "no-cache, no-store, must-revalidate"
-            }
-          ]
-        }
-      ]
     }
   ],
   "auth": {

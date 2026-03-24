@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
-import { db } from '../lib/firebase';
-import { FileText, Calendar, User, ChevronRight, Search, Loader2, MapPin } from 'lucide-react';
+import { collection, query, orderBy, limit, getDocs, where } from 'firebase/firestore';
+import { db, useAuth } from '../lib/firebase';
+import { FileText, Calendar, User, ChevronRight, Search, Loader2, MapPin, BarChart3, Database, RotateCw } from 'lucide-react';
 import { validateFicha } from '../utils/syncRegistry';
 import { useAppStore } from '../hooks/useAppStore';
 
@@ -41,7 +41,8 @@ interface FichasViewerProps {
 }
 
 const FichasViewer: React.FC<FichasViewerProps> = ({ toast, handlePDF, pdfLoading }) => {
-    const { setActiveScreen } = useAppStore();
+    const { activeScreen, setActiveScreen } = useAppStore();
+    const { user } = useAuth();
     const [fichas, setFichas] = useState<FirestoreRecord[]>([]);
     const [marcaciones, setMarcaciones] = useState<FirestoreRecord[]>([]);
     const [loading, setLoading] = useState(true);
@@ -54,31 +55,73 @@ const FichasViewer: React.FC<FichasViewerProps> = ({ toast, handlePDF, pdfLoadin
     const [filterEstado, setFilterEstado] = useState('');
     const [filterNivel, setFilterNivel] = useState('');
     const [filterMunicipio, setFilterMunicipio] = useState('');
+    const [refreshKey, setRefreshKey] = useState(0);
+
+    const [timeoutError, setTimeoutError] = useState(false);
 
     useEffect(() => {
         const loadData = async () => {
+            if (!user) {
+                // Not logged in yet
+                setLoading(false);
+                return;
+            }
+            // Only fetch when the screen is active to prevent app startup lag
+            if (activeScreen !== 'sFichasViewer') {
+                return;
+            }
+
             setLoading(true);
+            setTimeoutError(false);
             try {
+                const isAdmin = user?.email === 'juanvegas003@gmail.com' || user?.email === 'juan.vega.icya@gmail.com';
+
                 // Fichas: Aumentar límite para traer todo lo relevante
-                const qFichas = query(collection(db, 'fichas'), orderBy('lastSync', 'desc'), limit(2000));
-                const snapFichas = await getDocs(qFichas);
+                const qFichas = isAdmin
+                    ? query(collection(db, 'fichas'), orderBy('lastSync', 'desc'), limit(5000))
+                    : query(collection(db, 'fichas'), where('createdBy', '==', user.uid), orderBy('lastSync', 'desc'), limit(2000));
+                
+                // Agregamos un timeout de 15s por si Firebase se queda colgado
+                const fetchFichas = getDocs(qFichas);
+                const snapFichas = await Promise.race([
+                    fetchFichas,
+                    new Promise<never>((_, rej) => setTimeout(() => rej(new Error("TIMEOUT")), 15000))
+                ]);
                 const fData = snapFichas.docs.map(d => ({ id: d.id, ...d.data() } as FirestoreRecord));
                 setFichas(fData.filter(d => !d.deleted));
 
-                // Marcaciones: Aumentar límite (el usuario reportó que solo veía 100)
-                const qMarc = query(collection(db, 'marcaciones'), orderBy('lastSync', 'desc'), limit(2000));
-                const snapMarc = await getDocs(qMarc);
+                // Marcaciones: Aumentar límite
+                const qMarc = isAdmin
+                    ? query(collection(db, 'marcaciones'), orderBy('lastSync', 'desc'), limit(5000))
+                    : query(collection(db, 'marcaciones'), where('createdBy', '==', user.uid), orderBy('lastSync', 'desc'), limit(2000));
+                
+                const fetchMarc = getDocs(qMarc);
+                const snapMarc = await Promise.race([
+                    fetchMarc,
+                    new Promise<never>((_, rej) => setTimeout(() => rej(new Error("TIMEOUT")), 15000))
+                ]);
                 const mData = snapMarc.docs.map(d => ({ id: d.id, ...d.data() } as FirestoreRecord));
                 setMarcaciones(mData.filter(d => !d.deleted));
-            } catch (err) {
+            } catch (err: any) {
                 console.error("Error loading cloud data:", err);
+                if (err.message === "TIMEOUT") {
+                    setTimeoutError(true);
+                }
             }
             setLoading(false);
         };
         loadData();
-    }, []);
+    }, [user, activeScreen, refreshKey]);
 
     const currentData = activeTab === 'fichas' ? fichas : marcaciones;
+
+    // Estadísticas globales (Dashboard rápido)
+    const stats = {
+        fichas: fichas.length,
+        marcaciones: marcaciones.length,
+        tuberia: fichas.reduce((acc, f) => acc + (f.pipes?.length || 0), 0),
+        sumideros: fichas.reduce((acc, f) => acc + (f.sums?.length || 0), 0)
+    };
 
     // Extraer opciones únicas para los filtros basados en la data actual
     const uniqueSistemas = Array.from(new Set(currentData.map(d => d.sistema).filter(Boolean).sort()));
@@ -200,8 +243,66 @@ const FichasViewer: React.FC<FichasViewerProps> = ({ toast, handlePDF, pdfLoadin
                     </span>
                 </button>
             </div>
-
             <div style={{ padding: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <BarChart3 size={18} style={{ color: '#10b981' }} />
+                        <h3 style={{ margin: 0, fontSize: '13px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px' }}>Estadísticas de Red</h3>
+                    </div>
+                    <button 
+                        onClick={() => setRefreshKey(k => k + 1)} 
+                        style={{ 
+                            background: '#161b22', 
+                            border: '1px solid #30363d', 
+                            color: '#10b981', 
+                            borderRadius: '8px',
+                            cursor: 'pointer', 
+                            padding: '6px 12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            fontSize: '10px',
+                            fontWeight: 900,
+                            textTransform: 'uppercase'
+                        }}
+                    >
+                        <RotateCw size={14} className={loading ? 'animate-spin' : ''} />
+                        ACTUALIZAR
+                    </button>
+                </div>
+
+                {/* SMALL DASHBOARD */}
+
+                {!loading && !timeoutError && (
+                    <div style={{ 
+                        display: 'grid', 
+                        gridTemplateColumns: 'repeat(2, 1fr)', 
+                        gap: '8px', 
+                        marginBottom: '20px',
+                        background: '#161b22',
+                        padding: '12px',
+                        borderRadius: '16px',
+                        border: '1px solid #30363d'
+                    }}>
+                        <div style={{ background: '#0d1117', padding: '10px', borderRadius: '12px', border: '1px solid #30363d40' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#10b981', marginBottom: '4px' }}>
+                                <FileText size={12} />
+                                <span style={{ fontSize: '9px', fontWeight: 800, textTransform: 'uppercase' }}>Fichas</span>
+                            </div>
+                            <div style={{ fontSize: '18px', fontWeight: 900, color: 'white' }}>{stats.fichas}</div>
+                            <div style={{ fontSize: '9px', color: '#64748b' }}>{stats.tuberia} tubos registrados</div>
+                        </div>
+                        <div style={{ background: '#0d1117', padding: '10px', borderRadius: '12px', border: '1px solid #30363d40' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#f59e0b', marginBottom: '4px' }}>
+                                <MapPin size={12} />
+                                <span style={{ fontSize: '9px', fontWeight: 800, textTransform: 'uppercase' }}>Marcas</span>
+                            </div>
+                            <div style={{ fontSize: '18px', fontWeight: 900, color: 'white' }}>{stats.marcaciones}</div>
+                            <div style={{ fontSize: '9px', color: '#64748b' }}>{stats.sumideros} sumideros fichas</div>
+                        </div>
+                    </div>
+                )}
+
                 {/* SEARCH BAR */}
                 <div style={{ position: 'relative', marginBottom: '12px' }}>
                     <Search
@@ -306,7 +407,21 @@ const FichasViewer: React.FC<FichasViewerProps> = ({ toast, handlePDF, pdfLoadin
                     {loading ? (
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 20px', color: '#64748b', gap: '12px' }}>
                             <Loader2 size={32} className="animate-spin" style={{ color: activeTab === 'fichas' ? '#10b981' : '#f59e0b' }} />
-                            <p style={{ fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '2px' }}>Cargando datos globales...</p>
+                            <p style={{ fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '2px', textAlign: 'center' }}>Cargando datos globales...<br/><br/>(Esto puede tardar unos segundos)</p>
+                        </div>
+                    ) : timeoutError ? (
+                        <div style={{ padding: '60px 20px', border: '2px dashed #f87171', borderRadius: '16px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#f87171', gap: '12px' }}>
+                            <p style={{ fontSize: '13px', textAlign: 'center' }}>
+                                Error de conexión o tiempo de espera agotado.
+                            </p>
+                            <button 
+                                onClick={() => setActiveScreen('sPortal')} 
+                                style={{
+                                    background: '#161b22', color: '#f87171', border: '1px solid #f87171', borderRadius: '8px', padding: '8px 16px', fontSize: '11px', fontWeight: 800, cursor: 'pointer'
+                                }}
+                            >
+                                VOLVER
+                            </button>
                         </div>
                     ) : filtered.length === 0 ? (
                         <div style={{ padding: '60px 20px', border: '2px dashed #30363d', borderRadius: '16px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#64748b', gap: '8px' }}>
@@ -427,7 +542,7 @@ const FichasViewer: React.FC<FichasViewerProps> = ({ toast, handlePDF, pdfLoadin
                                         }}>
                                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                                                 <div><strong style={{ color: '#64748b' }}>ID Doc:</strong> <span style={{ color: '#e2e8f0', fontFamily: "'DM Mono', monospace", fontSize: '10px' }}>{record.id}</span></div>
-                                                <div><strong style={{ color: '#64748b' }}>Barrio:</strong> {record.barrio || '---'}</div>
+                                                <div><strong style={{ color: '#64748b' }}>Municipio:</strong> {record.municipio || '---'}</div>
                                                 <div><strong style={{ color: '#64748b' }}>Dirección:</strong> {record.direccion || '---'}</div>
                                                 <div><strong style={{ color: '#64748b' }}>Estado:</strong> {record.estadoPozo || record.estado || '---'}</div>
                                                 {record.gps?.lat && (
