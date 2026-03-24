@@ -32,6 +32,10 @@ interface UseFichaActionsParams {
     safeSaveAllFichas: (fichas: Record<string, AppState>) => Promise<void>;
 }
 
+/* ── Helper para normalizar texto (quitar tildes y pasar a mayúsculas) ── */
+const normalizeText = (text: string) => 
+    text ? text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase() : "";
+
 export const useFichaActions = ({ toast, safeSaveAllFichas }: UseFichaActionsParams) => {
     const { user } = useAuth();
     const store = useAppStore();
@@ -48,7 +52,7 @@ export const useFichaActions = ({ toast, safeSaveAllFichas }: UseFichaActionsPar
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
 
     const firestorePath = state.pozo && state.municipio
-        ? `fichas/${state.municipio.toUpperCase()}_${state.pozo.replace(/\s+/g, '')}`
+        ? `fichas/${normalizeText(state.municipio)}_${state.pozo.replace(/\s+/g, '')}`
         : '';
 
     const { saveData, loading } = useFirestoreDoc(firestorePath);

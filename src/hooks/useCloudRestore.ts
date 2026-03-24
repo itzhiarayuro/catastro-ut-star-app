@@ -6,6 +6,10 @@ import { savePhotoToStorage } from '../utils/storageManager';
 import { useAppStore } from './useAppStore';
 import { safeLocalStorageSet, safeLocalStorageGet } from '../utils/ui';
 
+/* ── Helper para normalizar texto (quitar tildes y pasar a mayúsculas) ── */
+const normalizeText = (text: string) => 
+    text ? text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase() : "";
+
 interface UseCloudRestoreParams {
     toast: (msg: string) => void;
     safeSaveAllFichas: (fichas: Record<string, AppState>) => Promise<void>;
@@ -42,12 +46,12 @@ export const useCloudRestore = ({ toast, safeSaveAllFichas }: UseCloudRestorePar
                 
                 // Deduplication by Pozo name + Municipality
                 const normPozo = (data.pozo || '').toUpperCase().trim();
-                const normMun = (data.municipio || '').toUpperCase().trim();
+                const normMun = normalizeText(data.municipio || '').trim();
                 
                 // Find any local ficha that matches this POZO/MUN even if it has a different ID
                 const duplicateKey = Object.entries(updatedFichas).find(([_, f]) => {
                     const fPozo = (f.pozo || '').toUpperCase().trim();
-                    const fMun = (f.municipio || '').toUpperCase().trim();
+                    const fMun = normalizeText(f.municipio || '').trim();
                     return fPozo === normPozo && fMun === normMun;
                 })?.[0];
 

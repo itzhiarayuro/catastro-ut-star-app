@@ -93,13 +93,24 @@ const saveLocal = (data: SavedMarcacion) => {
     safeLocalStorageSet('marcaciones_star', JSON.stringify(existing));
 };
 
+/* ── Helper para normalizar texto (quitar tildes y pasar a mayúsculas) ── */
+const normalizeText = (text: string) => 
+    text ? text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase() : "";
+
 /* ── Intentar sync con Firestore (Sin fotos pesadas) ── */
 const trySyncFirestore = async (data: SavedMarcacion) => {
     try {
         const cleanData = stripBinaryData(data);
+        
+        const mun = normalizeText(data.municipio);
+        const cod = normalizeText(data.codigo);
 
-        const path = `marcaciones/${data.municipio.toUpperCase()}_${data.codigo}`;
-        const historyPath = `historial_marcaciones/${data.municipio.toUpperCase()}_${data.codigo}_${Date.now()}`;
+        const path = `marcaciones/${mun}_${cod}`;
+        const historyPath = `historial_marcaciones/${mun}_${cod}_${Date.now()}`;
+
+        // Asegurar que el payload también quede 100% limpio
+        cleanData.municipio = mun;
+        cleanData.codigo = cod;
 
         // 1. Guardar en Master
         await setDoc(doc(db, path), {

@@ -35,6 +35,27 @@ async function getOrCreateFolder(drive: any, folderName: string, parentId: strin
     return folder.data.id;
 }
 
+/**
+ * Busca un archivo duplicado por nombre y tamaño en una carpeta específica
+ */
+async function findDuplicateInDrive(drive: any, filename: string, folderId: string, size: number): Promise<string | null> {
+    const response = await drive.files.list({
+        q: `name = '${filename}' and '${folderId}' in parents and trashed = false`,
+        fields: "files(id, size)",
+        spaces: "drive",
+    });
+
+    if (response.data.files && response.data.files.length > 0) {
+        for (const file of response.data.files) {
+            // Google Drive API retorna size como string
+            if (parseInt(file.size || "0") === size) {
+                return file.id;
+            }
+        }
+    }
+    return null;
+}
+
 // ─────────────────────────────────────────────────
 // SINCRONIZACIÓN DE FOTOS DE FICHAS (CATASTRO)
 // ─────────────────────────────────────────────────
@@ -77,18 +98,28 @@ export const syncPhotosToDrive = functions.runWith({
 
                 const base64Data = foto.blobId.split(",")[1];
                 const buffer = Buffer.from(base64Data, "base64");
-                const stream = new Readable();
-                stream.push(buffer);
-                stream.push(null);
+                const fileSize = buffer.length;
 
-                const driveFile = await drive.files.create({
-                    requestBody: { name: foto.filename, parents: [pozoIdFolder] },
-                    media: { mimeType: "image/jpeg", body: stream },
-                    fields: "id",
-                });
+                // VALIDACIÓN: Buscar duplicado antes de subir
+                const existingId = await findDuplicateInDrive(drive, foto.filename, pozoIdFolder, fileSize);
+                
+                let driveFileId = existingId;
 
-                if (driveFile.data.id) {
-                    updatedFotoList[i].driveId = driveFile.data.id;
+                if (!driveFileId) {
+                    const stream = new Readable();
+                    stream.push(buffer);
+                    stream.push(null);
+
+                    const driveFile = await drive.files.create({
+                        requestBody: { name: foto.filename, parents: [pozoIdFolder] },
+                        media: { mimeType: "image/jpeg", body: stream },
+                        fields: "id",
+                    });
+                    driveFileId = driveFile.data.id || null;
+                }
+
+                if (driveFileId) {
+                    updatedFotoList[i].driveId = driveFileId;
                     updatedFotoList[i].syncedAt = new Date().toISOString();
                     hasChanges = true;
                 }
@@ -147,18 +178,28 @@ export const syncMarcacionPhotosToDrive = functions.runWith({
 
                 const base64Data = foto.blobId.split(",")[1];
                 const buffer = Buffer.from(base64Data, "base64");
-                const stream = new Readable();
-                stream.push(buffer);
-                stream.push(null);
+                const fileSize = buffer.length;
 
-                const driveFile = await drive.files.create({
-                    requestBody: { name: foto.filename, parents: [pozoIdFolder] },
-                    media: { mimeType: "image/jpeg", body: stream },
-                    fields: "id",
-                });
+                // VALIDACIÓN: Buscar duplicado antes de subir
+                const existingId = await findDuplicateInDrive(drive, foto.filename, pozoIdFolder, fileSize);
+                
+                let driveFileId = existingId;
 
-                if (driveFile.data.id) {
-                    updatedFotos[key].driveId = driveFile.data.id;
+                if (!driveFileId) {
+                    const stream = new Readable();
+                    stream.push(buffer);
+                    stream.push(null);
+
+                    const driveFile = await drive.files.create({
+                        requestBody: { name: foto.filename, parents: [pozoIdFolder] },
+                        media: { mimeType: "image/jpeg", body: stream },
+                        fields: "id",
+                    });
+                    driveFileId = driveFile.data.id || null;
+                }
+
+                if (driveFileId) {
+                    updatedFotos[key].driveId = driveFileId;
                     updatedFotos[key].syncedAt = new Date().toISOString();
                     hasChanges = true;
                 }

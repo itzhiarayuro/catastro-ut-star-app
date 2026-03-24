@@ -86,15 +86,21 @@ const uploadBatch = async (batch: any[], onProgress: (p: SyncProgress) => void, 
             body: JSON.stringify({
                 token: SECRET_TOKEN,
                 zipData: zipBase64,
-                metadata: batch.map(p => ({
-                    id: p.id,
-                    filename: p.filename,
-                    municipio: p.municipio || 'SOPÓ',
-                    pozoId: p.pozoId || 'S/N',
-                    barrio: p.barrio || 'CATASTRO',
-                    categoria: p.categoria || 'General',
-                    inspector: p.inspector || 'Inspector'
-                }))
+                metadata: batch.map(p => {
+                    const base64Str = p.blob.split(',')[1] || '';
+                    const byteCount = Math.floor((base64Str.length * 0.75)) - (base64Str.endsWith('==') ? 2 : (base64Str.endsWith('=') ? 1 : 0));
+                    
+                    return {
+                        id: p.id,
+                        filename: p.filename,
+                        size: byteCount,
+                        municipio: p.municipio || 'SOPÓ',
+                        pozoId: p.pozoId || 'S/N',
+                        barrio: p.barrio || 'CATASTRO',
+                        categoria: p.categoria || 'General',
+                        inspector: p.inspector || 'Inspector'
+                    };
+                })
             })
         });
 
