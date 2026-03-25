@@ -66,12 +66,14 @@ const PipeCard: React.FC<PipeCardProps> = ({
                  style={{ display: isOpen ? 'block' : 'none' }}>
                 <div className="pipe-toggle flex gap-1 mb-4">
                     <button 
+                        type="button"
                         className={`flex-1 flex items-center justify-center gap-2 py-2 rounded text-xs font-bold transition-colors ${pipe.es === 'ENTRADA' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-400'}`} 
                         onClick={() => onUpdate({ es: 'ENTRADA' })}
                     >
                         <ArrowDown size={14} /> ENTRADA
                     </button>
                     <button 
+                        type="button"
                         className={`flex-1 flex items-center justify-center gap-2 py-2 rounded text-xs font-bold transition-colors ${pipe.es === 'SALIDA' ? 'bg-orange-600 text-white' : 'bg-gray-700 text-gray-400'}`} 
                         onClick={() => onUpdate({ es: 'SALIDA' })}
                     >
@@ -112,10 +114,12 @@ const PipeCard: React.FC<PipeCardProps> = ({
                             Ø
                             <span className="unit-toggle flex bg-gray-900 rounded border border-gray-700 overflow-hidden">
                                 <button 
+                                    type="button"
                                     className={`px-2 text-[9px] uppercase font-bold ${(!pipe.unit || pipe.unit === 'mm') ? 'bg-blue-600 text-white' : 'text-gray-500'}`} 
                                     onClick={(e) => { e.preventDefault(); onUpdate({ unit: 'mm' }); }}
                                 >mm</button>
                                 <button 
+                                    type="button"
                                     className={`px-2 text-[9px] uppercase font-bold ${pipe.unit === 'in' ? 'bg-blue-600 text-white' : 'text-gray-500'}`} 
                                     onClick={(e) => { e.preventDefault(); onUpdate({ unit: 'in' }); }}
                                 >in</button>

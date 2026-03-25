@@ -10,7 +10,7 @@ import { doc, setDoc } from 'firebase/firestore';
 import { procesarFoto, FotoRegistro, resizeImage, stripBinaryData } from '../utils/fotoProcessor';
 import { savePhotoToStorage, getPhotoFromStorage } from '../utils/storageManager';
 import GeoTracker from './SmartGeoTracker';
-import { safeLocalStorageSet, safeLocalStorageGet } from '../utils/ui';
+import { safeLocalStorageSet, safeLocalStorageGet, saveMunicipioCache, getMunicipioCached } from '../utils/ui';
 import { convertirA9377 } from '../utils/coords';
 
 const MUNICIPIOS = [
@@ -175,7 +175,7 @@ const MarcacionScreen: React.FC<{
     onSync: () => void;
     onSuccess: (msg: string) => void;
 }> = ({ user, mode, onBack, onSync, onSuccess }) => {
-    const defaultMun = (window as any).CURRENT_MUNICIPIO || 'SOPO';
+    const defaultMun = getMunicipioCached() || (window as any).CURRENT_MUNICIPIO || 'SOPO';
     const [view, setView] = useState<'list' | 'form'>('list');
     const [form, setForm] = useState<FormState>(() => {
         const base = EMPTY_FORM(defaultMun);

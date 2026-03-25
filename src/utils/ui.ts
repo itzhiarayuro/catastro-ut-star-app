@@ -70,3 +70,26 @@ export const safeLocalStorageRemove = (key: string): void => {
         console.error(`❌ Error removing localStorage key "${key}":`, e);
     }
 };
+
+// ─── Municipio Cache (per-day) ────────────────────────────────────────────────
+const MUNICIPIO_CACHE_KEY = 'catastro_municipio_cache';
+
+/**
+ * Persiste el municipio seleccionado junto con la fecha de hoy.
+ * Se usa desde la pantalla de configuración Y desde el Paso 1 del formulario.
+ */
+export const saveMunicipioCache = (municipio: string): void => {
+    const today = new Date().toISOString().split('T')[0];
+    safeLocalStorageSet(MUNICIPIO_CACHE_KEY, JSON.stringify({ municipio, date: today }));
+};
+
+/**
+ * Recupera el municipio del caché si fue guardado hoy.
+ * Retorna null si el caché es de otro día o no existe.
+ */
+export const getMunicipioCached = (): string | null => {
+    const cached = safeLocalStorageGet(MUNICIPIO_CACHE_KEY, null);
+    if (!cached || typeof cached !== 'object') return null;
+    const today = new Date().toISOString().split('T')[0];
+    return cached.date === today ? cached.municipio : null;
+};

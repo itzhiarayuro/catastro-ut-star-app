@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ChevronLeft, Wifi, WifiOff, Cloud, RefreshCw, Trash2, LogOut } from 'lucide-react';
 import { useAppStore } from '../../hooks/useAppStore';
 import { useAuth } from '../../lib/firebase';
+import { saveMunicipioCache } from '../../utils/ui';
 
 interface ConfigPageProps {
     APP_VERSION: string;
@@ -39,6 +40,9 @@ const ConfigPage: React.FC<ConfigPageProps> = ({
 
     const updateState = (updates: any) => {
         setState(updates);
+        if (updates.municipio) {
+            saveMunicipioCache(updates.municipio);
+        }
     };
 
     return (

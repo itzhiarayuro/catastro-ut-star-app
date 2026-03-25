@@ -76,12 +76,12 @@ const SumideroCard: React.FC<SumideroCardProps> = ({
                         onChange={e => onUpdate({ tipo: e.target.value === 'OTRO' ? 'OTRO' : e.target.value })}
                     >
                         <option value="">— SELECCIONAR —</option>
-                        <option>COMBINADO O MIXTO</option>
-                        <option>VENTANA O LATERAL</option>
-                        <option>REJILLA</option>
-                        <option>RANURADOS</option>
-                        <option>TRANSVERSAL</option>
-                        <option>OTRO</option>
+                        <option value="COMBINADO O MIXTO">COMBINADO O MIXTO</option>
+                        <option value="VENTANA O LATERAL">VENTANA O LATERAL</option>
+                        <option value="REJILLA">REJILLA</option>
+                        <option value="RANURADOS">RANURADOS</option>
+                        <option value="TRANSVERSAL">TRANSVERSAL</option>
+                        <option value="OTRO">OTRO</option>
                     </select>
                     {(!['COMBINADO O MIXTO', 'VENTANA O LATERAL', 'REJILLA', 'RANURADOS', 'TRANSVERSAL', ''].includes(sum.tipo || '') || sum.tipo === 'OTRO') && (
                         <input 
@@ -104,11 +104,11 @@ const SumideroCard: React.FC<SumideroCardProps> = ({
                         onChange={e => onUpdate({ estado: e.target.value === 'OTRO' ? 'OTRO' : e.target.value })}
                     >
                         <option value="">—</option>
-                        <option>SIN REPRESAMIENTO</option>
-                        <option>INUNDADO</option>
-                        <option>COLMATADO</option>
-                        <option>OCULTO</option>
-                        <option>OTRO</option>
+                        <option value="SIN REPRESAMIENTO">SIN REPRESAMIENTO</option>
+                        <option value="INUNDADO">INUNDADO</option>
+                        <option value="COLMATADO">COLMATADO</option>
+                        <option value="OCULTO">OCULTO</option>
+                        <option value="OTRO">OTRO</option>
                     </select>
                     {(!['SIN REPRESAMIENTO', 'INUNDADO', 'COLMATADO', 'OCULTO', ''].includes(sum.estado || '') || sum.estado === 'OTRO') && (
                         <input 
@@ -128,11 +128,11 @@ const SumideroCard: React.FC<SumideroCardProps> = ({
                         onChange={e => onUpdate({ matRejilla: e.target.value === 'OTRO' ? 'OTRO' : e.target.value })}
                     >
                         <option value="">—</option>
-                        <option>DESCONOCIDO</option>
-                        <option>CONCRETO</option>
-                        <option>METAL DÚCTIL</option>
-                        <option>PLÁSTICO REFORZADO</option>
-                        <option>OTRO</option>
+                        <option value="DESCONOCIDO">DESCONOCIDO</option>
+                        <option value="CONCRETO">CONCRETO</option>
+                        <option value="METAL DÚCTIL">METAL DÚCTIL</option>
+                        <option value="PLÁSTICO REFORZADO">PLÁSTICO REFORZADO</option>
+                        <option value="OTRO">OTRO</option>
                     </select>
                     {(!['DESCONOCIDO', 'CONCRETO', 'METAL DÚCTIL', 'PLÁSTICO REFORZADO', ''].includes(sum.matRejilla || '') || sum.matRejilla === 'OTRO') && (
                         <input 
@@ -156,10 +156,10 @@ const SumideroCard: React.FC<SumideroCardProps> = ({
                         onChange={e => onUpdate({ matCaja: e.target.value === 'OTRO' ? 'OTRO' : e.target.value })}
                     >
                         <option value="">—</option>
-                        <option>DESCONOCIDO</option>
-                        <option>CONCRETO</option>
-                        <option>MAMPOSTERIA</option>
-                        <option>OTRO</option>
+                        <option value="DESCONOCIDO">DESCONOCIDO</option>
+                        <option value="CONCRETO">CONCRETO</option>
+                        <option value="MAMPOSTERIA">MAMPOSTERIA</option>
+                        <option value="OTRO">OTRO</option>
                     </select>
                     {(!['DESCONOCIDO', 'CONCRETO', 'MAMPOSTERIA', ''].includes(sum.matCaja || '') || sum.matCaja === 'OTRO') && (
                         <input 
@@ -176,10 +176,12 @@ const SumideroCard: React.FC<SumideroCardProps> = ({
                         Ø Tub. Salida
                         <span className="unit-toggle flex bg-gray-800 rounded border border-gray-700 overflow-hidden">
                             <button 
+                                type="button"
                                 className={`px-2 text-[9px] uppercase font-bold ${(!sum.unitTub || sum.unitTub === 'mm') ? 'bg-blue-600 text-white' : 'text-gray-500'}`} 
                                 onClick={(e) => { e.preventDefault(); onUpdate({ unitTub: 'mm' }); }}
                             >mm</button>
                             <button 
+                                type="button"
                                 className={`px-2 text-[9px] uppercase font-bold ${sum.unitTub === 'in' ? 'bg-blue-600 text-white' : 'text-gray-500'}`} 
                                 onClick={(e) => { e.preventDefault(); onUpdate({ unitTub: 'in' }); }}
                             >in</button>
@@ -195,6 +197,41 @@ const SumideroCard: React.FC<SumideroCardProps> = ({
                 </div>
             </div>
 
+            <div className="field-row grid grid-cols-2 gap-3 mb-3">
+                <div className="field">
+                    <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">H LLEGADA (Z) <span className="text-gray-500 lowercase">m</span></label>
+                    <input 
+                        type="number" 
+                        step="0.01" 
+                        className="bg-gray-800 border border-gray-700 rounded p-2 text-sm w-full text-green-400 font-mono"
+                        value={sum.hLlegada} 
+                        onChange={e => {
+                            const newZ = e.target.value;
+                            const zF = parseFloat(newZ) || 0;
+                            let dF = parseFloat(sum.diamTub) || 0;
+                            if (sum.unitTub === 'in') dF = (dF * 25.4);
+                            const calc = (zF + (dF / 1000)).toFixed(3);
+                            onUpdate({ hLlegada: newZ, hSalida: calc });
+                        }}
+                        placeholder="0.00" 
+                    />
+                </div>
+                <div className="field">
+                    <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">H SALIDA (Z+Ø) <span className="text-gray-500 lowercase">m</span></label>
+                    <input
+                        type="text"
+                        readOnly
+                        className="bg-gray-800 border border-transparent rounded p-2 text-sm w-full text-gray-400 font-mono opacity-60"
+                        value={(() => {
+                            const z = parseFloat(sum.hLlegada) || 0;
+                            let d = parseFloat(sum.diamTub) || 0;
+                            if (sum.unitTub === 'in') d = (d * 25.4);
+                            return (z + (d / 1000)).toFixed(3);
+                        })()}
+                    />
+                </div>
+            </div>
+
             <div className="field">
                 <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Material Tubería Salida</label>
                 <select 
@@ -203,16 +240,16 @@ const SumideroCard: React.FC<SumideroCardProps> = ({
                     onChange={e => onUpdate({ matTub: e.target.value === 'OTRO' ? 'OTRO' : e.target.value })}
                 >
                     <option value="">— SELECCIONAR —</option>
-                    <option>CONCRETO</option>
-                    <option>PVC CORRUGADO</option>
-                    <option>PVC LISO</option>
-                    <option>PLÁSTICO</option>
-                    <option>ASBESTO CEMENTO</option>
-                    <option>MAMPOSTERIA</option>
-                    <option>GRES</option>
-                    <option>GRP</option>
-                    <option>METAL</option>
-                    <option>OTRO</option>
+                    <option value="CONCRETO">CONCRETO</option>
+                    <option value="PVC CORRUGADO">PVC CORRUGADO</option>
+                    <option value="PVC LISO">PVC LISO</option>
+                    <option value="PLÁSTICO">PLÁSTICO</option>
+                    <option value="ASBESTO CEMENTO">ASBESTO CEMENTO</option>
+                    <option value="MAMPOSTERIA">MAMPOSTERIA</option>
+                    <option value="GRES">GRES</option>
+                    <option value="GRP">GRP</option>
+                    <option value="METAL">METAL</option>
+                    <option value="OTRO">OTRO</option>
                 </select>
                 {(!['CONCRETO', 'PVC CORRUGADO', 'PVC LISO', 'PLÁSTICO', 'ASBESTO CEMENTO', 'MAMPOSTERIA', 'GRES', 'GRP', 'METAL', ''].includes(sum.matTub || '') || sum.matTub === 'OTRO') && (
                     <input 

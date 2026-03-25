@@ -8,10 +8,10 @@ import { Crosshair, LocateFixed, Signal } from 'lucide-react';
 import { Map, AdvancedMarker } from '@vis.gl/react-google-maps';
 
 import { useAppStore } from '../../hooks/useAppStore';
-import { numFocus } from '../../utils/ui';
+import { numFocus, saveMunicipioCache } from '../../utils/ui';
 import {
     AppState, Pipe, Sumidero, SISTEMAS, RASANTES, ESTADOS_POZO,
-    TIPOS_CAMARA
+    TIPOS_CAMARA, MUNICIPIOS
 } from '../../types/catastro';
 import { FotoRegistro } from '../../utils/fotoProcessor';
 import FotosZone from '../../components/FotosZone';
@@ -214,6 +214,33 @@ const FormPage: React.FC<FormPageProps> = ({
                 ══════════════════════════════════════════ */}
                 {currentStep === 1 && (
                     <div className="animate-in slide-in-from-right duration-300">
+
+                        {/* ── Municipio de Trabajo (PRIMER CAMPO) ── */}
+                        <div className="card" style={{ borderColor: state.municipio ? 'rgba(59,130,246,0.5)' : 'rgba(255,69,96,0.4)', borderWidth: '1.5px' }}>
+                            <div className="card-title" style={{ color: '#60a5fa', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                📍 Municipio de Trabajo
+                                {state.municipio && (
+                                    <span style={{ marginLeft: 'auto', fontSize: '10px', background: 'rgba(59,130,246,0.15)', color: '#60a5fa', borderRadius: '6px', padding: '2px 8px', fontWeight: '700' }}>
+                                        {state.municipio}
+                                    </span>
+                                )}
+                            </div>
+                            <div className="chips">
+                                {MUNICIPIOS.map(m => (
+                                    <div
+                                        key={m}
+                                        className={`chip ${state.municipio === m ? 'selected' : ''}`}
+                                        onClick={() => {
+                                            updateState({ municipio: m });
+                                            saveMunicipioCache(m);
+                                        }}
+                                    >
+                                        {m}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
                         <div className="card">
                             <div className="card-title">Identificación del Pozo</div>
                             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1.5fr 1.2fr', gap: '10px' }}>

@@ -29,7 +29,7 @@ import UnauthorizedPage from './presentation/pages/UnauthorizedPage';
 // ── UI Components ────────────────────────────────────────────
 import { LogoutModal, ClearDbModal, PdfDebugModal } from './components/AppModals';
 import BottomNav from './components/BottomNav';
-import { safeLocalStorageSet, safeLocalStorageGet, safeLocalStorageRemove } from './utils/ui';
+import { safeLocalStorageSet, safeLocalStorageGet, safeLocalStorageRemove, getMunicipioCached } from './utils/ui';
 
 // ── Types & Config ──────────────────────────────────────────
 import { AppState, INITIAL_STATE, MUNICIPIOS } from './types/catastro';
@@ -121,6 +121,15 @@ const App: React.FC = () => {
         safeLocalStorageSet('catastro_current_step', currentStep.toString());
     }, [currentStep]);
     useEffect(() => { (window as any).CURRENT_MUNICIPIO = state.municipio; }, [state.municipio]);
+
+    // ── Restorer: apply municipio daily cache on first mount ──
+    useEffect(() => {
+        const cached = getMunicipioCached();
+        if (cached && cached !== state.municipio) {
+            setState({ municipio: cached });
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     useEffect(() => {
         const checkPending = async () => {

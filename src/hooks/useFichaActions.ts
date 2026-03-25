@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { AppState, INITIAL_STATE } from '../types/catastro';
 import { useFirestoreDoc } from '../lib/firebase';
-import { saveFichaToStorage } from '../utils/storageManager';
+import { saveFichaToStorage, updatePhotoMunicipio } from '../utils/storageManager';
 import { useAppStore } from './useAppStore';
 import { useAuth } from '../lib/firebase';
+import { db } from '../lib/firebase';
+import { doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { safeLocalStorageSet, safeLocalStorageGet, safeLocalStorageGetRaw } from '../utils/ui';
 import { convertirA9377 } from '../utils/coords';
 
@@ -199,15 +201,60 @@ export const useFichaActions = ({ toast, safeSaveAllFichas }: UseFichaActionsPar
             return;
         }
 
+        // ── Detección de cambio de municipio ──────────────────────────────
+        const existingFicha = fichas[id];
+        const oldMuni = existingFicha ? normalizeText(existingFicha.municipio) : null;
+        const newMuni = normalizeText(state.municipio);
+        const municipioCambiado = oldMuni && oldMuni !== newMuni;
+
         // Save to Firestore if online
         if (isOnline) {
             try {
-                await saveData(finalData);
-                const completeSynced = { ...finalData, synced: true };
-                const finalFichas = { ...updatedFichas, [id]: completeSynced };
-                await safeSaveAllFichas(finalFichas);
+                if (municipioCambiado) {
+                    // ── Municipio cambió: crear nuevo path + marcar viejo como migrado ──
+                    const oldPath = `fichas/${oldMuni}_${existingFicha!.pozo.replace(/\s+/g, '')}`;
+                    const newPath = `fichas/${newMuni}_${state.pozo.replace(/\s+/g, '')}`;
 
-                toast("✅ Sincronizado en Nube");
+                    // 1. Guardar en nuevo path
+                    await setDoc(doc(db, newPath), {
+                        ...finalData,
+                        synced: true,
+                        lastSync: new Date().toISOString()
+                    });
+
+                    // 2. Marcar doc viejo como migrado (no eliminarlo para no perder historial)
+                    try {
+                        await setDoc(doc(db, oldPath), {
+                            _migrado: true,
+                            _nuevaRuta: newPath,
+                            _migradoAt: new Date().toISOString()
+                        }, { merge: true });
+                    } catch (_) { /* no bloquear si falla */ }
+
+                    // 3. Actualizar fotos pendientes en IDB
+                    if (typeof updatePhotoMunicipio === 'function') {
+                        await updatePhotoMunicipio(id, newMuni);
+                    }
+
+                    const completeSynced = { ...finalData, synced: true };
+                    const finalFichas = { ...updatedFichas, [id]: completeSynced };
+                    await safeSaveAllFichas(finalFichas);
+
+                    // 4. Avisar al usuario sobre las fotos en Drive
+                    const fotasEnDrive = (existingFicha?.fotoList || []).filter((f: any) => f.driveId);
+                    if (fotasEnDrive.length > 0) {
+                        toast(`✅ Municipio actualizado. ⚠️ ${fotasEnDrive.length} foto(s) en Drive siguen en carpeta "${oldMuni}". Contacta al admin para moverlas.`);
+                    } else {
+                        toast(`✅ Municipio cambiado a ${newMuni} y sincronizado.`);
+                    }
+                } else {
+                    // ── Flujo normal sin cambio de municipio ──
+                    await saveData(finalData);
+                    const completeSynced = { ...finalData, synced: true };
+                    const finalFichas = { ...updatedFichas, [id]: completeSynced };
+                    await safeSaveAllFichas(finalFichas);
+                    toast("✅ Sincronizado en Nube");
+                }
             } catch (e) {
                 toast("⚠️ Error Nube, guardado local e IDB");
             }

@@ -318,3 +318,41 @@ export async function checkPendingInList(ids: string[]): Promise<string[]> {
         return [];
     }
 }
+
+/**
+ * Actualiza el municipio de todas las fotos pendientes asociadas a un pozoId.
+ * Se usa cuando el usuario cambia el municipio de una ficha existente,
+ * para que las fotos aún no sincronizadas vayan a la carpeta correcta en Drive.
+ */
+export async function updatePhotoMunicipio(pozoId: string, newMunicipio: string): Promise<number> {
+    try {
+        const { store } = await getSafeTransaction(PHOTO_STORE, 'readwrite');
+        return new Promise((resolve, reject) => {
+            const request = store.getAll();
+            request.onsuccess = () => {
+                const all: PendingPhoto[] = request.result;
+                const toUpdate = all.filter(p =>
+                    !p.synced &&
+                    (p.pozoId === pozoId || p.municipio !== newMunicipio)
+                    && p.pozoId === pozoId
+                );
+                let count = 0;
+                if (toUpdate.length === 0) { resolve(0); return; }
+                toUpdate.forEach(photo => {
+                    photo.municipio = newMunicipio;
+                    const putReq = store.put(photo);
+                    putReq.onsuccess = () => {
+                        count++;
+                        if (count === toUpdate.length) resolve(count);
+                    };
+                    putReq.onerror = () => reject(putReq.error);
+                });
+            };
+            request.onerror = () => reject(request.error);
+        });
+    } catch (e) {
+        console.error('[IDB] Error actualizando municipio en fotos pendientes:', e);
+        return 0;
+    }
+}
+
