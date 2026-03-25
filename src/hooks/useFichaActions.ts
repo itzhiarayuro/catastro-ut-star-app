@@ -130,11 +130,16 @@ export const useFichaActions = ({ toast, safeSaveAllFichas }: UseFichaActionsPar
         const id = state.id || `F_${Date.now()}`;
         const now = new Date().toISOString();
 
-        const normalizedPipes = state.pipes.map((p: any, idx: number) => ({
-            ...p,
-            es: (p.es || 'ENTRADA').toUpperCase() as any,
-            orden: idx + 1
-        }));
+        const counters: Record<string, number> = {};
+        const normalizedPipes = state.pipes.map((p: any) => {
+            const tipo = (p.es || 'ENTRADA').toUpperCase();
+            counters[tipo] = (counters[tipo] || 0) + 1;
+            return {
+                ...p,
+                es: tipo as any,
+                orden: counters[tipo]
+            };
+        });
 
         const normalizedSums = state.sums.map((s: any, idx: number) => ({
             ...s,

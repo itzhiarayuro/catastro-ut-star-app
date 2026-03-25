@@ -31,13 +31,15 @@ const PipeCard: React.FC<PipeCardProps> = ({
     let isSumidero = false;
     let tipoStr: 'ENTRADA' | 'SALIDA' | 'SUMIDERO' = 'ENTRADA';
 
+    const typeIndex = allPipes.filter(p => p.es === pipe.es).findIndex(p => p.id === pipe.id);
+    const typeOrder = typeIndex !== -1 ? typeIndex + 1 : (pipe.orden || index + 1);
+
     if (pipe.es === 'SUMIDERO') {
-        const sumIndex = allPipes.filter(p => p.es === 'SUMIDERO').findIndex(p => p.id === pipe.id);
-        label = `SUM${sumIndex + 1}`;
+        label = `SUM${typeOrder}`;
         tipoStr = 'SUMIDERO';
         isSumidero = true;
     } else {
-        label = `${pipe.es === 'SALIDA' ? 'S' : 'E'}${pipe.orden || index + 1}`;
+        label = `${pipe.es === 'SALIDA' ? 'S' : 'E'}${typeOrder}`;
         tipoStr = pipe.es === 'SALIDA' ? 'SALIDA' : 'ENTRADA';
         isSumidero = false;
     }
@@ -49,7 +51,7 @@ const PipeCard: React.FC<PipeCardProps> = ({
                     <ThumbnailImage foto={foto} alt={`Tubería ${index + 1}`} />
                     <div className="flex flex-col">
                         <span className={`pipe-badge text-[8px] px-1 py-0.2 rounded font-bold w-fit ${pipe.es === 'ENTRADA' ? 'bg-blue-600 text-white' : 'bg-orange-600 text-white'}`}>{pipe.es}</span>
-                        <span className="text-xs font-semibold">Tubería {index + 1} {pipe.deA && `· ${pipe.deA}`}</span>
+                        <span className="text-xs font-semibold">Tubería {typeOrder} {pipe.deA && `· ${pipe.deA}`}</span>
                     </div>
                 </div>
                 <div className="flex items-center gap-3">
@@ -115,12 +117,12 @@ const PipeCard: React.FC<PipeCardProps> = ({
                             <span className="unit-toggle flex bg-gray-900 rounded border border-gray-700 overflow-hidden">
                                 <button 
                                     type="button"
-                                    className={`px-2 text-[9px] uppercase font-bold ${(!pipe.unit || pipe.unit === 'mm') ? 'bg-blue-600 text-white' : 'text-gray-500'}`} 
+                                    className={`px-2 text-[9px] uppercase font-bold ${(!pipe.unit || pipe.unit === 'mm') ? 'active' : ''}`} 
                                     onClick={(e) => { e.preventDefault(); onUpdate({ unit: 'mm' }); }}
                                 >mm</button>
                                 <button 
                                     type="button"
-                                    className={`px-2 text-[9px] uppercase font-bold ${pipe.unit === 'in' ? 'bg-blue-600 text-white' : 'text-gray-500'}`} 
+                                    className={`px-2 text-[9px] uppercase font-bold ${pipe.unit === 'in' ? 'active' : ''}`} 
                                     onClick={(e) => { e.preventDefault(); onUpdate({ unit: 'in' }); }}
                                 >in</button>
                             </span>
