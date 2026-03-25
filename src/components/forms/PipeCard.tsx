@@ -27,20 +27,37 @@ const PipeCard: React.FC<PipeCardProps> = ({
 }) => {
     const [isOpen, setIsOpen] = useState(false);
     
+    // Normalización unificada con FotosZone: usa (es || tipo) como fallback
+    const getNormalizedType = (p: any) => {
+        const raw = p?.es || p?.tipo || 'ENTRADA';
+        const up = raw.toUpperCase();
+        if (up === 'E' || up === 'ENTRADA') return 'ENTRADA';
+        if (up === 'S' || up === 'SALIDA') return 'SALIDA';
+        if (up === 'SUM' || up === 'SUMIDERO') return 'SUMIDERO';
+        return 'ENTRADA';
+    };
+
     let label = '';
     let isSumidero = false;
     let tipoStr: 'ENTRADA' | 'SALIDA' | 'SUMIDERO' = 'ENTRADA';
 
-    const typeIndex = allPipes.filter(p => p.es === pipe.es).findIndex(p => p.id === pipe.id);
-    const typeOrder = typeIndex !== -1 ? typeIndex + 1 : (pipe.orden || index + 1);
+    const currentType = getNormalizedType(pipe);
+    const sameTypePipes = allPipes.filter(p => getNormalizedType(p) === currentType);
+    const typeIndexInGroup = sameTypePipes.findIndex(p => p.id === pipe.id);
+    
+    // Siempre usar posición dentro del grupo filtrado, nunca el valor guardado
+    const typeOrder = typeIndexInGroup !== -1 ? typeIndexInGroup + 1 : 1;
+    
+    // Debug temporal: remover después de validar en producción
+    console.log(`[PipeCard] pipe.id=${pipe.id} es=${pipe.es} currentType=${currentType} sameType=${sameTypePipes.length} idx=${typeIndexInGroup} → typeOrder=${typeOrder}`);
 
-    if (pipe.es === 'SUMIDERO') {
+    if (currentType === 'SUMIDERO') {
         label = `SUM${typeOrder}`;
         tipoStr = 'SUMIDERO';
         isSumidero = true;
     } else {
-        label = `${pipe.es === 'SALIDA' ? 'S' : 'E'}${typeOrder}`;
-        tipoStr = pipe.es === 'SALIDA' ? 'SALIDA' : 'ENTRADA';
+        label = `${currentType === 'SALIDA' ? 'S' : 'E'}${typeOrder}`;
+        tipoStr = currentType === 'SALIDA' ? 'SALIDA' : 'ENTRADA';
         isSumidero = false;
     }
 
@@ -48,7 +65,7 @@ const PipeCard: React.FC<PipeCardProps> = ({
         <div className="pipe-card mb-3">
             <div className="pipe-card-header cursor-pointer p-3 bg-gray-900 flex justify-between items-center rounded-t-lg" onClick={() => setIsOpen(!isOpen)}>
                 <div className="pipe-card-label flex items-center gap-2">
-                    <ThumbnailImage foto={foto} alt={`Tubería ${index + 1}`} />
+                    <ThumbnailImage foto={foto} alt={`Tubería ${typeOrder}`} />
                     <div className="flex flex-col">
                         <span className={`pipe-badge text-[8px] px-1 py-0.2 rounded font-bold w-fit ${pipe.es === 'ENTRADA' ? 'bg-blue-600 text-white' : 'bg-orange-600 text-white'}`}>{pipe.es}</span>
                         <span className="text-xs font-semibold">Tubería {typeOrder} {pipe.deA && `· ${pipe.deA}`}</span>

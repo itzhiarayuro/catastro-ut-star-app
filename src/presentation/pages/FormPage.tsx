@@ -288,9 +288,22 @@ const FormPage: React.FC<FormPageProps> = ({
                             </div>
                             <div className="field">
                                 <label>Estado Pozo</label>
-                                <select value={state.estadoPozo} onChange={e => updateState({ estadoPozo: e.target.value })}>
+                                <select 
+                                    value={ESTADOS_POZO.includes(state.estadoPozo || '') ? state.estadoPozo : 'OTRO'} 
+                                    onChange={e => updateState({ estadoPozo: e.target.value })}
+                                >
                                     {ESTADOS_POZO.map(e => <option key={e} value={e}>{e}</option>)}
                                 </select>
+                                {((state.estadoPozo && !ESTADOS_POZO.includes(state.estadoPozo)) || state.estadoPozo === 'OTRO') && (
+                                    <input
+                                        type="text"
+                                        maxLength={60}
+                                        value={state.estadoPozo === 'OTRO' ? '' : state.estadoPozo}
+                                        onChange={e => updateState({ estadoPozo: e.target.value.toUpperCase() })}
+                                        style={{ marginTop: '10px' }}
+                                        placeholder="Especifique estado del pozo..."
+                                    />
+                                )}
                             </div>
                             <div className="field">
                                 <label>Barrio*</label>
@@ -584,12 +597,16 @@ const FormPage: React.FC<FormPageProps> = ({
                             const alerts: string[] = [];
                             const hTotal = state.altura || 0;
                             state.pipes.forEach((p, idx) => {
+                                const orient = (p.es || '').toUpperCase();
+                                const sameType = state.pipes.filter(x => (x.es || '').toUpperCase() === orient);
+                                const tIdx = sameType.findIndex(x => x.id === p.id);
+                                const tLabel = `${orient === 'SALIDA' ? 'S' : orient === 'SUMIDERO' ? 'SUM' : 'E'}${tIdx + 1}`;
                                 const z = parseFloat(p.cotaZ) || 0;
                                 let d = parseFloat(p.diam) || 0;
                                 if (p.unit === 'in') d = (d * 25.4);
                                 const batea = z + (d / 1000);
-                                if (p.es === 'ENTRADA' && hTotal < batea) alerts.push(`Tubería #${idx + 1} (ENTRADA): Altura total (${hTotal}m) debe ser ≥ Batea (${batea.toFixed(3)}m)`);
-                                if (p.es === 'SALIDA' && hTotal < batea) alerts.push(`Tubería #${idx + 1} (SALIDA): Altura total (${hTotal}m) debe ser ≥ Batea (${batea.toFixed(3)}m)`);
+                                if (p.es === 'ENTRADA' && hTotal < batea) alerts.push(`Tubería ${tLabel} (ENTRADA): Altura total (${hTotal}m) debe ser ≥ Batea (${batea.toFixed(3)}m)`);
+                                if (p.es === 'SALIDA' && hTotal < batea) alerts.push(`Tubería ${tLabel} (SALIDA): Altura total (${hTotal}m) debe ser ≥ Batea (${batea.toFixed(3)}m)`);
                             });
                             if (alerts.length > 0) {
                                 return (
