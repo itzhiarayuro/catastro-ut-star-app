@@ -22,7 +22,7 @@ import PipeCard from '../../components/forms/PipeCard';
 import SumideroCard from '../../components/forms/SumideroCard';
 import { getHybridModeStatus } from '../../utils/storageManager';
 
-const POZO_PREFIX = 'P';
+const POZO_PREFIX = 'PZ';
 
 /* ── Small summary cell used in the final review step ── */
 const SummaryItem: React.FC<{ label: string; val: string }> = ({ label, val }) => (
@@ -257,7 +257,7 @@ const FormPage: React.FC<FormPageProps> = ({
                                         <input
                                             type="text"
                                             inputMode="text"
-                                            value={state.municipio === 'MARINILLA' ? state.pozo : (state.pozo.startsWith(POZO_PREFIX) ? state.pozo.slice(POZO_PREFIX.length) : state.pozo)}
+                                            value={state.municipio === 'MARINILLA' ? state.pozo : (state.pozo.startsWith(POZO_PREFIX) ? state.pozo.slice(POZO_PREFIX.length) : (state.pozo.startsWith('P') ? state.pozo.slice(1) : state.pozo))}
                                             onChange={e => {
                                                 const val = e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
                                                 const isMarinilla = state.municipio === 'MARINILLA';
@@ -268,7 +268,7 @@ const FormPage: React.FC<FormPageProps> = ({
                                                 }
                                             }}
                                             placeholder={state.municipio === 'MARINILLA' ? 'M071' : '001'}
-                                            style={{ paddingLeft: state.municipio === 'MARINILLA' ? '10px' : '26px' }}
+                                            style={{ paddingLeft: state.municipio === 'MARINILLA' ? '10px' : '34px' }}
                                         />
                                     </div>
                                 </div>

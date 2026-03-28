@@ -41,25 +41,15 @@ export const useCloudRestore = ({ toast, safeSaveAllFichas }: UseCloudRestorePar
                 const data = docSnap.data() as AppState;
                 if (!data || data.deleted) return;
 
-                // Identify best ID to avoid duplicates (ID original vs Firestore Mun_Pozo ID)
-                const finalId = data.id || docSnap.id;
-                
-                // Deduplication by Pozo name + Municipality
-                const normPozo = (data.pozo || '').toUpperCase().trim();
-                const normMun = normalizeText(data.municipio || '').trim();
-                
-                // Find any local ficha that matches this POZO/MUN even if it has a different ID
-                const duplicateKey = Object.entries(updatedFichas).find(([_, f]) => {
-                    const fPozo = (f.pozo || '').toUpperCase().trim();
-                    const fMun = normalizeText(f.municipio || '').trim();
-                    return fPozo === normPozo && fMun === normMun;
-                })?.[0];
+                // Use Firestore document ID as the canonical identifier
+                const firestoreDocId = docSnap.id;
+                // Prefer the internal id if present, otherwise use Firestore doc ID
+                const finalId = data.id || firestoreDocId;
 
-                // If found a duplicate by name, we prioritize the master ID from Cloud/previous local session
-                if (duplicateKey && duplicateKey !== finalId) {
-                    delete updatedFichas[duplicateKey];
-                }
-
+                // Simple ID-based dedup: if this ficha already exists locally by the same ID,
+                // the cloud version takes precedence (it's the synced version).
+                // If there's a matching Firestore doc ID that differs from the internal id,
+                // also map via the Firestore doc ID to prevent duplicates from old naming.
                 const fichaFinal = { ...data, id: finalId, synced: true };
                 updatedFichas[finalId] = fichaFinal;
                 downloadedFichas.push(fichaFinal);

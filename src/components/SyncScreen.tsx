@@ -14,6 +14,7 @@ interface SyncScreenProps {
 const SyncScreen: React.FC<SyncScreenProps> = ({ fichas, onFichasUpdated, onClose }) => {
     const [status, setStatus] = useState<'IDLE' | 'SYNCING' | 'COMPLETED' | 'ERROR'>('IDLE');
     const [progress, setProgress] = useState({ total: 0, synced: 0, currentFile: '', error: null as string | null });
+    const [syncErrors, setSyncErrors] = useState<string[]>([]);
     const [pendingPhotos, setPendingPhotos] = useState(0);
     const [pendingMarcaciones, setPendingMarcaciones] = useState(0);
 
@@ -64,6 +65,7 @@ const SyncScreen: React.FC<SyncScreenProps> = ({ fichas, onFichasUpdated, onClos
 
     const handleStartSync = async () => {
         setStatus('SYNCING');
+        setSyncErrors([]);
         try {
             // 1. Sincronizar Fichas a Firestore
             const updatedFichas = await syncFichasToFirestore(fichas, (p) => {
@@ -87,6 +89,7 @@ const SyncScreen: React.FC<SyncScreenProps> = ({ fichas, onFichasUpdated, onClos
             });
 
             // 2. Sincronizar Fotos a Drive
+            let currentErrors: string[] = [];
             await syncPhotosToDrive((p) => {
                 setProgress({
                     total: p.total,
@@ -94,12 +97,21 @@ const SyncScreen: React.FC<SyncScreenProps> = ({ fichas, onFichasUpdated, onClos
                     currentFile: p.currentFile,
                     error: p.error
                 });
+                if (p.error) {
+                    currentErrors.push(p.error);
+                }
             });
 
-            setStatus('COMPLETED');
+            if (currentErrors.length > 0) {
+                setSyncErrors(currentErrors);
+                setStatus('ERROR');
+            } else {
+                setStatus('COMPLETED');
+            }
         } catch (err: any) {
             console.error("Sync error:", err);
             setStatus('ERROR');
+            setSyncErrors([err.message || "Error desconocido"]);
             setProgress(prev => ({ ...prev, error: err.message || "Error desconocido" }));
         }
     };
@@ -249,9 +261,25 @@ const SyncScreen: React.FC<SyncScreenProps> = ({ fichas, onFichasUpdated, onClos
                             <AlertTriangle size={64} className="text-red-400" />
                         </div>
                         <h2 className="text-2xl font-bold mb-4 text-red-400">Hubo un problema</h2>
-                        <p className="text-slate-400 text-sm max-w-xs mb-8">
-                            {progress.error || 'No se pudo completar la sincronización. Verifica tu conexión.'}
+                        <p className="text-slate-400 text-sm max-w-xs mb-4">
+                            No se pudo completar la sincronización de algunos archivos.
                         </p>
+                        
+                        {/* Mostrar lista de errores si existen */}
+                        {syncErrors.length > 0 && (
+                            <div className="text-left w-full mb-6 bg-red-900/20 p-4 rounded-xl border border-red-500/20 max-h-40 overflow-y-auto">
+                                <p className="text-red-400 text-xs font-bold mb-2">Detalles del servidor:</p>
+                                <ul className="list-disc pl-4">
+                                    {syncErrors.slice(0, 10).map((err, idx) => (
+                                        <li key={idx} className="text-red-300 text-xs mb-1 break-words">{err}</li>
+                                    ))}
+                                    {syncErrors.length > 10 && (
+                                        <li className="text-red-400 text-xs mt-2 italic">... y {syncErrors.length - 10} errores más.</li>
+                                    )}
+                                </ul>
+                            </div>
+                        )}
+
                         <button
                             onClick={handleStartSync}
                             className="sync-btn-primary"

@@ -160,22 +160,15 @@ export const useFichaActions = ({ toast, safeSaveAllFichas }: UseFichaActionsPar
             coordenada_y
         } as AppState;
 
-        // FIRST: Always save locally
+        // FIRST: Always save locally — ONLY upsert the current ficha, never filter others
         const updatedFichas = { ...fichas, [id]: finalData };
-        
-        // Filter by user UID to ensure isolation on shared devices
-        const filteredFichas: Record<string, AppState> = {};
-        Object.entries(updatedFichas).forEach(([fichaId, f]) => {
-            // If the ficha belongs to the current user OR it lacks a creator (legacy)
-            if (!f.createdBy || f.createdBy === user?.uid) {
-                filteredFichas[fichaId] = f;
-            }
-        });
 
-        setFichas(filteredFichas);
-
-        await saveFichaToStorage(finalData);
-        await safeSaveAllFichas(filteredFichas); // Save the filtered set
+        setFichas(updatedFichas);
+        // Save the individual ficha to IDB immediately (most important write)
+        const idbSaved = await saveFichaToStorage(finalData);
+        if (!idbSaved) {
+            toast("⚠️ ERROR: No se pudo guardar en la base de datos local. Intenta de nuevo.");
+        }
 
         // VALIDATION CHECK
         const missingFields: string[] = [];
@@ -242,8 +235,8 @@ export const useFichaActions = ({ toast, safeSaveAllFichas }: UseFichaActionsPar
                     }
 
                     const completeSynced = { ...finalData, synced: true };
-                    const finalFichas = { ...updatedFichas, [id]: completeSynced };
-                    await safeSaveAllFichas(finalFichas);
+                    setFichas({ ...updatedFichas, [id]: completeSynced });
+                    await saveFichaToStorage(completeSynced);
 
                     // 4. Avisar al usuario sobre las fotos en Drive
                     const fotasEnDrive = (existingFicha?.fotoList || []).filter((f: any) => f.driveId);
@@ -256,8 +249,8 @@ export const useFichaActions = ({ toast, safeSaveAllFichas }: UseFichaActionsPar
                     // ── Flujo normal sin cambio de municipio ──
                     await saveData(finalData);
                     const completeSynced = { ...finalData, synced: true };
-                    const finalFichas = { ...updatedFichas, [id]: completeSynced };
-                    await safeSaveAllFichas(finalFichas);
+                    setFichas({ ...updatedFichas, [id]: completeSynced });
+                    await saveFichaToStorage(completeSynced);
                     toast("✅ Sincronizado en Nube");
                 }
             } catch (e) {

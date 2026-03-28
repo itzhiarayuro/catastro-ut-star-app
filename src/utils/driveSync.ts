@@ -25,101 +25,65 @@ export const syncPhotosToDrive = async (onProgress: (p: SyncProgress) => void) =
 
     onProgress(progress);
 
-    // Group photos into batches
-    let currentBatch: any[] = [];
-    let currentBatchSize = 0;
-
     for (const photo of pending) {
-        // Simple base64 length estimate
-        const estimatedSize = photo.blob.length * 0.75;
-
-        if (currentBatchSize + estimatedSize > MAX_BATCH_SIZE && currentBatch.length > 0) {
-            await uploadBatch(currentBatch, onProgress, progress);
-            currentBatch = [];
-            currentBatchSize = 0;
-        }
-
-        currentBatch.push(photo);
-        currentBatchSize += estimatedSize;
-    }
-
-    if (currentBatch.length > 0) {
-        await uploadBatch(currentBatch, onProgress, progress);
-    }
-};
-
-const uploadBatch = async (batch: any[], onProgress: (p: SyncProgress) => void, progress: SyncProgress) => {
-    const zipData: Record<string, Uint8Array> = {};
-
-    for (const photo of batch) {
         progress.currentFile = photo.filename;
         onProgress({ ...progress });
 
-        // Convert dataURL to Uint8Array
-        const base64 = photo.blob.split(',')[1];
-        const binary = atob(base64);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) {
-            bytes[i] = binary.charCodeAt(i);
-        }
-
-        zipData[photo.filename] = bytes;
-    }
-
-    const zipped = zipSync(zipData);
-
-    // Chunking to avoid "Maximum call stack size exceeded" on large zips
-    const CHUNK_SZ = 0x8000;
-    const charChunks: string[] = [];
-    for (let i = 0; i < zipped.length; i += CHUNK_SZ) {
-        charChunks.push(String.fromCharCode.apply(null, zipped.subarray(i, i + CHUNK_SZ) as any));
-    }
-    const zipBase64 = btoa(charChunks.join(''));
-
-    try {
-        const response = await fetch(GAS_URL, {
-            method: 'POST',
-            mode: 'no-cors', // Required for GAS unless CORS is handled specifically
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                token: SECRET_TOKEN,
-                zipData: zipBase64,
-                metadata: batch.map(p => {
-                    const base64Str = p.blob.split(',')[1] || '';
-                    const byteCount = Math.floor((base64Str.length * 0.75)) - (base64Str.endsWith('==') ? 2 : (base64Str.endsWith('=') ? 1 : 0));
-                    
-                    return {
-                        id: p.id,
-                        filename: p.filename,
-                        size: byteCount,
-                        municipio: p.municipio || 'SOPÓ',
-                        pozoId: p.pozoId || 'S/N',
-                        barrio: p.barrio || 'CATASTRO',
-                        categoria: p.categoria || 'General',
-                        inspector: p.inspector || 'Inspector'
-                    };
-                })
-            })
-        });
-
-        // Since we use 'no-cors', we can't read the response body, 
-        // but we assume success if no exception is thrown.
-        // For a more robust solution, 'cors' mode in GAS is better but harder to set up.
-
-        for (const photo of batch) {
-            await updatePhotoSyncStatus(photo.id, true);
+        // VALIDACIÓN: Rechazar pozoId vacío o inválido
+        if (!photo.pozoId || photo.pozoId === 'SIN_ID' || photo.pozoId === 'MARC') {
+            console.warn(`Sync omitado para ${photo.id}: pozoId invalido (${photo.pozoId})`);
             progress.synced++;
+            await updatePhotoSyncStatus(photo.id, true); // Lo marcamos como "procesado" para que no moleste
+            onProgress({ ...progress });
+            continue;
         }
-        onProgress({ ...progress });
 
-    } catch (err: any) {
-        console.error("Batch upload error", err);
-        progress.error = err.message;
-        onProgress({ ...progress });
-        throw err;
+        try {
+            await uploadSinglePhoto(photo);
+            progress.synced++;
+            onProgress({ ...progress });
+        } catch (err: any) {
+            console.error(`Error sincronizando ${photo.filename}:`, err);
+            progress.error = `Error en ${photo.filename}: ${err.message}`;
+            onProgress({ ...progress });
+            // Continuamos con la siguiente foto
+        }
     }
+};
+
+const uploadSinglePhoto = async (photo: any) => {
+    if (!GAS_URL) throw new Error("GAS_URL no configurada");
+
+    const payload = {
+        token: SECRET_TOKEN,
+        municipio: photo.municipio || 'SOPÓ',
+        pozoId: photo.pozoId,
+        barrio: photo.barrio || 'CATASTRO',
+        filename: photo.filename,
+        base64: photo.blob,
+        md5: photo.md5,
+        categoria: photo.categoria || 'General',
+        inspector: photo.inspector || 'Inspector'
+    };
+
+    const response = await fetch(GAS_URL, {
+        method: 'POST',
+        mode: 'cors', // Cambiamos a cors para poder leer la respuesta JSON si es posible
+        body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+        throw new Error(`Error HTTP: ${response.status}`);
+    }
+
+    const result = await response.json();
+    if (!result.success) {
+        throw new Error(result.error || "Error desconocido en el servidor");
+    }
+
+    // Si tuvo éxito (ya sea subiendo o porque era duplicado), marcamos como sincronizada
+    await updatePhotoSyncStatus(photo.id, true);
+    return result;
 };
 
 /**

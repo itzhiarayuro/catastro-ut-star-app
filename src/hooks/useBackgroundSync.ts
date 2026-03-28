@@ -1,10 +1,12 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { AppState } from '../types/catastro';
 import {
     getPendingPhotosCount,
     saveFichaToStorage,
+    getAllFichasFromStorage,
 } from '../utils/storageManager';
 import { useAppStore } from './useAppStore';
+import { useAuth } from '../lib/firebase';
 import { safeLocalStorageGet, safeLocalStorageRemove } from '../utils/ui';
 
 interface UseBackgroundSyncParams {
@@ -17,13 +19,21 @@ interface UseBackgroundSyncParams {
  * - Migration from LocalStorage to IndexedDB
  * - Syncing pending fichas to Firestore
  * - Nightly photo uploads (11PM-5AM window)
+ * 
+ * IMPORTANT: Reads fichas from IndexedDB (source of truth), NOT from RAM,
+ * to avoid propagating stale/empty state during sync.
  */
 export const useBackgroundSync = ({ safeSaveAllFichas }: UseBackgroundSyncParams) => {
-    const { fichas, setFichas, isOnline, setPendingCount } = useAppStore();
+    const { setFichas, isOnline, setPendingCount } = useAppStore();
+    const { user, loading: authLoading } = useAuth();
+    const syncingRef = useRef(false);
 
     useEffect(() => {
         const backgroundSync = async () => {
             if (!navigator.onLine) return;
+            if (authLoading || !user?.uid) return; // Don't sync before auth is ready
+            if (syncingRef.current) return; // Prevent overlapping syncs
+            syncingRef.current = true;
 
             const now = new Date();
             const hour = now.getHours();
@@ -31,69 +41,82 @@ export const useBackgroundSync = ({ safeSaveAllFichas }: UseBackgroundSyncParams
 
             console.log(`🔄 Ciclo de sincronización de fondo (${hour}:${now.getMinutes()})...`);
 
-            // 0. Migration Check (Ensures legacy data moves to IDB even if load failed)
-            const savedLS = safeLocalStorageGet('fichas_star');
-            if (savedLS) {
-                try {
-                    const lsFichas = savedLS;
-                    for (const f of Object.values(lsFichas) as any[]) {
-                        await saveFichaToStorage(f);
-                    }
-                    // ✅ Remove from localStorage after successful IDB migration
-                    // to prevent QuotaExceededError loop on every sync cycle
-                    safeLocalStorageRemove('fichas_star');
-                    console.log("💾 Migración de fondo (LS -> IDB) exitosa. LS limpiado.");
-                } catch (e) { }
-            }
-
-            // 1. Data Sync (Always tries every 30 mins if online)
-            const pendingFichas = Object.values(fichas).filter(f => !f.synced && !f.deleted);
-            if (pendingFichas.length > 0) {
-                console.log(`📤 Sincronizando ${pendingFichas.length} fichas pendientes...`);
-                const { syncFichasToFirestore } = await import('../utils/syncRegistry');
-                try {
-                    const refreshedFichas = await syncFichasToFirestore(fichas);
-                    setFichas(refreshedFichas);
-
-                    // Persist updated status
-                    await safeSaveAllFichas(refreshedFichas);
-
-                    for (const f of Object.values(refreshedFichas)) {
-                        await saveFichaToStorage(f);
-                    }
-                } catch (error) {
-                    console.error("❌ Error sync fichas fondo:", error);
+            try {
+                // 0. Migration Check (Ensures legacy data moves to IDB even if load failed)
+                const savedLS = safeLocalStorageGet('fichas_star');
+                if (savedLS) {
+                    try {
+                        const lsFichas = savedLS;
+                        for (const f of Object.values(lsFichas) as any[]) {
+                            await saveFichaToStorage(f);
+                        }
+                        safeLocalStorageRemove('fichas_star');
+                        console.log("💾 Migración de fondo (LS -> IDB) exitosa. LS limpiado.");
+                    } catch (e) { }
                 }
-            }
 
-            // 2. Nightly Sync (Photos)
-            if (isNightWindow) {
-                console.log("🌙 Ventana nocturna detectada. Iniciando subida de fotos silenciosa...");
-                try {
-                    const { syncPhotosToDrive } = await import('../utils/driveSync');
-                    const pendingPhotosCount = await getPendingPhotosCount();
-
-                    if (pendingPhotosCount > 0) {
-                        await syncPhotosToDrive((p) => {
-                            if (p.error) console.error("Error en sync nocturno de fotos:", p.error);
-                        });
-                        // Update UI counts after sync
-                        const count = await getPendingPhotosCount();
-                        setPendingCount(count);
+                // 1. Data Sync — Read from IDB (source of truth), NOT from RAM
+                const idbFichas = await getAllFichasFromStorage();
+                
+                // Filter to current user's fichas only
+                const userFichas: Record<string, AppState> = {};
+                Object.entries(idbFichas).forEach(([id, f]) => {
+                    if (!f.createdBy || f.createdBy === user.uid) {
+                        userFichas[id] = f;
                     }
-                } catch (error) {
-                    console.error("❌ Fallo en sincronización nocturna:", error);
+                });
+
+                const pendingFichas = Object.values(userFichas).filter(f => !f.synced && !f.deleted);
+                if (pendingFichas.length > 0) {
+                    console.log(`📤 Sincronizando ${pendingFichas.length} fichas pendientes...`);
+                    const { syncFichasToFirestore } = await import('../utils/syncRegistry');
+                    try {
+                        const refreshedFichas = await syncFichasToFirestore(userFichas);
+                        
+                        // Update RAM with synced status
+                        setFichas(refreshedFichas);
+
+                        // Write ONLY the changed fichas back to IDB (upsert, not overwrite)
+                        for (const f of Object.values(refreshedFichas)) {
+                            if (f.synced) {
+                                await saveFichaToStorage(f);
+                            }
+                        }
+                    } catch (error) {
+                        console.error("❌ Error sync fichas fondo:", error);
+                    }
                 }
+
+                // 2. Nightly Sync (Photos)
+                if (isNightWindow) {
+                    console.log("🌙 Ventana nocturna detectada. Iniciando subida de fotos silenciosa...");
+                    try {
+                        const { syncPhotosToDrive } = await import('../utils/driveSync');
+                        const pendingPhotosCount = await getPendingPhotosCount();
+
+                        if (pendingPhotosCount > 0) {
+                            await syncPhotosToDrive((p) => {
+                                if (p.error) console.error("Error en sync nocturno de fotos:", p.error);
+                            });
+                            const count = await getPendingPhotosCount();
+                            setPendingCount(count);
+                        }
+                    } catch (error) {
+                        console.error("❌ Fallo en sincronización nocturna:", error);
+                    }
+                }
+            } finally {
+                syncingRef.current = false;
             }
         };
 
         const syncInterval = setInterval(backgroundSync, 30 * 60 * 1000); // 30 minutes
-        // Initial run after a short delay for app stability
-        const initialTimeout = setTimeout(backgroundSync, 5000);
+        // Initial run after a delay — ensures auth is ready
+        const initialTimeout = setTimeout(backgroundSync, 10000);
 
         return () => {
             clearInterval(syncInterval);
             clearTimeout(initialTimeout);
         };
-    }, [fichas, isOnline]);
+    }, [isOnline, user?.uid, authLoading]);
 };

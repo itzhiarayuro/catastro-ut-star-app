@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Camera, Trash2, CheckCircle2, Image as ImageIcon, AlertCircle } from 'lucide-react';
-import { procesarFoto, FotoRegistro } from '../utils/fotoProcessor';
+import { procesarFoto, FotoRegistro, calculateMD5 } from '../utils/fotoProcessor';
 import { savePhotoToStorage, getHybridModeStatus, getPhotoFromStorage } from '../utils/storageManager';
 import { fetchPhotoFromDrive } from '../utils/driveSync';
 import FotoAkasoAutomatica from './FotoAkasoAutomatica';
@@ -98,7 +98,7 @@ const HydratedImage: React.FC<{ foto: any, alt: string, style?: any, fallback?: 
                             id: foto.id,
                             pozoId: foto.idPozo || '',
                             municipio: (window as any).CURRENT_MUNICIPIO || '',
-                            barrio: '',
+                            barrio: 'CATASTRO',
                             filename: foto.filename,
                             blob: driveBlob,
                             categoria: foto.categoria || 'General',
@@ -149,8 +149,9 @@ const GenericPhotoCard: React.FC<{
             const userStr = safeLocalStorageGet('ut_star_user');
             const inspector = userStr ? userStr.name : 'Desconocido';
             const municipio = (window as any).CURRENT_MUNICIPIO || 'SOPO';
+            const md5 = calculateMD5(blob);
             await savePhotoToStorage({
-                id: newFoto.id, pozoId, municipio, barrio: '', filename, blob,
+                id: newFoto.id, pozoId, municipio, barrio: 'CATASTRO', filename, blob, md5,
                 categoria: 'General', inspector, timestamp: Date.now(), synced: false
             });
             onAdd({ ...newFoto, blobId: blob });
@@ -180,7 +181,7 @@ const GenericPhotoCard: React.FC<{
                         {disabled ? '🚫 Deshabilitado por Estado de Pozo (Sellado)' : description}
                     </div>
                 </div>
-                {!disabled && <FotoAkasoAutomatica pozoId={pozoId} filename={filename} categoria="General" onSuccess={onAdd} />}
+                {!disabled && <FotoAkasoAutomatica pozoId={pozoId} filename={filename} categoria="General" onSuccess={onAdd} barrioFlag="CATASTRO" />}
             </div>
 
             {last ? (

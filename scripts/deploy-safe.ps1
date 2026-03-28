@@ -22,11 +22,11 @@ Write-Host "🔍 Verificando integridad antes de desplegar..." -ForegroundColor 
 $portalFile = "src\presentation\pages\PortalPage.tsx"
 $content = Get-Content $portalFile -Raw
 
-if ($content -notmatch "window\.open\('https://sistema-fichas-tecnicas\.web\.app'") {
+if (-not $content.Contains("window.open('https://sistema-fichas-tecnicas.web.app'")) {
     Write-Host ""
-    Write-Host "❌ ERROR CRÍTICO: El botón 'Sistema de Fichas' en PortalPage.tsx fue modificado." -ForegroundColor Red
+    Write-Host "ERROR CRITICO: El boton 'Sistema de Fichas' en PortalPage.tsx fue modificado." -ForegroundColor Red
     Write-Host "   Debe usar: window.open('https://sistema-fichas-tecnicas.web.app', '_blank')" -ForegroundColor Yellow
-    Write-Host "   NO usar setActiveScreen() — causa loop infinito." -ForegroundColor Yellow
+    Write-Host "   NO usar setActiveScreen() - causa loop infinito." -ForegroundColor Yellow
     Write-Host ""
     exit 1
 }
@@ -36,10 +36,10 @@ Write-Host "✅ Botón Sistema de Fichas: OK" -ForegroundColor Green
 # GUARDIA 2: Advertir sobre el despliegue dual
 Write-Host ""
 Write-Host "⚠️  ADVERTENCIA: Este proyecto controla DOS sitios de hosting:" -ForegroundColor Yellow
-Write-Host "   1. catastro-ut-star.web.app       (app principal — OK desplegar desde aquí)" -ForegroundColor White
-Write-Host "   2. sistema-fichas-tecnicas.web.app (app Next.js SEPARADA — NO desplegar desde aquí)" -ForegroundColor Red
+Write-Host "   1. catastro-ut-star.web.app       (app principal - OK desplegar desde aqui)" -ForegroundColor White
+Write-Host "   2. sistema-fichas-tecnicas.web.app (app Next.js SEPARADA - NO desplegar desde aqui)" -ForegroundColor Red
 Write-Host ""
-Write-Host "   Si despliegas ambos desde aquí, SOBREESCRIBES la app de fichas técnicas." -ForegroundColor Yellow
+Write-Host "   Si despliegas ambos desde aqui, SOBREESCRIBES la app de fichas tecnicas." -ForegroundColor Yellow
 Write-Host ""
 
 # GUARDIA 3: Preguntar qué desplegar

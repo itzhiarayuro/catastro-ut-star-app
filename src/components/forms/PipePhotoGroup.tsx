@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Camera, Trash2, CheckCircle2, Image as ImageIcon } from 'lucide-react';
-import { procesarFoto, FotoRegistro } from '../../utils/fotoProcessor';
+import { procesarFoto, FotoRegistro, calculateMD5 } from '../../utils/fotoProcessor';
 import { savePhotoToStorage, getPhotoFromStorage } from '../../utils/storageManager';
 import { fetchPhotoFromDrive } from '../../utils/driveSync';
 import FotoAkasoAutomatica from '../FotoAkasoAutomatica';
@@ -53,7 +53,7 @@ export const HydratedImage: React.FC<{ foto: any, alt: string, style?: any, fall
                             id: foto.id,
                             pozoId: foto.idPozo || '',
                             municipio: (window as any).CURRENT_MUNICIPIO || '',
-                            barrio: '',
+                            barrio: 'CATASTRO',
                             filename: foto.filename,
                             blob: driveBlob,
                             categoria: foto.categoria || 'General',
@@ -105,9 +105,10 @@ export const SinglePhotoCard: React.FC<SinglePhotoCardProps> = ({
             const userStr = safeLocalStorageGet('ut_star_user');
             const inspector = userStr ? userStr.name : 'Desconocido';
             const municipio = (window as any).CURRENT_MUNICIPIO || 'SOPO';
+            const md5 = calculateMD5(blob);
             await savePhotoToStorage({
-                id: newFoto.id, pozoId, municipio, barrio: '', filename, blob,
-                categoria, inspector, timestamp: Date.now(), synced: false
+                id: newFoto.id, pozoId, municipio, barrio: 'CATASTRO', filename, blob, md5,
+                categoria: 'Tuberia', inspector, timestamp: Date.now(), synced: false
             });
             onAdd({ ...newFoto, blobId: blob });
         } catch (err) {
@@ -146,6 +147,7 @@ export const SinglePhotoCard: React.FC<SinglePhotoCardProps> = ({
                     filename={filename}
                     categoria={categoria}
                     onSuccess={onAdd}
+                    barrioFlag="CATASTRO"
                 />
             </div>
 

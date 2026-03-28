@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Camera, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
-import { procesarFoto } from '../utils/fotoProcessor';
+import { procesarFoto, calculateMD5 } from '../utils/fotoProcessor';
 import { savePhotoToStorage } from '../utils/storageManager';
 import { safeLocalStorageGet } from '../utils/ui';
 
@@ -9,9 +9,10 @@ interface FotoAkasoAutomaticaProps {
     filename: string;
     categoria: 'General' | 'Interior' | 'Tuberia' | 'Sumidero';
     onSuccess: (foto: any) => void;
+    barrioFlag?: string;
 }
 
-const FotoAkasoAutomatica: React.FC<FotoAkasoAutomaticaProps> = ({ pozoId, filename, categoria, onSuccess }) => {
+const FotoAkasoAutomatica: React.FC<FotoAkasoAutomaticaProps> = ({ pozoId, filename, categoria, onSuccess, barrioFlag }) => {
     const [estado, setEstado] = useState<'lista' | 'abriendo' | 'detectando' | 'completado'>('lista');
     const [error, setError] = useState<string | null>(null);
 
@@ -51,18 +52,19 @@ const FotoAkasoAutomatica: React.FC<FotoAkasoAutomaticaProps> = ({ pozoId, filen
 
                     // Procesar y Guardar
                     const newFoto = procesarFoto(filename, pozoId, base64);
-
                     const userStr = safeLocalStorageGet('ut_star_user');
                     const inspector = userStr ? userStr.name : 'Desconocido';
                     const municipio = (window as any).CURRENT_MUNICIPIO || 'SOPO';
+                    const md5 = calculateMD5(base64);
 
                     await savePhotoToStorage({
                         id: newFoto.id,
                         pozoId,
                         municipio,
-                        barrio: '',
+                        barrio: barrioFlag || '',
                         filename,
                         blob: base64,
+                        md5,
                         categoria,
                         inspector,
                         timestamp: Date.now(),

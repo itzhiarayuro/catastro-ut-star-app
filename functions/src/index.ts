@@ -94,9 +94,29 @@ export const syncPhotosToDrive = functions.runWith({
 
             for (let i = 0; i < updatedFotoList.length; i++) {
                 const foto = updatedFotoList[i];
-                if (foto.driveId) continue;
+                if (foto.driveId) {
+                    // Verificar si está en la carpeta correcta y moverla si no es así
+                    try {
+                        const fileInfo = await drive.files.get({ fileId: foto.driveId, fields: "parents" });
+                        if (fileInfo.data.parents && !fileInfo.data.parents.includes(pozoIdFolder)) {
+                            console.log(`[Drive] Moviendo archivo ${foto.driveId} a la carpeta correcta (${pozoIdFolder})`);
+                            await drive.files.update({
+                                fileId: foto.driveId,
+                                addParents: pozoIdFolder,
+                                removeParents: fileInfo.data.parents.join(','),
+                                fields: 'id, parents'
+                            });
+                        }
+                    } catch (e) {
+                        console.error(`[Drive] Error moviendo archivo ${foto.driveId}:`, e);
+                    }
+                    continue;
+                }
 
+                if (!foto.blobId) continue;
+                
                 const base64Data = foto.blobId.split(",")[1];
+                if (!base64Data) continue;
                 const buffer = Buffer.from(base64Data, "base64");
                 const fileSize = buffer.length;
 
@@ -174,9 +194,29 @@ export const syncMarcacionPhotosToDrive = functions.runWith({
 
             for (const key of fotoKeys) {
                 const foto = updatedFotos[key];
-                if (!foto || foto.driveId || !foto.blobId) continue;
+                if (!foto || !foto.blobId) continue;
+
+                if (foto.driveId) {
+                    // Verificar si está en la carpeta correcta y moverla si no es así
+                    try {
+                        const fileInfo = await drive.files.get({ fileId: foto.driveId, fields: "parents" });
+                        if (fileInfo.data.parents && !fileInfo.data.parents.includes(pozoIdFolder)) {
+                            console.log(`[Drive] Moviendo archivo marcación ${foto.driveId} a la carpeta correcta (${pozoIdFolder})`);
+                            await drive.files.update({
+                                fileId: foto.driveId,
+                                addParents: pozoIdFolder,
+                                removeParents: fileInfo.data.parents.join(','),
+                                fields: 'id, parents'
+                            });
+                        }
+                    } catch (e) {
+                        console.error(`[Drive] Error moviendo archivo marcación ${foto.driveId}:`, e);
+                    }
+                    continue;
+                }
 
                 const base64Data = foto.blobId.split(",")[1];
+                if (!base64Data) continue;
                 const buffer = Buffer.from(base64Data, "base64");
                 const fileSize = buffer.length;
 

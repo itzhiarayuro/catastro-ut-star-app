@@ -7,7 +7,7 @@ import {
 import FotoAkasoAutomatica from './FotoAkasoAutomatica';
 import { db } from '../lib/firebase';
 import { doc, setDoc } from 'firebase/firestore';
-import { procesarFoto, FotoRegistro, resizeImage, stripBinaryData } from '../utils/fotoProcessor';
+import { procesarFoto, FotoRegistro, resizeImage, stripBinaryData, calculateMD5 } from '../utils/fotoProcessor';
 import { savePhotoToStorage, getPhotoFromStorage } from '../utils/storageManager';
 import GeoTracker from './SmartGeoTracker';
 import { safeLocalStorageSet, safeLocalStorageGet, saveMunicipioCache, getMunicipioCached } from '../utils/ui';
@@ -284,9 +284,10 @@ const MarcacionScreen: React.FC<{
             const base64 = await resizeImage(file, 1600, 1600, 0.7);
             const newFoto = procesarFoto(filename, rawCodigo || 'MARC', base64);
             const catString = cat === 'panoramica' ? 'General' : cat === 'tapa' ? 'Interior' : (cat === 'puntoGPS') ? 'Plano/Mapa' as any : (cat === 'batea' || cat === 'interna') ? 'Sumidero' : 'General';
+            const md5 = calculateMD5(base64);
             await savePhotoToStorage({
                 id: newFoto.id, pozoId: rawCodigo || 'MARC', municipio: form.municipio,
-                barrio: 'MARCACION', filename, blob: base64,
+                barrio: 'MARCACION', filename, blob: base64, md5,
                 categoria: catString,
                 inspector: user?.name || 'Desconocido', timestamp: Date.now(), synced: false
             });
@@ -609,7 +610,10 @@ const MarcacionScreen: React.FC<{
                         <div className="card-title">Municipio</div>
                         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                             {MUNICIPIOS.map(m => (
-                                <button key={m} onClick={() => updateForm({ municipio: m })} style={{
+                                <button key={m} onClick={() => {
+                                    updateForm({ municipio: m });
+                                    saveMunicipioCache(m);
+                                }} style={{
                                     padding: '7px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: '600', cursor: 'pointer',
                                     border: `1.5px solid ${form.municipio === m ? 'var(--blue)' : 'var(--border2)'}`,
                                     background: form.municipio === m ? 'rgba(0,132,255,0.15)' : 'var(--bg3)',
@@ -714,6 +718,7 @@ const MarcacionScreen: React.FC<{
                                                 filename={form.codigo.trim() ? `${form.codigo.trim().toUpperCase()}${suffix}.JPG` : `MARC-${Date.now()}${suffix}.JPG`}
                                                 categoria={mode === 'SUMIDERO' ? 'Sumidero' : 'General'}
                                                 onSuccess={(f) => handleAkasoSuccess(cat, f)}
+                                                barrioFlag="MARCACION"
                                             />
                                         </div>
                                         <div className="photo-zone" style={{ height: '120px', position: 'relative' }}>
@@ -829,9 +834,11 @@ const MarcacionScreen: React.FC<{
                     onClose={() => setShowGeoTracker(false)}
                     onConfirm={(c) => { updateForm({ gps: c }); setShowGeoTracker(false); }}
                     onScreenshot={async (foto) => {
+                        const blob = (foto as any).blobId;
+                        const md5 = calculateMD5(blob);
                         await savePhotoToStorage({
                             id: foto.id, pozoId: form.codigo || 'MARC', municipio: form.municipio,
-                            barrio: 'MARCACION', filename: foto.filename, blob: (foto as any).blobId,
+                            barrio: 'MARCACION', filename: foto.filename, blob, md5,
                             categoria: 'General', inspector: user?.name || 'Desconocido',
                             timestamp: Date.now(), synced: false
                         });

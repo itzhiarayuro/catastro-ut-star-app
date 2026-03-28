@@ -43,7 +43,7 @@ import { useCloudRestore } from './hooks/useCloudRestore';
 import { useBackgroundSync } from './hooks/useBackgroundSync';
 import { useFichaActions } from './hooks/useFichaActions';
 
-const APP_VERSION = '1.6.1';
+const APP_VERSION = '1.7.0';
 
 /* ═══════════════════════════════════════════════════════════
    MAIN COMPONENT
@@ -148,6 +148,8 @@ const App: React.FC = () => {
     }, []);
 
     useEffect(() => {
+        if (authLoading) return; // Wait for auth to be determined
+
         const loadAllFichas = async () => {
             let combinedFichas: Record<string, AppState> = {};
             try {
@@ -168,6 +170,8 @@ const App: React.FC = () => {
             const filteredFichas: Record<string, AppState> = {};
             Object.entries(combinedFichas).forEach(([id, f]) => {
                 // If the ficha belongs to the current user OR it lacks a creator (legacy)
+                // IMPORTANT: Only filter if we actually have a user, otherwise keep them in memory
+                // until auth is resolved (handled by the if(authLoading) above).
                 if (!f.createdBy || f.createdBy === user?.uid) {
                     filteredFichas[id] = f;
                 }
@@ -182,7 +186,7 @@ const App: React.FC = () => {
         window.addEventListener('online', handleOnline);
         window.addEventListener('offline', handleOffline);
         return () => { window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); };
-    }, []);
+    }, [user?.uid, authLoading]);
 
     // ── Utility Functions ────────────────────────────────────
     const forceHardReload = async () => {

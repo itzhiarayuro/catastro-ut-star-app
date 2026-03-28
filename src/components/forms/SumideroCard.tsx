@@ -177,12 +177,12 @@ const SumideroCard: React.FC<SumideroCardProps> = ({
                         <span className="unit-toggle flex bg-gray-800 rounded border border-gray-700 overflow-hidden">
                             <button 
                                 type="button"
-                                className={`px-2 text-[9px] uppercase font-bold ${(!sum.unitTub || sum.unitTub === 'mm') ? 'bg-blue-600 text-white' : 'text-gray-500'}`} 
+                                className={`px-2 text-[9px] uppercase font-bold ${(!sum.unitTub || sum.unitTub === 'mm') ? 'active' : ''}`} 
                                 onClick={(e) => { e.preventDefault(); onUpdate({ unitTub: 'mm' }); }}
                             >mm</button>
                             <button 
                                 type="button"
-                                className={`px-2 text-[9px] uppercase font-bold ${sum.unitTub === 'in' ? 'bg-blue-600 text-white' : 'text-gray-500'}`} 
+                                className={`px-2 text-[9px] uppercase font-bold ${sum.unitTub === 'in' ? 'active' : ''}`} 
                                 onClick={(e) => { e.preventDefault(); onUpdate({ unitTub: 'in' }); }}
                             >in</button>
                         </span>

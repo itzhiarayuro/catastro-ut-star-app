@@ -14,6 +14,7 @@ export interface PendingPhoto {
     barrio: string;
     filename: string;
     blob: string; // Base64 o Blob
+    md5?: string; // Hash MD5 para duplicados
     categoria: 'General' | 'Interior' | 'Daños' | 'Tuberia' | 'Medicion' | 'Sumidero' | any;
     inspector: string;
     timestamp: number;
@@ -63,20 +64,23 @@ async function getSafeTransaction(storeName: string, mode: IDBTransactionMode): 
 }
 
 /**
- * Guarda una ficha en IndexedDB
+ * Guarda una ficha en IndexedDB.
+ * Returns true if saved successfully, false if failed.
  */
-export async function saveFichaToStorage(ficha: any): Promise<void> {
+export async function saveFichaToStorage(ficha: any): Promise<boolean> {
     try {
         const { store } = await getSafeTransaction(FICHA_STORE, 'readwrite');
         return new Promise((resolve, reject) => {
             const request = store.put(ficha);
-            request.onsuccess = () => resolve();
-            request.onerror = () => reject(request.error);
+            request.onsuccess = () => resolve(true);
+            request.onerror = () => {
+                console.error("[IDB] Error en put ficha:", request.error);
+                resolve(false);
+            };
         });
     } catch (e) {
         console.error("[IDB] Fallo al guardar ficha:", e);
-        // Fallback: No lanzamos error para no bloquear la app si IDB falla
-        // pero avisamos en consola.
+        return false;
     }
 }
 
@@ -118,10 +122,20 @@ export async function deleteFichaFromStorage(id: string): Promise<void> {
 }
 
 /**
- * Guarda una foto en IndexedDB
+ * Guarda una foto en IndexedDB con filtrado de categoría de seguridad
  */
 export async function savePhotoToStorage(photo: PendingPhoto): Promise<void> {
     try {
+        // FILTRO DE SEGURIDAD CENTRALIZADO:
+        // Asegura que el campo 'barrio' (usado como categoría en Drive) sea estrictamente CATASTRO o MARCACION.
+        // Esto previene que nombres de barrios geográficos creen carpetas incorrectas en Drive.
+        const originalBarrio = (photo.barrio || "").toUpperCase();
+        if (originalBarrio.includes('MARCACION')) {
+            photo.barrio = 'MARCACION';
+        } else {
+            photo.barrio = 'CATASTRO';
+        }
+
         const { store } = await getSafeTransaction(PHOTO_STORE, 'readwrite');
         return new Promise((resolve, reject) => {
             const request = store.put(photo);
