@@ -210,8 +210,6 @@ export function useFirestoreDoc(path: string) {
 
     const saveData = async (newData: any) => {
         if (!path) return;
-        // Backup local extra por seguridad
-        safeLocalStorageSet(`backup_${path.replace(/\//g, '_')}`, JSON.stringify(newData));
 
         // Usamos el persistFicha que maneja master + historial
         await persistFicha(newData);

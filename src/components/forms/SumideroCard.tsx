@@ -199,7 +199,7 @@ const SumideroCard: React.FC<SumideroCardProps> = ({
 
             <div className="field-row grid grid-cols-2 gap-3 mb-3">
                 <div className="field">
-                    <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">H LLEGADA (Z) <span className="text-gray-500 lowercase">m</span></label>
+                    <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">H LLEGADA (Z+Ø) <span className="text-gray-500 lowercase">m</span></label>
                     <input 
                         type="number" 
                         step="0.01" 
@@ -217,7 +217,7 @@ const SumideroCard: React.FC<SumideroCardProps> = ({
                     />
                 </div>
                 <div className="field">
-                    <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">H SALIDA (Z+Ø) <span className="text-gray-500 lowercase">m</span></label>
+                    <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">H SALIDA <span className="text-gray-500 lowercase">m</span></label>
                     <input
                         type="text"
                         readOnly

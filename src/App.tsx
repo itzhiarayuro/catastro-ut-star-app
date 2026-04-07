@@ -15,6 +15,7 @@ import {
 import { APIProvider } from '@vis.gl/react-google-maps';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { auth } from './lib/firebase'; // Added import for auth
+import { hydratePrebundledTiles } from './lib/mapUtils';
 
 // ── Page Components ──────────────────────────────────────────
 import FormPage from './presentation/pages/FormPage';
@@ -43,7 +44,7 @@ import { useCloudRestore } from './hooks/useCloudRestore';
 import { useBackgroundSync } from './hooks/useBackgroundSync';
 import { useFichaActions } from './hooks/useFichaActions';
 
-const APP_VERSION = '1.7.0';
+const APP_VERSION = '1.7.1';
 
 /* ═══════════════════════════════════════════════════════════
    MAIN COMPONENT
@@ -185,6 +186,10 @@ const App: React.FC = () => {
         const handleOffline = () => setIsOnline(false);
         window.addEventListener('online', handleOnline);
         window.addEventListener('offline', handleOffline);
+        
+        // Hydrate offline maps if needed on load
+        hydratePrebundledTiles();
+
         return () => { window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); };
     }, [user?.uid, authLoading]);
 

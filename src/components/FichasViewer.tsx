@@ -76,29 +76,29 @@ const FichasViewer: React.FC<FichasViewerProps> = ({ toast, handlePDF, pdfLoadin
             try {
                 const isAdmin = user?.email === 'juanvegas003@gmail.com' || user?.email === 'juan.vega.icya@gmail.com';
 
-                // Fichas: Aumentar límite para traer todo lo relevante
+                // Fichas: Reducir límite para evitar timeout (1500)
                 const qFichas = isAdmin
-                    ? query(collection(db, 'fichas'), orderBy('lastSync', 'desc'), limit(5000))
-                    : query(collection(db, 'fichas'), where('createdBy', '==', user.uid), orderBy('lastSync', 'desc'), limit(2000));
+                    ? query(collection(db, 'fichas'), orderBy('lastSync', 'desc'), limit(1500))
+                    : query(collection(db, 'fichas'), where('createdBy', '==', user.uid), orderBy('lastSync', 'desc'), limit(800));
                 
-                // Agregamos un timeout de 15s por si Firebase se queda colgado
+                // Agregamos un timeout de 25s por si Firebase se queda colgado
                 const fetchFichas = getDocs(qFichas);
                 const snapFichas = await Promise.race([
                     fetchFichas,
-                    new Promise<never>((_, rej) => setTimeout(() => rej(new Error("TIMEOUT")), 15000))
+                    new Promise<never>((_, rej) => setTimeout(() => rej(new Error("TIMEOUT")), 25000))
                 ]);
                 const fData = snapFichas.docs.map(d => ({ id: d.id, ...d.data() } as FirestoreRecord));
                 setFichas(fData.filter(d => !d.deleted));
 
-                // Marcaciones: Aumentar límite
+                // Marcaciones: Reducir límite
                 const qMarc = isAdmin
-                    ? query(collection(db, 'marcaciones'), orderBy('lastSync', 'desc'), limit(5000))
-                    : query(collection(db, 'marcaciones'), where('createdBy', '==', user.uid), orderBy('lastSync', 'desc'), limit(2000));
+                    ? query(collection(db, 'marcaciones'), orderBy('lastSync', 'desc'), limit(1500))
+                    : query(collection(db, 'marcaciones'), where('createdBy', '==', user.uid), orderBy('lastSync', 'desc'), limit(800));
                 
                 const fetchMarc = getDocs(qMarc);
                 const snapMarc = await Promise.race([
                     fetchMarc,
-                    new Promise<never>((_, rej) => setTimeout(() => rej(new Error("TIMEOUT")), 15000))
+                    new Promise<never>((_, rej) => setTimeout(() => rej(new Error("TIMEOUT")), 25000))
                 ]);
                 const mData = snapMarc.docs.map(d => ({ id: d.id, ...d.data() } as FirestoreRecord));
                 setMarcaciones(mData.filter(d => !d.deleted));

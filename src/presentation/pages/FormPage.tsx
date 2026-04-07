@@ -644,8 +644,49 @@ const FormPage: React.FC<FormPageProps> = ({
                                                 isLocked={isLocked}
                                                 onUpdate={(upd) => {
                                                     const newPipes = [...state.pipes];
-                                                    newPipes[idx] = { ...p, ...upd };
-                                                    updateState({ pipes: newPipes });
+                                                    const updatedPipe = { ...p, ...upd };
+                                                    newPipes[idx] = updatedPipe;
+                                                    
+                                                    const updates: any = { pipes: newPipes };
+
+                                                    const getNormalizedType = (pObj: any) => {
+                                                        const raw = pObj?.es || pObj?.tipo || 'ENTRADA';
+                                                        const up = raw.toUpperCase();
+                                                        if (up === 'E' || up === 'ENTRADA') return 'ENTRADA';
+                                                        if (up === 'S' || up === 'SALIDA') return 'SALIDA';
+                                                        if (up === 'SUM' || up === 'SUMIDERO') return 'SUMIDERO';
+                                                        return 'ENTRADA';
+                                                    };
+
+                                                    const currentType = getNormalizedType(updatedPipe);
+                                                    if (currentType === 'SUMIDERO' && (upd.cotaZ !== undefined || upd.diam !== undefined || upd.unit !== undefined || upd.es !== undefined || upd.tipo !== undefined)) {
+                                                        const z = parseFloat(updatedPipe.cotaZ) || 0;
+                                                        let d = parseFloat(updatedPipe.diam) || 0;
+                                                        if (updatedPipe.unit === 'in') d = (d * 25.4);
+                                                        const computedBatea = (z + (d / 1000)).toFixed(3);
+                                                        
+                                                        const sameTypePipes = newPipes.filter(x => getNormalizedType(x) === 'SUMIDERO');
+                                                        const typeIndexInGroup = sameTypePipes.findIndex(x => x.id === updatedPipe.id);
+                                                        
+                                                        if (typeIndexInGroup >= 0 && typeIndexInGroup < state.sums.length) {
+                                                            const newSums = [...state.sums];
+                                                            const sumTarget = newSums[typeIndexInGroup];
+                                                            
+                                                            const sumZ = parseFloat(computedBatea) || 0;
+                                                            let sumD = parseFloat(sumTarget.diamTub) || 0;
+                                                            if (sumTarget.unitTub === 'in') sumD = (sumD * 25.4);
+                                                            const sumH = (sumZ + (sumD / 1000)).toFixed(3);
+
+                                                            newSums[typeIndexInGroup] = { 
+                                                                ...sumTarget, 
+                                                                hLlegada: computedBatea,
+                                                                hSalida: sumH 
+                                                            };
+                                                            updates.sums = newSums;
+                                                        }
+                                                    }
+
+                                                    updateState(updates);
                                                 }}
                                                 onDelete={() => updateState({ pipes: state.pipes.filter((_, i) => i !== idx) })}
                                                 numFocus={numFocus}
