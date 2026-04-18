@@ -220,14 +220,10 @@ const SumideroCard: React.FC<SumideroCardProps> = ({
                     <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">H SALIDA <span className="text-gray-500 lowercase">m</span></label>
                     <input
                         type="text"
-                        readOnly
-                        className="bg-gray-800 border border-transparent rounded p-2 text-sm w-full text-gray-400 font-mono opacity-60"
-                        value={(() => {
-                            const z = parseFloat(sum.hLlegada) || 0;
-                            let d = parseFloat(sum.diamTub) || 0;
-                            if (sum.unitTub === 'in') d = (d * 25.4);
-                            return (z + (d / 1000)).toFixed(3);
-                        })()}
+                        className="bg-gray-800 border border-gray-700 rounded p-2 text-sm w-full text-green-400 font-mono"
+                        value={sum.hSalida || ''}
+                        onChange={e => onUpdate({ hSalida: e.target.value })}
+                        placeholder="0.00"
                     />
                 </div>
             </div>

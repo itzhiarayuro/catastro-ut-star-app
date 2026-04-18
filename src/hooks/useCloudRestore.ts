@@ -102,10 +102,9 @@ export const useCloudRestore = ({ toast, safeSaveAllFichas }: UseCloudRestorePar
 
         toast("🔄 Descargando marcaciones...");
         try {
-            // Marcaciones: Fetch ONLY for current user (if createdBy is stored)
-            // Note: If marcaciones don't have createdBy, we'll need to check how they are stored.
-            // Based on persistFicha in firebase.tsx, they SHOULD have createdBy.
+            // Marcaciones: Fetch ONLY for current user
             if (!user?.uid) throw new Error("No user UID found");
+
             const q = query(collection(db, 'marcaciones'), where('createdBy', '==', user.uid));
             const snapshot = await getDocs(q);
             const recovered: any[] = [];
@@ -116,8 +115,10 @@ export const useCloudRestore = ({ toast, safeSaveAllFichas }: UseCloudRestorePar
 
             snapshot.forEach(docSnap => {
                 const data = docSnap.data();
+                if (!data) return;
+                
                 if (!existingIds.has(data.createdAt)) {
-                    recovered.push({ ...data, synced: true });
+                    recovered.push({ ...data, id: docSnap.id, synced: true });
                 }
             });
 

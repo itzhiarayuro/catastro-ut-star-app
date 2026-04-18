@@ -5,16 +5,16 @@ import { safeLocalStorageSet, safeLocalStorageGet } from './ui';
 import { AppState } from '../types/catastro';
 
 export const validateFicha = (f: any): boolean => {
-    // Paso 1
-    const step1 = f.pozo && f.barrio && f.direccion && f.municipio && f.sistema && f.gps?.lat && f.gps?.lng;
-    // Paso 2
-    const step2 = f.camara && f.rasante && f.diam > 0 && f.altura > 0;
+    if (!f) return false;
 
-    // Evitar valores literales "OTRO" sin contenido real (ya manejado por el formulario, pero doble check)
-    const isOtroCamara = f.camara === 'OTRO';
-    const isOtroRasante = f.rasante === 'OTRO';
-
-    return !!(step1 && step2 && !isOtroCamara && !isOtroRasante);
+    // REQUISITOS MÍNIMOS PARA DISPARAR SINCRONIZACIÓN (Relaxed v2)
+    // El usuario quiere ver el progreso aunque la ficha no esté terminada.
+    // Solo requerimos lo esencial para la ruta de Firestore y el Mapa.
+    const hasPathData = f.pozo && f.municipio && f.savedAt;
+    const hasGeoData = f.gps?.lat && f.gps?.lng;
+    
+    // Si tiene Pozo, Municipio, GPS y Fecha de Guardado, lo mandamos a la nube.
+    return !!(hasPathData && hasGeoData);
 };
 
 export const syncFichasToFirestore = async (

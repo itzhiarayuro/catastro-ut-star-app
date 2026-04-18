@@ -98,10 +98,8 @@ const MapasScreen: React.FC<{
             }
         });
 
-        // MARCACIONES: Filtrar por usuario si no es admin
-        const qMarc = isAdmin
-            ? query(collection(db, 'marcaciones'))
-            : query(collection(db, 'marcaciones'), where('createdBy', '==', user.uid));
+        // MARCACIONES: Mostrar solo las del usuario logueado (incluyendo para el admin)
+        const qMarc = query(collection(db, 'marcaciones'), where('createdBy', '==', user.uid));
 
         const unsubMarc = onSnapshot(qMarc, (snapshot) => {
             const items = snapshot.docs.map(doc => ({

@@ -9,5 +9,7 @@ node_modules
 # Credenciales y Logs de Firebase
 service-account.json
 *-service-account.json
+firebase-adminsdk.json
+*.json.secret
 firebase-debug.log
 firebase-debug.*.log
