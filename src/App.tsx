@@ -44,7 +44,7 @@ import { useCloudRestore } from './hooks/useCloudRestore';
 import { useBackgroundSync } from './hooks/useBackgroundSync';
 import { useFichaActions } from './hooks/useFichaActions';
 
-const APP_VERSION = '1.7.1';
+const APP_VERSION = '1.7.2';
 
 /* ═══════════════════════════════════════════════════════════
    MAIN COMPONENT
