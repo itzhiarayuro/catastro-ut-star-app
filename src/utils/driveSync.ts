@@ -104,7 +104,9 @@ export const fetchPhotoFromDrive = async (filename: string): Promise<string | nu
             body: JSON.stringify({
                 token: SECRET_TOKEN,
                 action: 'download',
-                filename: filename
+                filename: filename,
+                municipio: (window as any).CURRENT_MUNICIPIO || localStorage.getItem('ut_star_municipio_cache')?.replace(/"/g, '') || '',
+                pozoId: filename.split('-')[0]
             })
         });
 

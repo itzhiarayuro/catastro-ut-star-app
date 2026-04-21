@@ -13,17 +13,78 @@ function doPost(e) {
     // --- ACCIÓN: DOWNLOAD ---
     if (postData.action === 'download') {
       const filename = postData.filename;
+      const municipio = postData.municipio;
+      const pozoId = postData.pozoId;
       if (!filename) return errorResponse('Filename es obligatorio para download');
 
-      // ESTRATEGIA DE BÚSQUEDA EN 3 NIVELES:
+      // ESTRATEGIA DE BÚSQUEDA EN 4 NIVELES:
+      // 0. Búsqueda exacta dentro de la carpeta del municipio
       // 1. Búsqueda global exacta (DriveApp.getFilesByName busca en TODO el Drive)
       // 2. Búsqueda global con variantes de extensión (JPG↔jpg↔JPEG↔jpeg↔PNG↔png)
       // 3. Búsqueda recursiva dentro de la carpeta raíz del proyecto
 
       let file = null;
 
+      // --- NIVEL 0: Búsqueda exacta en la ruta completa del pozo ---
+      if (municipio && pozoId) {
+        try {
+          const rootFolder = DriveApp.getFolderById(FOLDER_ROOT_ID);
+          const munFolders = rootFolder.getFoldersByName(municipio.toUpperCase());
+          if (munFolders.hasNext()) {
+             const munFolder = munFolders.next();
+             
+             // Buscar directo en CATASTRO o MARCACION
+             const categorias = postData.categoria ? [postData.categoria.toUpperCase()] : ['CATASTRO', 'MARCACION'];
+             for (let i = 0; i < categorias.length; i++) {
+               const catFolders = munFolder.getFoldersByName(categorias[i]);
+               if (catFolders.hasNext()) {
+                 const catFolder = catFolders.next();
+                 const pozoFolders = catFolder.getFoldersByName(pozoId.toUpperCase());
+                 if (pozoFolders.hasNext()) {
+                   const pozoFolder = pozoFolders.next();
+                   
+                   // Búsqueda exacta en esta carpeta
+                   const exactFiles = pozoFolder.getFilesByName(filename);
+                   if (exactFiles.hasNext()) {
+                     const exactFile = exactFiles.next();
+                     if (!exactFile.isTrashed()) {
+                       file = exactFile;
+                       break;
+                     }
+                   }
+                   
+                   // Búsqueda con variantes en esta capeta
+                   const variants = getFilenameVariants(filename);
+                   for (const variant of variants) {
+                     const vFiles = pozoFolder.getFilesByName(variant);
+                     if (vFiles.hasNext()) {
+                       const vFile = vFiles.next();
+                       if (!vFile.isTrashed()) {
+                         file = vFile;
+                         break;
+                       }
+                     }
+                   }
+                 }
+               }
+               if (file) break;
+             }
+             
+             // Fallback a recursivo en el municipio completo solo si falló la ruta exacta
+             if (!file) {
+                file = findFileRecursive(munFolder, filename, 0);
+             }
+          }
+        } catch (e) {
+          console.warn(`[ERROR NIVEL 0] Excepción durante búsqueda exacta para ${filename}: ${e.toString()}`);
+        }
+      }
+
       // --- NIVEL 1: Búsqueda global con nombre exacto ---
-      file = findFileGlobal(filename);
+      if (!file) {
+        console.warn(`[FALLBACK GLOBAL] Nivel 0 falló para ${filename}. Buscando en todo Drive.`);
+        file = findFileGlobal(filename);
+      }
 
       // --- NIVEL 2: Búsqueda global con variantes de extensión ---
       if (!file) {
@@ -73,12 +134,29 @@ function doPost(e) {
         const metadata = metadataList.find(m => m.filename === filename);
         
         if (metadata) {
-          const munFolder = getOrCreateFolder(rootFolder, metadata.municipio);
-          const barFolder = getOrCreateFolder(munFolder, metadata.barrio);
-          const pozoFolder = getOrCreateFolder(barFolder, metadata.pozoId);
-          pozoFolder.createFile(file);
+          const categoria = (metadata.barrio && metadata.barrio.toUpperCase().includes('MARCACION')) ? 'MARCACION' : 'CATASTRO';
+          const munFolder = getOrCreateFolder(rootFolder, metadata.municipio.toUpperCase());
+          const catFolder = getOrCreateFolder(munFolder, categoria);
+          const pozoFolder = getOrCreateFolder(catFolder, metadata.pozoId.toUpperCase());
+          const existingIter = pozoFolder.getFilesByName(filename);
+          let isDuplicate = false;
+          while (existingIter.hasNext()) {
+            if (existingIter.next().getSize() === file.getBytes().length) {
+              isDuplicate = true;
+              break;
+            }
+          }
+          if (!isDuplicate) pozoFolder.createFile(file);
         } else {
-          rootFolder.createFile(file);
+          const existingRootIter = rootFolder.getFilesByName(filename);
+          let isRootDuplicate = false;
+          while (existingRootIter.hasNext()) {
+            if (existingRootIter.next().getSize() === file.getBytes().length) {
+              isRootDuplicate = true;
+              break;
+            }
+          }
+          if (!isRootDuplicate) rootFolder.createFile(file);
         }
       });
 
@@ -121,8 +199,7 @@ function processUpload(data) {
   // Si el cliente envió el MD5, buscamos por nombre y comparamos el MD5 guardado en la descripción.
   const existingFiles = pozoFolder.getFilesByName(filename);
   while (existingFiles.hasNext()) {
-    const existingFile = existingFiles.hasNext() ? existingFiles.next() : null;
-    if (!existingFile) break;
+    const existingFile = existingFiles.next();
     
     // CASO A: Tenemos MD5 en la petición
     if (md5) {
@@ -261,31 +338,21 @@ function getFilenameVariants(filename) {
  * @param {number} depth - Profundidad actual (default 0)
  * @returns {GoogleAppsScript.Drive.File|null}
  */
-function findFileRecursive(folder, filename, depth) {
-  depth = depth || 0;
+function findFileRecursive(folder, filename, depth = 0) {
   if (depth > 5) return null; // Protección contra timeouts
 
   const targetUpper = filename.toUpperCase();
+  const variants = getFilenameVariants(filename).map(v => v.toUpperCase());
 
-  // Buscar archivos en esta carpeta
+  // Buscar archivos en esta carpeta UNA ÚNICA VEZ
   const files = folder.getFiles();
   while (files.hasNext()) {
     const file = files.next();
-    if (file.getName().toUpperCase() === targetUpper && !file.isTrashed()) {
+    if (file.isTrashed()) continue;
+    
+    const fNameUpper = file.getName().toUpperCase();
+    if (fNameUpper === targetUpper || variants.indexOf(fNameUpper) !== -1) {
       return file;
-    }
-  }
-
-  // También probar variantes de extensión en esta carpeta
-  const variants = getFilenameVariants(filename);
-  for (const variant of variants) {
-    const variantUpper = variant.toUpperCase();
-    const vFiles = folder.getFiles();
-    while (vFiles.hasNext()) {
-      const vFile = vFiles.next();
-      if (vFile.getName().toUpperCase() === variantUpper && !vFile.isTrashed()) {
-        return vFile;
-      }
     }
   }
 

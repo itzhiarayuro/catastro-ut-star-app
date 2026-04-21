@@ -20,7 +20,20 @@ export const fixOrdenInExistingFichas = functions.runWith({
                 const updatePayload: any = {};
                 let hasChanges = false;
                 if (Array.isArray(data.pipes) && data.pipes.length > 0) {
-                    updatePayload.pipes = data.pipes.map((p: any, idx: number) => ({ orden: idx + 1, ...p }));
+                    const counters: Record<string, number> = {};
+                    updatePayload.pipes = data.pipes.map((p: any) => {
+                        const tipoStr = String(p.es || p.tipo || 'UNKNOWN').toUpperCase().trim();
+                        let group = 'OTHER';
+                        if (tipoStr.startsWith('ENTRADA')) group = 'ENTRADA';
+                        else if (tipoStr.startsWith('SALIDA')) group = 'SALIDA';
+                        else group = tipoStr;
+
+                        counters[group] = (counters[group] || 0) + 1;
+                        // Return the new order, note we spread `p` to keep all original fields
+                        // but overwrite `orden` WITH the new count. We also ensure `orden` isn't 
+                        // overwritten by `...p` by putting it at the end, or replacing it.
+                        return { ...p, orden: counters[group] };
+                    });
                     hasChanges = true;
                 }
                 if (Array.isArray(data.sums) && data.sums.length > 0) {

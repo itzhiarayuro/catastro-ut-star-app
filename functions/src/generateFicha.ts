@@ -287,7 +287,8 @@ function mapFirestoreToPozo(data: FichaData) {
                     batea: batea > 0 ? batea.toFixed(4) : "-",
                 };
             }),
-        fotos: (data.fotoList ?? []).map((f, i) => ({
+        fotos: (data.fotoList ?? []).map((f: any, i: number) => ({
+            ...f,
             id: f.id ?? `foto-${i}`,
             nombre: f.nombre ?? f.filename ?? `foto-${i}.jpg`,
             blobId: f.blobId ?? "",
@@ -359,7 +360,8 @@ function mapMarcacionToPozo(data: any) {
         },
         observaciones: { observaciones: fv(data.obs) },
         pipes: [] as any[],
-        fotos: fotoList.map((f, i) => ({
+        fotos: fotoList.map((f: any, i: number) => ({
+            ...f,
             id: f.id ?? `foto-${i}`,
             nombre: f.nombre ?? f.filename ?? `foto-${i}.jpg`,
             blobId: f.blobId ?? "",
@@ -535,7 +537,6 @@ function getFieldValue(pozo: ReturnType<typeof mapFirestoreToPozo>, fieldId: str
             const principal = candidates.find(f => !isZoom(f.nombre ?? ''));
             foto = principal ?? candidates[0]; // fallback al primer candidato si todos son zoom
         }
-
         // Log diagnóstico
         if (foto?.blobId) {
             plog(`[PDF-PHOTO] ✅ Field: ${fieldId} | Match: ${baseCode} | File: ${foto.nombre ?? '?'}`);
@@ -575,48 +576,139 @@ function applySmartLayout(elements: any[], design: Design, pozo: ReturnType<type
     const page2Elements = elements.filter(el => (el.pageNumber || 1) === 2 && !el.repeatOnEveryPage);
     const otherPageElements = elements.filter(el => (el.pageNumber || 1) > 2);
 
-    // Clasificar elementos de Página 2
-    const technicalFields = page2Elements.filter(el => {
-        // NUEVO: incluir shapes con groupId para que fluyan con su grupo
-        if (el._isShape) return el.groupId != null;
-        const fid = (el as Placement).fieldId;
-        return fid.startsWith("tub_") || fid.startsWith("ent_") || fid.startsWith("sal_") || fid.startsWith("sum_") || fid.startsWith("foto_");
-    });
-    const decorativeElements = page2Elements.filter(el => !technicalFields.includes(el));
+    // 1. Identificar "Anclas" (Títulos como ENTRADA 1, SUMIDERO 2, etc.)
+    const technicalGroups: Map<string, TechnicalGroup> = new Map();
+    
+    // Función para normalizar nombres
+    const getGroupKey = (kind: string, num: number) => `${kind}_${num}`;
 
-    // Agrupar técnicos
-    const groups = buildTechnicalGroups(page2Elements.filter(el => !el._isShape), pozo);
+    // Crear grupos pre-definidos (los 14 posibles)
+    for (let i = 1; i <= 7; i++) {
+        const id = getGroupKey('entrada', i);
+        technicalGroups.set(id, { id, kind: 'entrada', number: i, type: 'tuberia', elements: [], hasRealData: false, realIdx: 0 });
+    }
+    for (let i = 8; i <= 9; i++) {
+        const id = getGroupKey('salida', i);
+        technicalGroups.set(id, { id, kind: 'salida', number: i, type: 'tuberia', elements: [], hasRealData: false, realIdx: 0 });
+    }
+    for (let i = 1; i <= 6; i++) {
+        const id = getGroupKey('sumidero', i);
+        technicalGroups.set(id, { id, kind: 'sumidero', number: i, type: 'sumidero', elements: [], hasRealData: false, realIdx: 0 });
+    }
 
-    // NUEVO: Pasada 2 para asociar los shapes de página 2 a los grupos ya creados
+    // 2. Clasificación voraz de elementos
+    const assignedIds = new Set<string>();
+    
+    // Paso A: Asignar por groupId directo
     page2Elements.forEach(el => {
-        if (el._isShape && el.groupId) {
-            const group = groups.find(g => 
-                g.elements.some(e => e.groupId === el.groupId)
-            );
-            if (group) {
-                group.elements.push(el);
+        if (el.groupId) {
+            // Intentar matchear groupId con nuestros grupos (ej: "entrada_1" o "ent_1")
+            const gid = String(el.groupId).toLowerCase();
+            for (const [key, g] of technicalGroups) {
+                if (gid.includes(g.kind) && gid.includes(String(g.number))) {
+                    g.elements.push(el);
+                    assignedIds.add(el.id);
+                    break;
+                }
             }
         }
     });
 
-    // Reposicionar en Layout Fluido ("Entradas fluyen, seguidas por Salidas")
-    const startY = 46; // Inicio más arriba para dar espacio a más items por columna
-    const maxY = 250; // Limite inferior antes de saltar de columna
+    // Paso B: Asignar por texto de cabecera (Anclas)
+    page2Elements.forEach(el => {
+        if (assignedIds.has(el.id)) return;
+        if (el._isShape && (el.content || el.text)) {
+            const content = String(el.content || el.text || "").toUpperCase();
+            for (const [key, g] of technicalGroups) {
+                const label = `${g.kind} ${g.number}`.toUpperCase();
+                const salNum = g.kind === 'salida' ? g.number - 7 : -1;
+                if (content === label || content === `TUBERIA ${g.number}` || (salNum > 0 && content === `SALIDA ${salNum}`)) {
+                    g.elements.push(el);
+                    assignedIds.add(el.id);
+                    plog(`    [ANCHOR] Found anchor for ${key}: "${content}"`);
+                    break;
+                }
+            }
+        }
+    });
 
+    // Paso C: Asignar todo lo que esté "cerca" de un ancla o campo ya asignado (Espacial)
+    const remainingElements = page2Elements.filter(el => !assignedIds.has(el.id));
+    remainingElements.forEach(el => {
+        const elX = el.x || 0;
+        const elY = el.y || 0;
+        const elW = el.width || 0;
+        const elH = el.height || 0;
+        const midX = elX + elW/2;
+        const midY = elY + elH/2;
+
+        let bestGroup: TechnicalGroup | null = null;
+        let minDist = 999999;
+
+        technicalGroups.forEach(g => {
+            if (g.elements.length === 0) return;
+            // Encontrar el elemento más cercano de este grupo
+            g.elements.forEach(ge => {
+                const dx = midX - (ge.x + ge.width/2);
+                const dy = midY - (ge.y + ge.height/2);
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                
+                // Si está cerca (< 60mm) es muy probable que sea del mismo bloque (las cajas miden ~65mm de ancho)
+                if (dist < 60 && dist < minDist) {
+                    minDist = dist;
+                    bestGroup = g;
+                }
+            });
+        });
+
+        // Solo asignar si no es un marco gigante (más de media página)
+        if (bestGroup && elW < 140 && elH < 200) {
+            (bestGroup as TechnicalGroup).elements.push(el);
+            assignedIds.add(el.id);
+        }
+    });
+
+    const groups = Array.from(technicalGroups.values());
+    groups.forEach(g => {
+        g.hasRealData = checkHasRealData(g, pozo);
+    });
+
+    // Diagnóstico
+    plog(`[SMART-LAYOUT] Resumen Final:`);
+    groups.forEach(g => {
+        if (g.elements.length > 0) {
+            const status = g.hasRealData ? "✅ MOSTRAR" : "❌ OCULTAR";
+            plog(`  - ${g.id}: ${g.elements.length} elementos -> ${status}`);
+        }
+    });
+
+    // 4. Reposicionar grupos que sí tienen datos
     const tuberias = groups.filter(g => g.type === 'tuberia' && g.hasRealData);
     const sums = groups.filter(g => g.type === 'sumidero' && g.hasRealData);
-
-    // Tuberias fluyen a través de Columnas 1 y 2 (X: 10 y 74.67)
-    const repoTuberias = repositionGroupsFlow(tuberias, [10, 74.67], startY, maxY, 2);
     
-    // Sumideros fluyen exclusivamente en Columna 3 (X: 139.34)
+    // Tuberías ordenadas: Entradas (1-7) luego Salidas (8-9)
+    tuberias.sort((a, b) => a.number - b.number);
+    tuberias.forEach((g, idx) => g.realIdx = idx);
+    
+    // Sumideros (1-6)
+    sums.sort((a, b) => a.number - b.number);
+    sums.forEach((g, idx) => g.realIdx = idx);
+
+    const startY = 46;
+    const maxY = 265;
+    
+    const repoTuberias = repositionGroupsFlow(tuberias, [10, 74.67], startY, maxY, 2);
     const repoSums = repositionGroupsFlow(sums, [139.34], startY, maxY, 2);
+
+    // Los elementos decorativos que sobraron (logos, cabeceras generales) se quedan igual
+    const finalDecorative = page2Elements.filter(el => !assignedIds.has(el.id));
+    plog(`[SMART-LAYOUT] Mostrar ${tuberias.length} tub/ent/sal y ${sums.length} sumideros. Dekorativos: ${finalDecorative.length}`);
 
     return [
         ...page1Elements,
-        ...decorativeElements,
         ...repoTuberias,
         ...repoSums,
+        ...finalDecorative,
         ...otherPageElements
     ];
 }
@@ -625,11 +717,11 @@ function buildTechnicalGroups(elements: any[], pozo: ReturnType<typeof mapFirest
     const groupsMap: Record<string, TechnicalGroup> = {};
 
     elements.forEach(el => {
-        const fid = el.fieldId as string;
+        const fid = (el.fieldId as string) || "";
         let type: 'tuberia' | 'sumidero' | null = null;
-        let num = 0; // Orden secuencial: Entradas (1-7), Salidas (8-9)
-        let realIdx = 0; // Índice en arreglo filtrado (ej: 0 para la 1ra entrada, o 1ra salida)
-        let kind = 'entrada'; // 'entrada' | 'salida' | 'sumidero'
+        let num = 0; 
+        let realIdx = 0; 
+        let kind = 'entrada'; 
 
         const tubMatch = fid.match(/^tub_(\d+)_[a-zA-Z]+$/);
         const pipeMatch = fid.match(/^(ent|sal)_(\d+)_[a-zA-Z]+$/);
@@ -649,7 +741,7 @@ function buildTechnicalGroups(elements: any[], pozo: ReturnType<typeof mapFirest
                 realIdx = rawNum - 1;
                 kind = 'entrada';
             } else {
-                num = 7 + rawNum; // Desplazar Salidas para que se listen DESPUÉS de las 7 entradas
+                num = 7 + rawNum; 
                 realIdx = rawNum - 1;
                 kind = 'salida';
             }
@@ -697,50 +789,87 @@ function buildTechnicalGroups(elements: any[], pozo: ReturnType<typeof mapFirest
 }
 
 function checkHasRealData(group: TechnicalGroup, pozo: ReturnType<typeof mapFirestoreToPozo>): boolean {
+    const isClean = (s: any) => {
+        const str = String(s || '').trim().toUpperCase();
+        if (!str || str === '-' || str === '.' || str === '0' || str === '0.00' || str === '0,00' || str === 'N/A' || str === 'DESCONOCIDO') return false;
+        if (str.replace(/-/g, '') === '') return false;
+        return true;
+    };
+
     if (group.type === 'tuberia') {
-        const pipeList = pozo.pipes.filter(p => (p as any).es?.startsWith(group.kind) || p.tipo.startsWith(group.kind));
+        const pipeList = pozo.pipes.filter(p => (p.tipo || "").toLowerCase().startsWith(group.kind.toLowerCase()));
         const pipe = pipeList[group.realIdx];
         
-        let isPhotoOnly = false;
         let hasTechnicalData = false;
-        let deA = '';
-        let diam = 0;
-        let mat = '';
-
         if (pipe) {
-            deA = String(pipe.id || '');
-            isPhotoOnly = deA.startsWith('FOTO_') || deA.startsWith('INF-');
-            diam = parseFloat(String(pipe.diam || '0'));
-            mat = String(pipe.mat || '').toUpperCase();
-            hasTechnicalData = diam > 0 || (mat && mat !== 'DESCONOCIDO' && mat !== '-');
+            const deA = String(pipe.id || '');
+            const hasDiam = isClean(pipe.diam);
+            const hasMat = isClean(pipe.mat);
+            const hasCota = isClean(pipe.cota);
+            const hasEstado = isClean(pipe.estado);
+            const hasDeA = isClean(deA) && !/^T\d+$/.test(deA.toUpperCase()) && 
+                           !deA.toUpperCase().startsWith('FOTO_') && !deA.toUpperCase().startsWith('INF-');
 
-            if (hasTechnicalData && !isPhotoOnly) return true;
+            hasTechnicalData = hasDiam || hasMat || hasCota || hasEstado || hasDeA;
         }
 
-        // Si es solo referencia de foto, o si no hay tubería, verificar si hay foto real
-        const code = (group.kind === 'entrada' ? 'E' : 'S') + group.number;
-        // Regex amplia: -E1.JPG, -E1-T.JPG, -E1-Z.JPG, _E1.JPG
-        const hasPhoto = pozo.fotos.some(f => {
-            const n = (f.nombre || '').toUpperCase();
-            return new RegExp(`[-_]${code}([-_][A-Z]+)?\\.[A-Z]+$`).test(n);
+        const photoNum = (group.kind === 'salida') ? (group.number - 7) : group.number;
+        const code = (group.kind === 'entrada' ? 'E' : 'S') + photoNum;
+        
+        const hasPhoto = pozo.fotos.some((f: any) => {
+            const subcat = String(f.subcategoria || f.categoria || '').toUpperCase();
+            const filename = String(f.nombre || f.filename || '').toUpperCase();
+            const tipo = String(f.tipo || '').toUpperCase();
+
+            return subcat === code ||
+                   subcat.includes(`-${code}`) ||
+                   filename.includes(`-${code}.`) ||
+                   filename.includes(`-${code}-`) ||
+                   filename.endsWith(`-${code}`) ||
+                   tipo === code ||
+                   new RegExp(`[-_]${code}([-_][A-Z]+)?\\.[A-Z]+$`).test(filename);
         });
 
-        if (hasPhoto) {
-            plog(`  [LAYOUT] ${group.kind}#${group.number} → FOTO ENCONTRADA (${code}) → MOSTRAR`);
-            return true;
+        return hasTechnicalData || hasPhoto;
+    }
+
+    if (group.type === 'sumidero') {
+        const sum = pozo.sums[group.realIdx];
+        let hasTechnicalData = false;
+        if (sum) {
+            const diam = parseFloat(String(sum.diam || '0'));
+            const mat = String(sum.mat || '').toUpperCase();
+            const hSalida = parseFloat(String(sum.hSalida || '0'));
+            const tipo = String(sum.tipo || '').toUpperCase();
+
+            const hasDiam = !isNaN(diam) && diam > 0;
+            const hasMat = mat !== '' && mat !== '-' && mat !== 'DESCONOCIDO';
+            const hasH = !isNaN(hSalida) && hSalida > 0;
+            const hasTipo = tipo !== '' && tipo !== '-' && tipo !== 'DESCONOCIDO';
+
+            hasTechnicalData = hasDiam || hasMat || hasH || hasTipo;
         }
 
-        if (pipe) {
-             plog(`  [LAYOUT] ${group.kind}#${group.number} → isPhotoOnly=${isPhotoOnly} hasTechnicalData=${hasTechnicalData} → OCULTAR`);
-        } else {
-             plog(`  [LAYOUT] ${group.kind}#${group.number} → sin pipe ni foto → OCULTAR`);
+        const photoNum = group.realIdx + 1;
+        const code = `SUM${photoNum}`;
+        const hasPhoto = pozo.fotos.some((f: any) => {
+            const subcat = String(f.subcategoria || f.categoria || '').toUpperCase();
+            const filename = String(f.nombre || f.filename || '').toUpperCase();
+            const tipo = String(f.tipo || '').toUpperCase();
+
+            return subcat === code ||
+                   subcat.includes(code) ||
+                   filename.includes(`-${code}.`) ||
+                   filename.includes(`-${code}-`) ||
+                   filename.endsWith(`-${code}`) ||
+                   tipo === code;
+        });
+
+        const show = hasTechnicalData || hasPhoto;
+        if (show) {
+            plog(`  [LAYOUT] sumidero#${photoNum} → MOSTRAR (info:${hasTechnicalData}, foto:${hasPhoto})`);
         }
-        return false;
-    }
-    if (group.type === 'sumidero') {
-        const has = !!pozo.sums[group.realIdx];
-        plog(`  [LAYOUT] sumidero#${group.number} (idx:${group.realIdx}) → ${has ? 'MOSTRAR' : 'OCULTAR'}`);
-        return has;
+        return show;
     }
     return false;
 }
