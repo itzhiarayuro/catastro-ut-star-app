@@ -1,0 +1,494 @@
+page-413ed847e0c50181.js:1 ⚠️ Servidor no disponible — usando procesamiento en browser
+(function () {
+  window._importLogs = [];
+
+  const originalLog = console.log;
+  const originalWarn = console.warn;
+  const originalError = console.error;
+
+  function capture(args, level) {
+    const msg = args
+      .map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a)))
+      .join(' ');
+
+    const entry = `[${new Date().toLocaleTimeString()}] [${level}] ${msg}`;
+    window._importLogs.push(entry);
+  }
+
+  console.log = (...args) => {
+    capture(args, 'LOG');
+    originalLog.apply(console, args);
+  };
+
+  console.warn = (...args) => {
+    capture(args, 'WARN');
+    originalWarn.apply(console, args);
+  };
+
+  console.error = (...args) => {
+    capture(args, 'ERROR');
+    originalError.apply(console, args);
+  };
+
+  window.copiarLogsImport = async () => {
+    const texto = window._importLogs.join('\n');
+
+    try {
+      await navigator.clipboard.writeText(texto);
+      originalLog('✅ Logs copiados al portapapeles.');
+    } catch (e) {
+      originalWarn('⚠️ Clipboard API falló, intenta copy() manual.');
+      if (typeof copy === 'function') {
+        copy(texto);
+      } else {
+        originalError('❌ No se pudo copiar automáticamente.');
+      }
+    }
+  };
+
+  console.log('%c🎯 CAPTURADOR IMPORT ACTIVADO', 'color: #4caf50; font-weight: bold; font-size: 14px;');
+  console.log('1. Haz clic en "Importar selección" ahora.');
+  console.log('2. Cuando termine (o se trabe), escribe: copiarLogsImport()');
+})();
+VM108:19 🎯 CAPTURADOR IMPORT ACTIVADO
+VM108:19 1. Haz clic en "Importar selección" ahora.
+VM108:19 2. Cuando termine (o se trabe), escribe: copiarLogsImport()
+undefined
+VM108:19 22:40:37 ERROR [DrivePhotoDownloader] Error al descargar P01-S1-T.JPG desde GAS AbortError: signal is aborted without reason
+    at page-413ed847e0c50181.js:1:72141
+VM108:24 No se pudo descargar P01-S1-T.JPG — se omite.
+console.warn @ VM108:24
+l @ page-413ed847e0c50181.js:1
+await in l
+(anonymous) @ page-413ed847e0c50181.js:1
+onClick @ page-413ed847e0c50181.js:1
+a_ @ fd9d1056-4a0717463f1ba58b.js:1
+aR @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+sF @ fd9d1056-4a0717463f1ba58b.js:1
+sM @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+o4 @ fd9d1056-4a0717463f1ba58b.js:1
+iV @ fd9d1056-4a0717463f1ba58b.js:1
+sU @ fd9d1056-4a0717463f1ba58b.js:1
+uR @ fd9d1056-4a0717463f1ba58b.js:1
+uM @ fd9d1056-4a0717463f1ba58b.js:1
+VM108:19 22:40:37 ERROR [DrivePhotoDownloader] Error al descargar P01-S1-Z.JPG desde GAS AbortError: signal is aborted without reason
+    at page-413ed847e0c50181.js:1:72141
+VM108:24 No se pudo descargar P01-S1-Z.JPG — se omite.
+console.warn @ VM108:24
+l @ page-413ed847e0c50181.js:1
+await in l
+(anonymous) @ page-413ed847e0c50181.js:1
+onClick @ page-413ed847e0c50181.js:1
+a_ @ fd9d1056-4a0717463f1ba58b.js:1
+aR @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+sF @ fd9d1056-4a0717463f1ba58b.js:1
+sM @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+o4 @ fd9d1056-4a0717463f1ba58b.js:1
+iV @ fd9d1056-4a0717463f1ba58b.js:1
+sU @ fd9d1056-4a0717463f1ba58b.js:1
+uR @ fd9d1056-4a0717463f1ba58b.js:1
+uM @ fd9d1056-4a0717463f1ba58b.js:1
+VM108:19 22:41:02 ERROR [DrivePhotoDownloader] Error al descargar P01-S1-D.JPG desde GAS AbortError: signal is aborted without reason
+    at page-413ed847e0c50181.js:1:72141
+VM108:24 No se pudo descargar P01-S1-D.JPG — se omite.
+console.warn @ VM108:24
+l @ page-413ed847e0c50181.js:1
+await in l
+(anonymous) @ page-413ed847e0c50181.js:1
+await in (anonymous)
+onClick @ page-413ed847e0c50181.js:1
+a_ @ fd9d1056-4a0717463f1ba58b.js:1
+aR @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+sF @ fd9d1056-4a0717463f1ba58b.js:1
+sM @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+o4 @ fd9d1056-4a0717463f1ba58b.js:1
+iV @ fd9d1056-4a0717463f1ba58b.js:1
+sU @ fd9d1056-4a0717463f1ba58b.js:1
+uR @ fd9d1056-4a0717463f1ba58b.js:1
+uM @ fd9d1056-4a0717463f1ba58b.js:1
+VM108:19 22:41:02 ERROR [DrivePhotoDownloader] Error al descargar P01-E1-T.JPG desde GAS AbortError: signal is aborted without reason
+    at page-413ed847e0c50181.js:1:72141
+VM108:24 No se pudo descargar P01-E1-T.JPG — se omite.
+console.warn @ VM108:24
+l @ page-413ed847e0c50181.js:1
+await in l
+(anonymous) @ page-413ed847e0c50181.js:1
+await in (anonymous)
+onClick @ page-413ed847e0c50181.js:1
+a_ @ fd9d1056-4a0717463f1ba58b.js:1
+aR @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+sF @ fd9d1056-4a0717463f1ba58b.js:1
+sM @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+o4 @ fd9d1056-4a0717463f1ba58b.js:1
+iV @ fd9d1056-4a0717463f1ba58b.js:1
+sU @ fd9d1056-4a0717463f1ba58b.js:1
+uR @ fd9d1056-4a0717463f1ba58b.js:1
+uM @ fd9d1056-4a0717463f1ba58b.js:1
+VM108:19 22:41:27 ERROR [DrivePhotoDownloader] Error al descargar P01-E1-Z.JPG desde GAS AbortError: signal is aborted without reason
+    at page-413ed847e0c50181.js:1:72141
+VM108:24 No se pudo descargar P01-E1-Z.JPG — se omite.
+console.warn @ VM108:24
+l @ page-413ed847e0c50181.js:1
+await in l
+(anonymous) @ page-413ed847e0c50181.js:1
+await in (anonymous)
+onClick @ page-413ed847e0c50181.js:1
+a_ @ fd9d1056-4a0717463f1ba58b.js:1
+aR @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+sF @ fd9d1056-4a0717463f1ba58b.js:1
+sM @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+o4 @ fd9d1056-4a0717463f1ba58b.js:1
+iV @ fd9d1056-4a0717463f1ba58b.js:1
+sU @ fd9d1056-4a0717463f1ba58b.js:1
+uR @ fd9d1056-4a0717463f1ba58b.js:1
+uM @ fd9d1056-4a0717463f1ba58b.js:1
+VM108:19 22:41:27 ERROR [DrivePhotoDownloader] Error al descargar P01-E1-D.JPG desde GAS AbortError: signal is aborted without reason
+    at page-413ed847e0c50181.js:1:72141
+VM108:24 No se pudo descargar P01-E1-D.JPG — se omite.
+console.warn @ VM108:24
+l @ page-413ed847e0c50181.js:1
+await in l
+(anonymous) @ page-413ed847e0c50181.js:1
+await in (anonymous)
+onClick @ page-413ed847e0c50181.js:1
+a_ @ fd9d1056-4a0717463f1ba58b.js:1
+aR @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+sF @ fd9d1056-4a0717463f1ba58b.js:1
+sM @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+o4 @ fd9d1056-4a0717463f1ba58b.js:1
+iV @ fd9d1056-4a0717463f1ba58b.js:1
+sU @ fd9d1056-4a0717463f1ba58b.js:1
+uR @ fd9d1056-4a0717463f1ba58b.js:1
+uM @ fd9d1056-4a0717463f1ba58b.js:1
+VM108:19 22:41:52 ERROR [DrivePhotoDownloader] Error al descargar P01-E2-T.JPG desde GAS AbortError: signal is aborted without reason
+    at page-413ed847e0c50181.js:1:72141
+VM108:24 No se pudo descargar P01-E2-T.JPG — se omite.
+console.warn @ VM108:24
+l @ page-413ed847e0c50181.js:1
+await in l
+(anonymous) @ page-413ed847e0c50181.js:1
+await in (anonymous)
+onClick @ page-413ed847e0c50181.js:1
+a_ @ fd9d1056-4a0717463f1ba58b.js:1
+aR @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+sF @ fd9d1056-4a0717463f1ba58b.js:1
+sM @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+o4 @ fd9d1056-4a0717463f1ba58b.js:1
+iV @ fd9d1056-4a0717463f1ba58b.js:1
+sU @ fd9d1056-4a0717463f1ba58b.js:1
+uR @ fd9d1056-4a0717463f1ba58b.js:1
+uM @ fd9d1056-4a0717463f1ba58b.js:1
+VM108:19 22:41:52 ERROR [DrivePhotoDownloader] Error al descargar P01-E2-D.JPG desde GAS AbortError: signal is aborted without reason
+    at page-413ed847e0c50181.js:1:72141
+VM108:24 No se pudo descargar P01-E2-D.JPG — se omite.
+console.warn @ VM108:24
+l @ page-413ed847e0c50181.js:1
+await in l
+(anonymous) @ page-413ed847e0c50181.js:1
+await in (anonymous)
+onClick @ page-413ed847e0c50181.js:1
+a_ @ fd9d1056-4a0717463f1ba58b.js:1
+aR @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+sF @ fd9d1056-4a0717463f1ba58b.js:1
+sM @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+o4 @ fd9d1056-4a0717463f1ba58b.js:1
+iV @ fd9d1056-4a0717463f1ba58b.js:1
+sU @ fd9d1056-4a0717463f1ba58b.js:1
+uR @ fd9d1056-4a0717463f1ba58b.js:1
+uM @ fd9d1056-4a0717463f1ba58b.js:1
+VM108:19 22:42:18 ERROR [DrivePhotoDownloader] Error al descargar P01-E3-T.JPG desde GAS AbortError: signal is aborted without reason
+    at page-413ed847e0c50181.js:1:72141
+VM108:24 No se pudo descargar P01-E3-T.JPG — se omite.
+console.warn @ VM108:24
+l @ page-413ed847e0c50181.js:1
+await in l
+(anonymous) @ page-413ed847e0c50181.js:1
+await in (anonymous)
+onClick @ page-413ed847e0c50181.js:1
+a_ @ fd9d1056-4a0717463f1ba58b.js:1
+aR @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+sF @ fd9d1056-4a0717463f1ba58b.js:1
+sM @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+o4 @ fd9d1056-4a0717463f1ba58b.js:1
+iV @ fd9d1056-4a0717463f1ba58b.js:1
+sU @ fd9d1056-4a0717463f1ba58b.js:1
+uR @ fd9d1056-4a0717463f1ba58b.js:1
+uM @ fd9d1056-4a0717463f1ba58b.js:1
+VM108:19 22:42:18 ERROR [DrivePhotoDownloader] Error al descargar P01-E3-Z.JPG desde GAS AbortError: signal is aborted without reason
+    at page-413ed847e0c50181.js:1:72141
+VM108:24 No se pudo descargar P01-E3-Z.JPG — se omite.
+console.warn @ VM108:24
+l @ page-413ed847e0c50181.js:1
+await in l
+(anonymous) @ page-413ed847e0c50181.js:1
+await in (anonymous)
+onClick @ page-413ed847e0c50181.js:1
+a_ @ fd9d1056-4a0717463f1ba58b.js:1
+aR @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+sF @ fd9d1056-4a0717463f1ba58b.js:1
+sM @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+o4 @ fd9d1056-4a0717463f1ba58b.js:1
+iV @ fd9d1056-4a0717463f1ba58b.js:1
+sU @ fd9d1056-4a0717463f1ba58b.js:1
+uR @ fd9d1056-4a0717463f1ba58b.js:1
+uM @ fd9d1056-4a0717463f1ba58b.js:1
+VM108:19 22:42:44 ERROR [DrivePhotoDownloader] Error al descargar P01-E4-T.JPG desde GAS AbortError: signal is aborted without reason
+    at page-413ed847e0c50181.js:1:72141
+VM108:24 No se pudo descargar P01-E4-T.JPG — se omite.
+console.warn @ VM108:24
+l @ page-413ed847e0c50181.js:1
+await in l
+(anonymous) @ page-413ed847e0c50181.js:1
+await in (anonymous)
+onClick @ page-413ed847e0c50181.js:1
+a_ @ fd9d1056-4a0717463f1ba58b.js:1
+aR @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+sF @ fd9d1056-4a0717463f1ba58b.js:1
+sM @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+o4 @ fd9d1056-4a0717463f1ba58b.js:1
+iV @ fd9d1056-4a0717463f1ba58b.js:1
+sU @ fd9d1056-4a0717463f1ba58b.js:1
+uR @ fd9d1056-4a0717463f1ba58b.js:1
+uM @ fd9d1056-4a0717463f1ba58b.js:1
+VM108:19 22:42:44 ERROR [DrivePhotoDownloader] Error al descargar P01-E3-D.JPG desde GAS AbortError: signal is aborted without reason
+    at page-413ed847e0c50181.js:1:72141
+VM108:24 No se pudo descargar P01-E3-D.JPG — se omite.
+console.warn @ VM108:24
+l @ page-413ed847e0c50181.js:1
+await in l
+(anonymous) @ page-413ed847e0c50181.js:1
+await in (anonymous)
+onClick @ page-413ed847e0c50181.js:1
+a_ @ fd9d1056-4a0717463f1ba58b.js:1
+aR @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+sF @ fd9d1056-4a0717463f1ba58b.js:1
+sM @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+o4 @ fd9d1056-4a0717463f1ba58b.js:1
+iV @ fd9d1056-4a0717463f1ba58b.js:1
+sU @ fd9d1056-4a0717463f1ba58b.js:1
+uR @ fd9d1056-4a0717463f1ba58b.js:1
+uM @ fd9d1056-4a0717463f1ba58b.js:1
+VM108:19 22:43:09 ERROR [DrivePhotoDownloader] Error al descargar P01-SUM1-T.JPG desde GAS AbortError: signal is aborted without reason
+    at page-413ed847e0c50181.js:1:72141
+VM108:24 No se pudo descargar P01-SUM1-T.JPG — se omite.
+console.warn @ VM108:24
+l @ page-413ed847e0c50181.js:1
+await in l
+(anonymous) @ page-413ed847e0c50181.js:1
+await in (anonymous)
+onClick @ page-413ed847e0c50181.js:1
+a_ @ fd9d1056-4a0717463f1ba58b.js:1
+aR @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+sF @ fd9d1056-4a0717463f1ba58b.js:1
+sM @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+o4 @ fd9d1056-4a0717463f1ba58b.js:1
+iV @ fd9d1056-4a0717463f1ba58b.js:1
+sU @ fd9d1056-4a0717463f1ba58b.js:1
+uR @ fd9d1056-4a0717463f1ba58b.js:1
+uM @ fd9d1056-4a0717463f1ba58b.js:1
+VM108:19 22:43:09 ERROR [DrivePhotoDownloader] Error al descargar P01-SUM1-Z.JPG desde GAS AbortError: signal is aborted without reason
+    at page-413ed847e0c50181.js:1:72141
+VM108:24 No se pudo descargar P01-SUM1-Z.JPG — se omite.
+console.warn @ VM108:24
+l @ page-413ed847e0c50181.js:1
+await in l
+(anonymous) @ page-413ed847e0c50181.js:1
+await in (anonymous)
+onClick @ page-413ed847e0c50181.js:1
+a_ @ fd9d1056-4a0717463f1ba58b.js:1
+aR @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+sF @ fd9d1056-4a0717463f1ba58b.js:1
+sM @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+o4 @ fd9d1056-4a0717463f1ba58b.js:1
+iV @ fd9d1056-4a0717463f1ba58b.js:1
+sU @ fd9d1056-4a0717463f1ba58b.js:1
+uR @ fd9d1056-4a0717463f1ba58b.js:1
+uM @ fd9d1056-4a0717463f1ba58b.js:1
+VM108:19 22:43:34 ERROR [DrivePhotoDownloader] Error al descargar P01-SUM1-D.JPG desde GAS AbortError: signal is aborted without reason
+    at page-413ed847e0c50181.js:1:72141
+VM108:24 No se pudo descargar P01-SUM1-D.JPG — se omite.
+console.warn @ VM108:24
+l @ page-413ed847e0c50181.js:1
+await in l
+(anonymous) @ page-413ed847e0c50181.js:1
+await in (anonymous)
+onClick @ page-413ed847e0c50181.js:1
+a_ @ fd9d1056-4a0717463f1ba58b.js:1
+aR @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+sF @ fd9d1056-4a0717463f1ba58b.js:1
+sM @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+o4 @ fd9d1056-4a0717463f1ba58b.js:1
+iV @ fd9d1056-4a0717463f1ba58b.js:1
+sU @ fd9d1056-4a0717463f1ba58b.js:1
+uR @ fd9d1056-4a0717463f1ba58b.js:1
+uM @ fd9d1056-4a0717463f1ba58b.js:1
+VM108:19 22:43:34 ERROR [DrivePhotoDownloader] Error al descargar P01-SUM1-B.JPG desde GAS AbortError: signal is aborted without reason
+    at page-413ed847e0c50181.js:1:72141
+VM108:24 No se pudo descargar P01-SUM1-B.JPG — se omite.
+console.warn @ VM108:24
+l @ page-413ed847e0c50181.js:1
+await in l
+(anonymous) @ page-413ed847e0c50181.js:1
+await in (anonymous)
+onClick @ page-413ed847e0c50181.js:1
+a_ @ fd9d1056-4a0717463f1ba58b.js:1
+aR @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+sF @ fd9d1056-4a0717463f1ba58b.js:1
+sM @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+o4 @ fd9d1056-4a0717463f1ba58b.js:1
+iV @ fd9d1056-4a0717463f1ba58b.js:1
+sU @ fd9d1056-4a0717463f1ba58b.js:1
+uR @ fd9d1056-4a0717463f1ba58b.js:1
+uM @ fd9d1056-4a0717463f1ba58b.js:1
+VM108:19 22:44:00 ERROR [DrivePhotoDownloader] Error al descargar P01-E4-D.JPG desde GAS AbortError: signal is aborted without reason
+    at page-413ed847e0c50181.js:1:72141
+VM108:24 No se pudo descargar P01-E4-D.JPG — se omite.
+console.warn @ VM108:24
+l @ page-413ed847e0c50181.js:1
+await in l
+(anonymous) @ page-413ed847e0c50181.js:1
+await in (anonymous)
+onClick @ page-413ed847e0c50181.js:1
+a_ @ fd9d1056-4a0717463f1ba58b.js:1
+aR @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+sF @ fd9d1056-4a0717463f1ba58b.js:1
+sM @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+o4 @ fd9d1056-4a0717463f1ba58b.js:1
+iV @ fd9d1056-4a0717463f1ba58b.js:1
+sU @ fd9d1056-4a0717463f1ba58b.js:1
+uR @ fd9d1056-4a0717463f1ba58b.js:1
+uM @ fd9d1056-4a0717463f1ba58b.js:1
+VM108:19 22:44:00 ERROR [DrivePhotoDownloader] Error al descargar P01-E4-Z.JPG desde GAS AbortError: signal is aborted without reason
+    at page-413ed847e0c50181.js:1:72141
+VM108:24 No se pudo descargar P01-E4-Z.JPG — se omite.
+console.warn @ VM108:24
+l @ page-413ed847e0c50181.js:1
+await in l
+(anonymous) @ page-413ed847e0c50181.js:1
+await in (anonymous)
+onClick @ page-413ed847e0c50181.js:1
+a_ @ fd9d1056-4a0717463f1ba58b.js:1
+aR @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+sF @ fd9d1056-4a0717463f1ba58b.js:1
+sM @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+o4 @ fd9d1056-4a0717463f1ba58b.js:1
+iV @ fd9d1056-4a0717463f1ba58b.js:1
+sU @ fd9d1056-4a0717463f1ba58b.js:1
+uR @ fd9d1056-4a0717463f1ba58b.js:1
+uM @ fd9d1056-4a0717463f1ba58b.js:1
+VM108:19 22:44:25 ERROR [DrivePhotoDownloader] Error al descargar P01-E2-Z.JPG desde GAS AbortError: signal is aborted without reason
+    at page-413ed847e0c50181.js:1:72141
+VM108:24 No se pudo descargar P01-E2-Z.JPG — se omite.
+console.warn @ VM108:24
+l @ page-413ed847e0c50181.js:1
+await in l
+(anonymous) @ page-413ed847e0c50181.js:1
+await in (anonymous)
+onClick @ page-413ed847e0c50181.js:1
+a_ @ fd9d1056-4a0717463f1ba58b.js:1
+aR @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+sF @ fd9d1056-4a0717463f1ba58b.js:1
+sM @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+o4 @ fd9d1056-4a0717463f1ba58b.js:1
+iV @ fd9d1056-4a0717463f1ba58b.js:1
+sU @ fd9d1056-4a0717463f1ba58b.js:1
+uR @ fd9d1056-4a0717463f1ba58b.js:1
+uM @ fd9d1056-4a0717463f1ba58b.js:1
+VM108:19 22:44:25 ERROR [DrivePhotoDownloader] Error al descargar P01-P.JPG desde GAS AbortError: signal is aborted without reason
+    at page-413ed847e0c50181.js:1:72141
+VM108:24 No se pudo descargar P01-P.JPG — se omite.
+console.warn @ VM108:24
+l @ page-413ed847e0c50181.js:1
+await in l
+(anonymous) @ page-413ed847e0c50181.js:1
+await in (anonymous)
+onClick @ page-413ed847e0c50181.js:1
+a_ @ fd9d1056-4a0717463f1ba58b.js:1
+aR @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+sF @ fd9d1056-4a0717463f1ba58b.js:1
+sM @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+o4 @ fd9d1056-4a0717463f1ba58b.js:1
+iV @ fd9d1056-4a0717463f1ba58b.js:1
+sU @ fd9d1056-4a0717463f1ba58b.js:1
+uR @ fd9d1056-4a0717463f1ba58b.js:1
+uM @ fd9d1056-4a0717463f1ba58b.js:1
+VM108:19 22:44:50 ERROR [DrivePhotoDownloader] Error al descargar P01-T.JPG desde GAS AbortError: signal is aborted without reason
+    at page-413ed847e0c50181.js:1:72141
+VM108:24 No se pudo descargar P01-T.JPG — se omite.
+console.warn @ VM108:24
+l @ page-413ed847e0c50181.js:1
+await in l
+(anonymous) @ page-413ed847e0c50181.js:1
+await in (anonymous)
+onClick @ page-413ed847e0c50181.js:1
+a_ @ fd9d1056-4a0717463f1ba58b.js:1
+aR @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+sF @ fd9d1056-4a0717463f1ba58b.js:1
+sM @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+o4 @ fd9d1056-4a0717463f1ba58b.js:1
+iV @ fd9d1056-4a0717463f1ba58b.js:1
+sU @ fd9d1056-4a0717463f1ba58b.js:1
+uR @ fd9d1056-4a0717463f1ba58b.js:1
+uM @ fd9d1056-4a0717463f1ba58b.js:1
+VM108:19 22:44:50 ERROR [DrivePhotoDownloader] Error al descargar P01-I.JPG desde GAS AbortError: signal is aborted without reason
+    at page-413ed847e0c50181.js:1:72141
+VM108:24 No se pudo descargar P01-I.JPG — se omite.
+console.warn @ VM108:24
+l @ page-413ed847e0c50181.js:1
+await in l
+(anonymous) @ page-413ed847e0c50181.js:1
+await in (anonymous)
+onClick @ page-413ed847e0c50181.js:1
+a_ @ fd9d1056-4a0717463f1ba58b.js:1
+aR @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+sF @ fd9d1056-4a0717463f1ba58b.js:1
+sM @ fd9d1056-4a0717463f1ba58b.js:1
+(anonymous) @ fd9d1056-4a0717463f1ba58b.js:1
+o4 @ fd9d1056-4a0717463f1ba58b.js:1
+iV @ fd9d1056-4a0717463f1ba58b.js:1
+sU @ fd9d1056-4a0717463f1ba58b.js:1
+uR @ fd9d1056-4a0717463f1ba58b.js:1
+uM @ fd9d1056-4a0717463f1ba58b.js:1

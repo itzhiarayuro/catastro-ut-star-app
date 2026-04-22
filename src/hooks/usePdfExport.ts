@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { AppState } from '../types/catastro';
 import { getPhotoFromStorage, savePhotoToStorage } from '../utils/storageManager';
 import { fetchPhotoFromDrive } from '../utils/driveSync';
+import { convertirA9377 } from '../utils/coords';
 
 export const usePdfExport = (toast: (msg: string) => void) => {
     const [pdfLoading, setPdfLoading] = useState(false);
@@ -24,6 +25,17 @@ export const usePdfExport = (toast: (msg: string) => void) => {
 
             // Hidratar fotos desde IndexedDB antes de enviar
             const hydratedPozo = JSON.parse(JSON.stringify(pozoToExport));
+
+            // Garantizar coordenadas UTM actualizadas
+            const lat = hydratedPozo.gps?.lat;
+            const lng = hydratedPozo.gps?.lng;
+            const faltaX = typeof hydratedPozo.coordenada_x !== 'number' || hydratedPozo.coordenada_x === 0;
+            const faltaY = typeof hydratedPozo.coordenada_y !== 'number' || hydratedPozo.coordenada_y === 0;
+            if (lat && lng && (faltaX || faltaY)) {
+                const coords = convertirA9377(lat, lng);
+                hydratedPozo.coordenada_x = coords.coordenada_x;
+                hydratedPozo.coordenada_y = coords.coordenada_y;
+            }
             
             // 1. Caso: fotoList (Array de Catastro)
             if (hydratedPozo.fotoList && Array.isArray(hydratedPozo.fotoList)) {

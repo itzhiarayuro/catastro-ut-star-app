@@ -75,6 +75,8 @@ interface FichaData {
     elaboro?: string;
     estadoPozo?: string;
     gps?: { lat?: number; lng?: number; x?: number; y?: number };
+    coordenada_x?: number;
+    coordenada_y?: number;
     direccion?: string;
     altura?: number | string;
     rasante?: string;
@@ -190,6 +192,7 @@ interface Group {
 }
 
 interface TechnicalGroup {
+    id: string;
     type: 'tuberia' | 'sumidero';
     number: number;
     realIdx: number;
@@ -214,14 +217,24 @@ interface Design {
 function mapFirestoreToPozo(data: FichaData) {
     const fv = (v: unknown) => String(v ?? "-");
 
+    plog(`[COORD-DEBUG] coordenada_x=${JSON.stringify(data.coordenada_x)} (${typeof data.coordenada_x}) | coordenada_y=${JSON.stringify(data.coordenada_y)} (${typeof data.coordenada_y}) | gps.x=${JSON.stringify(data.gps?.x)} | gps.y=${JSON.stringify(data.gps?.y)}`);
+
     return {
         identificacion: {
             idPozo: fv(data.pozo),
             fecha: fv(data.fecha),
             levanto: fv(data.elaboro),
             estado: fv(data.estadoPozo),
-            coordenadaX: typeof data.gps?.x === 'number' ? data.gps.x.toFixed(3) : fv(data.gps?.x),
-            coordenadaY: typeof data.gps?.y === 'number' ? data.gps.y.toFixed(3) : fv(data.gps?.y),
+            coordenadaX: (() => {
+                const v = parseFloat(String(data.coordenada_x ?? data.gps?.x ?? ''));
+                plog(`[COORD-DEBUG] coordenadaX parsed=${v} → resultado="${(!isNaN(v) && v !== 0) ? v.toFixed(3) : '-'}"`);
+                return (!isNaN(v) && v !== 0) ? v.toFixed(3) : '-';
+            })(),
+            coordenadaY: (() => {
+                const v = parseFloat(String(data.coordenada_y ?? data.gps?.y ?? ''));
+                plog(`[COORD-DEBUG] coordenadaY parsed=${v} → resultado="${(!isNaN(v) && v !== 0) ? v.toFixed(3) : '-'}"`);
+                return (!isNaN(v) && v !== 0) ? v.toFixed(3) : '-';
+            })(),
             latitud: typeof data.gps?.lat === 'number' ? data.gps.lat.toFixed(7) : fv(data.gps?.lat),
             longitud: typeof data.gps?.lng === 'number' ? data.gps.lng.toFixed(7) : fv(data.gps?.lng),
         },
@@ -409,6 +422,14 @@ function getFieldValue(pozo: ReturnType<typeof mapFirestoreToPozo>, fieldId: str
         pozo_estadoPeldanos: pozo.componentes.estadoPeldanos,
         pozo_sistema: pozo.componentes.sistema,
         pozo_observaciones: pozo.observaciones.observaciones,
+        pozo_maps_url: (() => {
+            const lat = pozo.identificacion.latitud;
+            const lng = pozo.identificacion.longitud;
+            if (lat && lat !== '-' && lng && lng !== '-') {
+                return `https://www.google.com/maps?q=${lat},${lng}`;
+            }
+            return '-';
+        })(),
     };
 
     if (fieldId in MAP) return MAP[fieldId];
@@ -598,19 +619,57 @@ function applySmartLayout(elements: any[], design: Design, pozo: ReturnType<type
 
     // 2. Clasificación voraz de elementos
     const assignedIds = new Set<string>();
-    
-    // Paso A: Asignar por groupId directo
+
+    // Paso A: Agrupar por UUID de groupId y deducir el grupo técnico desde los fieldId
+    // Los groupIds en el diseño son UUIDs, no strings legibles. Se deduce el tipo
+    // mirando el patrón del fieldId de los elementos del cluster.
+    const uuidClusters = new Map<string, any[]>();
     page2Elements.forEach(el => {
-        if (el.groupId) {
-            // Intentar matchear groupId con nuestros grupos (ej: "entrada_1" o "ent_1")
-            const gid = String(el.groupId).toLowerCase();
-            for (const [key, g] of technicalGroups) {
-                if (gid.includes(g.kind) && gid.includes(String(g.number))) {
-                    g.elements.push(el);
-                    assignedIds.add(el.id);
-                    break;
-                }
+        const gid = el.groupId ? String(el.groupId) : null;
+        if (gid) {
+            if (!uuidClusters.has(gid)) uuidClusters.set(gid, []);
+            uuidClusters.get(gid)!.push(el);
+        }
+    });
+
+    // Deducir el grupo técnico a partir del fieldId de los placements en el cluster
+    const resolveGroupKey = (clusterEls: any[]): string | null => {
+        for (const el of clusterEls) {
+            if (el._isShape || !el.fieldId) continue;
+            const fid: string = String(el.fieldId);
+            // foto_entrada_N / foto_salida_N / foto_sumidero_N
+            const fotoM = fid.match(/^foto_(entrada|salida|sumidero)_(\d+)$/);
+            if (fotoM) {
+                const kind = fotoM[1];
+                const num = parseInt(fotoM[2]);
+                // salidas se almacenan como salida_8, salida_9 (7 + orden)
+                return kind === 'salida' ? getGroupKey('salida', 7 + num) : getGroupKey(kind, num);
             }
+            // tub_N_* → entrada N
+            const tubM = fid.match(/^tub_(\d+)_/);
+            if (tubM) return getGroupKey('entrada', parseInt(tubM[1]));
+            // ent_N_* → entrada N (para N 6-7 la plantilla usa ent_ en lugar de tub_)
+            const entM = fid.match(/^ent_(\d+)_/);
+            if (entM) return getGroupKey('entrada', parseInt(entM[1]));
+            // sal_N_* → salida N (número visual 1-2 → almacenado como 8-9)
+            const salM = fid.match(/^sal_(\d+)_/);
+            if (salM) return getGroupKey('salida', 7 + parseInt(salM[1]));
+            // sum_N_* → sumidero N
+            const sumM = fid.match(/^sum_(\d+)_/);
+            if (sumM) return getGroupKey('sumidero', parseInt(sumM[1]));
+        }
+        return null;
+    };
+
+    uuidClusters.forEach((clusterEls, uuid) => {
+        const key = resolveGroupKey(clusterEls);
+        if (key && technicalGroups.has(key)) {
+            const g = technicalGroups.get(key)!;
+            clusterEls.forEach(el => {
+                g.elements.push(el);
+                assignedIds.add(el.id);
+            });
+            plog(`    [PASO-A] UUID ${uuid.substring(0, 8)} → ${key} (${clusterEls.length} elementos)`);
         }
     });
 
@@ -668,45 +727,50 @@ function applySmartLayout(elements: any[], design: Design, pozo: ReturnType<type
         }
     });
 
-    const groups = Array.from(technicalGroups.values());
-    groups.forEach(g => {
-        g.hasRealData = checkHasRealData(g, pozo);
-    });
+    // 4. Reposicionar grupos que sí tienen datos
+    // Primero ordenar y asignar realIdx, LUEGO evaluar hasRealData (usa realIdx)
+    const allTuberias = Array.from(technicalGroups.values()).filter(g => g.type === 'tuberia' && g.elements.length > 0);
+    const allSums = Array.from(technicalGroups.values()).filter(g => g.type === 'sumidero' && g.elements.length > 0);
+
+    allTuberias.sort((a, b) => a.number - b.number);
+    allTuberias.forEach((g, idx) => { g.realIdx = idx; });
+
+    allSums.sort((a, b) => a.number - b.number);
+    allSums.forEach((g, idx) => { g.realIdx = idx; });
+
+    // Evaluar hasRealData con realIdx ya correcto
+    allTuberias.forEach(g => { g.hasRealData = checkHasRealData(g, pozo); });
+    allSums.forEach(g => { g.hasRealData = checkHasRealData(g, pozo); });
 
     // Diagnóstico
     plog(`[SMART-LAYOUT] Resumen Final:`);
-    groups.forEach(g => {
-        if (g.elements.length > 0) {
-            const status = g.hasRealData ? "✅ MOSTRAR" : "❌ OCULTAR";
-            plog(`  - ${g.id}: ${g.elements.length} elementos -> ${status}`);
-        }
+    [...allTuberias, ...allSums].forEach(g => {
+        const status = g.hasRealData ? "✅ MOSTRAR" : "❌ OCULTAR";
+        plog(`  - ${g.id}: ${g.elements.length} elementos -> ${status}`);
     });
 
-    // 4. Reposicionar grupos que sí tienen datos
-    const tuberias = groups.filter(g => g.type === 'tuberia' && g.hasRealData);
-    const sums = groups.filter(g => g.type === 'sumidero' && g.hasRealData);
-    
-    // Tuberías ordenadas: Entradas (1-7) luego Salidas (8-9)
-    tuberias.sort((a, b) => a.number - b.number);
-    tuberias.forEach((g, idx) => g.realIdx = idx);
-    
-    // Sumideros (1-6)
-    sums.sort((a, b) => a.number - b.number);
-    sums.forEach((g, idx) => g.realIdx = idx);
+    const tuberias = allTuberias.filter(g => g.hasRealData);
+    const sums = allSums.filter(g => g.hasRealData);
 
     const startY = 46;
     const maxY = 265;
-    
-    const repoTuberias = repositionGroupsFlow(tuberias, [10, 74.67], startY, maxY, 2);
-    const repoSums = repositionGroupsFlow(sums, [139.34], startY, maxY, 2);
+
+    // 3 columnas fijas: Entradas | Salidas | Sumideros
+    const entradas = tuberias.filter(g => g.kind === 'entrada');
+    const salidas  = tuberias.filter(g => g.kind === 'salida');
+
+    const repoEntradas = repositionGroupsFlow(entradas, [10],     startY, maxY, 2);
+    const repoSalidas  = repositionGroupsFlow(salidas,  [74.67],  startY, maxY, 2);
+    const repoSums     = repositionGroupsFlow(sums,     [139.34], startY, maxY, 2);
 
     // Los elementos decorativos que sobraron (logos, cabeceras generales) se quedan igual
     const finalDecorative = page2Elements.filter(el => !assignedIds.has(el.id));
-    plog(`[SMART-LAYOUT] Mostrar ${tuberias.length} tub/ent/sal y ${sums.length} sumideros. Dekorativos: ${finalDecorative.length}`);
+    plog(`[SMART-LAYOUT] Entradas: ${entradas.length} | Salidas: ${salidas.length} | Sumideros: ${sums.length} | Decorativos: ${finalDecorative.length}`);
 
     return [
         ...page1Elements,
-        ...repoTuberias,
+        ...repoEntradas,
+        ...repoSalidas,
         ...repoSums,
         ...finalDecorative,
         ...otherPageElements
@@ -774,7 +838,7 @@ function buildTechnicalGroups(elements: any[], pozo: ReturnType<typeof mapFirest
         if (type && num) {
             const key = `${type}_${num}`;
             if (!groupsMap[key]) {
-                groupsMap[key] = { type, number: num, realIdx, kind, elements: [], hasRealData: false };
+                groupsMap[key] = { id: key, type, number: num, realIdx, kind, elements: [], hasRealData: false };
             }
             groupsMap[key].elements.push(el);
         }
@@ -1164,9 +1228,12 @@ async function renderField(doc: InstanceType<typeof jsPDF>, pl: Placement, pozo:
 
     // Texto (con transliteración de acentos)
     doc.setFontSize(pl.fontSize || 10);
-    doc.setTextColor(isValidColor(pl.color) ? pl.color : "#000000");
     const valueStr = sanitizeText(String(value || "-"));
-    
+    const isMapsUrl = pl.fieldId === 'pozo_maps_url' && valueStr !== '-';
+
+    // Color azul para el enlace de Maps, color del diseño para el resto
+    doc.setTextColor(isMapsUrl ? '#1a73e8' : (isValidColor(pl.color) ? pl.color : "#000000"));
+
     // Respetar padding del diseño (default a 0 para máxima precisión si no existe)
     const padding = Number((pl as any).padding ?? 0);
     const availableWidth = Math.max(0, pl.width - (padding * 2));
@@ -1179,7 +1246,7 @@ async function renderField(doc: InstanceType<typeof jsPDF>, pl: Placement, pozo:
 
     const textAlign = pl.textAlign || "center";
     let alignedX = pl.x + (pl.width / 2); // Default center
-    
+
     if (textAlign === "left") {
         alignedX = pl.x + padding;
     } else if (textAlign === "right") {
@@ -1190,6 +1257,11 @@ async function renderField(doc: InstanceType<typeof jsPDF>, pl: Placement, pozo:
         align: textAlign as "left" | "center" | "right",
         baseline: "middle"
     });
+
+    // Anotación de enlace clicable para el campo Maps
+    if (isMapsUrl) {
+        doc.link(pl.x, contentY, pl.width, contentH, { url: valueStr });
+    }
 }
 
 // ─────────────────────────────────────────────────

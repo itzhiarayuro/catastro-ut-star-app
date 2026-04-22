@@ -1,0 +1,32 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "if": "Bash(git commit *)",
+        "hooks": [
+          {
+            "type": "agent",
+            "prompt": "El usuario acaba de hacer un commit. Revisa los cambios que se commitieron (usa 'git diff HEAD~1' para ver qué se cambió). Analiza:\n1. Oportunidades de simplificación de código\n2. Refactoring y mejoras de eficiencia\n3. Calidad del código y patrones\n4. Duplicación innecesaria\n5. Mejoras de legibilidad\n\nProporciona sugerencias específicas y concretas. Si encuentras problemas significativos, sugiere correcciones.",
+            "timeout": 120,
+            "statusMessage": "Analizando código committeado..."
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "if": "Bash(git push *)",
+        "hooks": [
+          {
+            "type": "agent",
+            "prompt": "El usuario está a punto de hacer push. Realiza una revisión de seguridad completa de los cambios pendientes (usa 'git diff origin/..HEAD' o 'git log --oneline -5' para contexto). Verifica:\n1. Exposición de secretos, claves API, tokens\n2. Vulnerabilidades comunes (SQL injection, XSS, CSRF, RCE)\n3. Validación y sanitización de entrada\n4. Manejo seguro de autenticación/autorización\n5. Configuración insegura\n6. Dependencias vulnerables\n7. Hardcoded credentials o sensitive data\n\nSi encuentras problemas de seguridad, advierte al usuario y sugiere correcciones antes de hacer push.",
+            "timeout": 120,
+            "statusMessage": "Verificando seguridad antes de push..."
+          }
+        ]
+      }
+    ]
+  }
+}

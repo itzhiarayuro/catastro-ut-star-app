@@ -62,31 +62,6 @@ export const useCloudRestore = ({ toast, safeSaveAllFichas }: UseCloudRestorePar
             }
             await safeSaveAllFichas(updatedFichas);
             toast(`✅ Restauradas/Sincronizadas ${countRestored} fichas`);
-
-            // Hidratar fotos en segundo plano solo de las descargadas
-            downloadedFichas.forEach(async (ficha) => {
-                if (ficha.fotoList && Array.isArray(ficha.fotoList)) {
-                    for (const foto of ficha.fotoList) {
-                        if (foto.id && foto.filename) {
-                             const blob = await fetchPhotoFromDrive(foto.filename);
-                             if (blob) {
-                                 await savePhotoToStorage({
-                                     id: foto.id,
-                                     pozoId: ficha.pozo || '',
-                                     municipio: ficha.municipio || '',
-                                     barrio: ficha.barrio || '',
-                                     filename: foto.filename,
-                                     blob: blob,
-                                     categoria: foto.categoria || 'General',
-                                     inspector: ficha.elaboro || 'Sistema',
-                                     timestamp: Date.now(),
-                                     synced: true
-                                 }).catch(() => {});
-                             }
-                        }
-                    }
-                }
-            });
         } catch (error) {
             console.error("Error restoring from cloud", error);
             toast("❌ Error al restaurar desde la nube");

@@ -120,6 +120,46 @@ function doPost(e) {
       return errorResponse('Archivo no encontrado en Drive: ' + filename);
     }
 
+    // --- ACCIÓN: LIST (Listar archivos de un pozo en Drive) ---
+    if (postData.action === 'list') {
+      const municipio = postData.municipio;
+      const pozoId = postData.pozoId;
+      const categoria = postData.categoria; // 'CATASTRO' | 'MARCACION' | undefined (prueba ambas)
+      if (!municipio || !pozoId) return errorResponse('municipio y pozoId son obligatorios para list');
+
+      try {
+        const rootFolder = DriveApp.getFolderById(FOLDER_ROOT_ID);
+        const munFolders = rootFolder.getFoldersByName(municipio.toUpperCase());
+        if (!munFolders.hasNext()) return jsonResponse({ success: true, files: [] });
+
+        const munFolder = munFolders.next();
+        const categorias = categoria ? [categoria.toUpperCase()] : ['CATASTRO', 'MARCACION'];
+        const files = [];
+
+        for (const cat of categorias) {
+          const catFolders = munFolder.getFoldersByName(cat);
+          if (!catFolders.hasNext()) continue;
+          const catFolder = catFolders.next();
+          const pozoFolders = catFolder.getFoldersByName(pozoId.toUpperCase());
+          if (!pozoFolders.hasNext()) continue;
+          const pozoFolder = pozoFolders.next();
+
+          const iter = pozoFolder.getFiles();
+          while (iter.hasNext()) {
+            const f = iter.next();
+            if (!f.isTrashed()) {
+              files.push({ filename: f.getName(), fileId: f.getId(), mimeType: f.getMimeType() });
+            }
+          }
+          break; // encontró la carpeta, no sigue buscando
+        }
+
+        return jsonResponse({ success: true, files: files });
+      } catch (e) {
+        return errorResponse('Error listando carpeta: ' + e.toString());
+      }
+    }
+
     // --- ACCIÓN: UPLOAD ZIP (Legacy Apps) ---
     if (postData.zipData && postData.metadata) {
       const zipBase64 = postData.zipData;
