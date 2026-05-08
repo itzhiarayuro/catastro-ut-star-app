@@ -45,7 +45,6 @@ export const usePdfExport = (toast: (msg: string) => void) => {
                         if (stored?.blob) {
                             f.blobId = stored.blob;
                         } else if (f.filename) {
-                            console.log(`Hidratación PDF: Descargando ${f.filename} de Drive...`);
                             const driveBlob = await fetchPhotoFromDrive(f.filename, hydratedPozo.municipio);
                             if (driveBlob) {
                                 f.blobId = driveBlob;

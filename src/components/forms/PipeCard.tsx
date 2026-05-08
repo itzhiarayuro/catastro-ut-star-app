@@ -49,9 +49,6 @@ const PipeCard: React.FC<PipeCardProps> = ({
     // Siempre usar posición dentro del grupo filtrado, nunca el valor guardado
     const typeOrder = typeIndexInGroup !== -1 ? typeIndexInGroup + 1 : 1;
     
-    // Debug temporal: remover después de validar en producción
-    console.log(`[PipeCard] pipe.id=${pipe.id} es=${pipe.es} currentType=${currentType} sameType=${sameTypePipes.length} idx=${typeIndexInGroup} → typeOrder=${typeOrder}`);
-
     if (currentType === 'SUMIDERO') {
         label = `SUM${typeOrder}`;
         tipoStr = 'SUMIDERO';
