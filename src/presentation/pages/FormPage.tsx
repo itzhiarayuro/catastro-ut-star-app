@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
-    ChevronLeft, ChevronRight, Check, Plus, RefreshCw,
-    Navigation, AlertTriangle, Globe, List, Save,
+    ChevronLeft, ChevronRight, Check, RefreshCw,
+    Navigation, Globe, Save,
     FileJson, FileText, Download, Trash2
 } from 'lucide-react';
 import { PdfFastButton } from '../../hooks/usePdfExportFast';
@@ -9,19 +9,18 @@ import { Crosshair, LocateFixed, Signal } from 'lucide-react';
 import { Map, AdvancedMarker } from '@vis.gl/react-google-maps';
 
 import { useAppStore } from '../../hooks/useAppStore';
-import { numFocus, saveMunicipioCache } from '../../utils/ui';
+import { saveMunicipioCache } from '../../utils/ui';
 import {
-    AppState, Pipe, Sumidero, SISTEMAS, RASANTES, ESTADOS_POZO,
+    AppState, SISTEMAS, RASANTES, ESTADOS_POZO,
     TIPOS_CAMARA, MUNICIPIOS
 } from '../../types/catastro';
 import { FotoRegistro } from '../../utils/fotoProcessor';
-import FotosZone from '../../components/FotosZone';
 import ManholeDiagram from '../../components/ManholeDiagram';
 import WellDiagram from '../components/WellDiagram';
 import ComponentEditor from '../components/ComponentEditor';
-import PipeCard from '../../components/forms/PipeCard';
-import SumideroCard from '../../components/forms/SumideroCard';
 import { getHybridModeStatus } from '../../utils/storageManager';
+import { TuberiasSection } from '../components/TuberiasSection';
+import { FotosSection } from '../components/FotosSection';
 
 const POZO_PREFIX = 'PZ';
 
@@ -55,51 +54,6 @@ interface FormPageProps {
     savePhotoToStorage?: (photo: any) => Promise<void>;
 }
 
-/** ── Helpers to find photos for specific components ── */
-const getPipePhoto = (p: Pipe, pipes: Pipe[], photos: FotoRegistro[]) => {
-    const orient = (p || {}).es?.toUpperCase() || '';
-    const isSalida = orient === 'SALIDA' || orient === 'S';
-    const isEntrada = orient === 'ENTRADA' || orient === 'E' || orient === '';
-    const isSum = orient === 'SUMIDERO' || orient === 'SUM';
-
-    let group: Pipe[] = [];
-    let prefix = '';
-    if (isSalida) {
-        group = pipes.filter(x => {
-            const o = (x.es || '').toUpperCase();
-            return o === 'SALIDA' || o === 'S';
-        });
-        prefix = 'S';
-    } else if (isEntrada) {
-        group = pipes.filter(x => {
-            const o = (x.es || '').toUpperCase();
-            return o === 'ENTRADA' || o === 'E' || o === '';
-        });
-        prefix = 'E';
-    } else if (isSum) {
-        group = pipes.filter(x => {
-            const o = (x.es || '').toUpperCase();
-            return o === 'SUMIDERO' || o === 'SUM';
-        });
-        prefix = 'SUM';
-    }
-
-    const idx = group.findIndex(x => x.id === p.id);
-    if (idx === -1) return null;
-    const label = `${prefix}${idx + 1}`;
-    
-    return (photos || []).find(f => f.subcategoria === label) || 
-           (photos || []).find(f => (f.subcategoria || '').startsWith(`${label}-`));
-};
-
-const getSumPhoto = (s: Sumidero, sums: Sumidero[], pipes: Pipe[], photos: FotoRegistro[]) => {
-    const idxInSums = (sums || []).findIndex(x => x.id === s.id);
-    if (idxInSums === -1) return null;
-    const label = `SUM${idxInSums + 1}`;
-    
-    return (photos || []).find(f => f.subcategoria === label) || 
-           (photos || []).find(f => (f.subcategoria || '').startsWith(`${label}-`));
-};
 
 const FormPage: React.FC<FormPageProps> = ({
     toast,
@@ -569,262 +523,38 @@ const FormPage: React.FC<FormPageProps> = ({
                     STEP 4 – Tuberías & Sumideros
                 ══════════════════════════════════════════ */}
                 {currentStep === 4 && (
-                    <div className="animate-in slide-in-from-right duration-300">
-                        <div className="card">
-                            <div className="card-title">Esquema de Tuberías (E1-7 / S1-2)</div>
-                            <div className="p-2">
-                                <ManholeDiagram
-                                    pozoId={state.pozo || 'S/N'}
-                                    pipes={state.pipes}
-                                    onPipesChange={(newPipes) => updateState({ pipes: newPipes })}
-                                />
-                            </div>
-                        </div>
-
-                        <div className="card mt-4">
-                            <div className="card-title">Datos Generales</div>
-                            <div className="field">
-                                <label>Pendiente (%) General</label>
-                                <input
-                                    type="number" step="0.1" value={state.pendiente}
-                                    onChange={e => updateState({ pendiente: e.target.value })}
-                                    placeholder="0.0"
-                                    className="bg-gray-800 text-yellow-400 font-mono text-center"
-                                />
-                            </div>
-                        </div>
-
-                        {(() => {
-                            const alerts: string[] = [];
-                            const hTotal = state.altura || 0;
-                            state.pipes.forEach((p, idx) => {
-                                const orient = (p.es || '').toUpperCase();
-                                const sameType = state.pipes.filter(x => (x.es || '').toUpperCase() === orient);
-                                const tIdx = sameType.findIndex(x => x.id === p.id);
-                                const tLabel = `${orient === 'SALIDA' ? 'S' : orient === 'SUMIDERO' ? 'SUM' : 'E'}${tIdx + 1}`;
-                                const z = parseFloat(p.cotaZ) || 0;
-                                let d = parseFloat(p.diam) || 0;
-                                if (p.unit === 'in') d = (d * 25.4);
-                                const batea = z + (d / 1000);
-                                if (p.es === 'ENTRADA' && hTotal < batea) alerts.push(`Tubería ${tLabel} (ENTRADA): Altura total (${hTotal}m) debe ser ≥ Batea (${batea.toFixed(3)}m)`);
-                                if (p.es === 'SALIDA' && hTotal < batea) alerts.push(`Tubería ${tLabel} (SALIDA): Altura total (${hTotal}m) debe ser ≥ Batea (${batea.toFixed(3)}m)`);
-                            });
-                            if (alerts.length > 0) {
-                                return (
-                                    <div className="card mt-4 border-red-500/50 bg-red-500/10 animate-pulse">
-                                        <div className="card-title text-red-500 flex items-center gap-2"><AlertTriangle size={16} /> Alertas de Alturas</div>
-                                        <div className="p-2 space-y-1">
-                                            {alerts.map((a, i) => <div key={i} className="text-[11px] text-red-400 font-bold">• {a}</div>)}
-                                        </div>
-                                    </div>
-                                );
-                            }
-                            return null;
-                        })()}
-
-                        <div className="card mt-4">
-                            <div className="card-title">Resumen de Ramales</div>
-                            <div className="space-y-3">
-                                {state.pipes.length === 0 ? (
-                                    <div className="text-center py-6 opacity-40 italic text-xs">No hay ramales configurados. Toca el diagrama arriba para agregar.</div>
-                                ) : (
-                                    state.pipes.map((p, idx) => {
-                                        const foto = getPipePhoto(p, state.pipes, state.fotoList);
-                                        return (
-                                            <PipeCard
-                                                key={p.id}
-                                                pipe={p}
-                                                allPipes={state.pipes}
-                                                index={idx}
-                                                foto={foto}
-                                                pozoId={state.pozo}
-                                                municipio={state.municipio}
-                                                photos={state.fotoList}
-                                                onAddPhoto={(foto: FotoRegistro) => updateState({ fotoList: [...state.fotoList, foto] })}
-                                                onDeletePhoto={(id: string) => updateState({ fotoList: state.fotoList.filter(f => f.id !== id) })}
-                                                onPreviewPhoto={setPreviewPhoto}
-                                                isLocked={isLocked}
-                                                onUpdate={(upd) => {
-                                                    const newPipes = [...state.pipes];
-                                                    const updatedPipe = { ...p, ...upd };
-                                                    newPipes[idx] = updatedPipe;
-                                                    
-                                                    const updates: any = { pipes: newPipes };
-
-                                                    const getNormalizedType = (pObj: any) => {
-                                                        const raw = pObj?.es || pObj?.tipo || 'ENTRADA';
-                                                        const up = raw.toUpperCase();
-                                                        if (up === 'E' || up === 'ENTRADA') return 'ENTRADA';
-                                                        if (up === 'S' || up === 'SALIDA') return 'SALIDA';
-                                                        if (up === 'SUM' || up === 'SUMIDERO') return 'SUMIDERO';
-                                                        return 'ENTRADA';
-                                                    };
-
-                                                    const currentType = getNormalizedType(updatedPipe);
-                                                    if (currentType === 'SUMIDERO' && (upd.cotaZ !== undefined || upd.diam !== undefined || upd.unit !== undefined || upd.es !== undefined || upd.tipo !== undefined)) {
-                                                        const z = parseFloat(updatedPipe.cotaZ) || 0;
-                                                        let d = parseFloat(updatedPipe.diam) || 0;
-                                                        if (updatedPipe.unit === 'in') d = (d * 25.4);
-                                                        const computedBatea = (z + (d / 1000)).toFixed(3);
-                                                        
-                                                        const sameTypePipes = newPipes.filter(x => getNormalizedType(x) === 'SUMIDERO');
-                                                        const typeIndexInGroup = sameTypePipes.findIndex(x => x.id === updatedPipe.id);
-                                                        
-                                                        if (typeIndexInGroup >= 0 && typeIndexInGroup < state.sums.length) {
-                                                            const newSums = [...state.sums];
-                                                            const sumTarget = newSums[typeIndexInGroup];
-                                                            
-                                                            const sumZ = parseFloat(computedBatea) || 0;
-                                                            let sumD = parseFloat(sumTarget.diamTub) || 0;
-                                                            if (sumTarget.unitTub === 'in') sumD = (sumD * 25.4);
-                                                            const sumH = (sumZ + (sumD / 1000)).toFixed(3);
-
-                                                            newSums[typeIndexInGroup] = { 
-                                                                ...sumTarget, 
-                                                                hLlegada: computedBatea,
-                                                                hSalida: sumH 
-                                                            };
-                                                            updates.sums = newSums;
-                                                        }
-                                                    }
-
-                                                    updateState(updates);
-                                                }}
-                                                onDelete={() => updateState({ pipes: state.pipes.filter((_, i) => i !== idx) })}
-                                                numFocus={numFocus}
-                                            />
-                                        );
-                                    })
-                                )}
-                            </div>
-                        </div>
-
-                        <div className="card mt-4">
-                            <div className="card-title">Sumideros (1-6)</div>
-                            <div className="space-y-4">
-                                {state.sums.map((s, idx) => {
-                                    const foto = getSumPhoto(s, state.sums, state.pipes, state.fotoList);
-                                    return (
-                                        <SumideroCard
-                                            key={s.id}
-                                            sum={s}
-                                            index={idx}
-                                            foto={foto}
-                                            pozoId={state.pozo}
-                                            municipio={state.municipio}
-                                            photos={state.fotoList}
-                                            onAddPhoto={(foto: FotoRegistro) => updateState({ fotoList: [...state.fotoList, foto] })}
-                                            onDeletePhoto={(id: string) => updateState({ fotoList: state.fotoList.filter(f => f.id !== id) })}
-                                            onPreviewPhoto={setPreviewPhoto}
-                                            isLocked={isLocked}
-                                            onUpdate={(upd) => {
-                                                const newSums = [...state.sums];
-                                                newSums[idx] = { ...s, ...upd };
-                                                updateState({ sums: newSums });
-                                            }}
-                                            onDelete={() => updateState({ sums: state.sums.filter((_, i) => i !== idx) })}
-                                        />
-                                    );
-                                })}
-                                <button className="btn btn-orange btn-full btn-sm" onClick={() => {
-                                    const id = `S_${Date.now()}`;
-                                    updateState({ sums: [...state.sums, { id, tipo: '', matRejilla: '', matCaja: '', hSalida: '', hLlegada: '', estado: '', codEsquema: `S-${state.sums.length + 1}`, diamTub: '', matTub: '' }] });
-                                }}>
-                                    <Plus size={14} /> Agregar Sumidero
-                                </button>
-                            </div>
-                        </div>
-
-                        <div className="btn-row">
-                            <button className="btn btn-ghost" onClick={() => setCurrentStep(3)}><ChevronLeft size={16} /> Volver</button>
-                            <button className="btn btn-green" onClick={() => setCurrentStep(5)}>Siguiente <ChevronRight size={16} /></button>
-                        </div>
-                    </div>
+                    <TuberiasSection
+                        pipes={state.pipes}
+                        sums={state.sums}
+                        pozo={state.pozo}
+                        municipio={state.municipio}
+                        fotoList={state.fotoList}
+                        pendiente={state.pendiente}
+                        altura={state.altura}
+                        isLocked={isLocked}
+                        updateState={updateState}
+                        setCurrentStep={setCurrentStep}
+                        setPreviewPhoto={setPreviewPhoto}
+                    />
                 )}
 
                 {/* ══════════════════════════════════════════
                     STEP 5 – Fotos & Observaciones
                 ══════════════════════════════════════════ */}
                 {currentStep === 5 && (
-                    <div className="animate-in slide-in-from-right duration-300">
-                        <div className="card mb-2" style={{ padding: '8px', background: 'var(--bg2)' }}>
-                            <div className="flex justify-between items-center mb-1">
-                                <span style={{ fontSize: '9px', fontWeight: 'bold', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Esquema de Referencia</span>
-                                <span style={{ fontSize: '8px', color: 'var(--blue)' }}>{state.pipes.length} Ramales</span>
-                            </div>
-                            <div style={{ height: '140px', overflow: 'hidden', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                                <div style={{ transform: 'scale(0.55)', transformOrigin: 'center' }}>
-                                    <ManholeDiagram pozoId={state.pozo} pipes={state.pipes} isReadOnly />
-                                </div>
-                            </div>
-                        </div>
-                        <div className="p-2">
-                            <FotosZone
-                                pozoId={state.pozo || 'P000'}
-                                photos={state.fotoList}
-                                pipes={state.pipes}
-                                sums={state.sums}
-                                onAddPhoto={(foto: FotoRegistro) => updateState({ fotoList: [...state.fotoList, foto] })}
-                                onDeletePhoto={(id: string) => updateState({ fotoList: state.fotoList.filter(f => f.id !== id) })}
-                                readOnlyComponents={true}
-                                estadoPozo={state.estadoPozo}
-                                municipio={state.municipio}
-                            />
-                        </div>
-
-                        <div className="card">
-                            <div className="card-title">Observaciones y Cierre</div>
-                            <div className="field">
-                                <div className="flex justify-between items-end mb-1">
-                                    <label className="mb-0">Observaciones</label>
-                                    <button
-                                        className="bg-white/5 hover:bg-white/10 text-[10px] py-1 px-2 rounded-md flex items-center gap-1 transition-all"
-                                        onClick={() => {
-                                            const bullet = '• ';
-                                            updateState({ obs: state.obs + (state.obs.endsWith('\n') || state.obs === '' ? '' : '\n') + bullet });
-                                        }}
-                                    >
-                                        <List size={12} /> Añadir Viñeta
-                                    </button>
-                                </div>
-                                <textarea
-                                    value={state.obs}
-                                    onChange={e => updateState({ obs: e.target.value })}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                            const lines = state.obs.split('\n');
-                                            const lastLine = lines[lines.length - 1];
-                                            if (lastLine.trim().startsWith('•')) {
-                                                e.preventDefault();
-                                                updateState({ obs: state.obs + '\n• ' });
-                                            }
-                                        }
-                                    }}
-                                    rows={6}
-                                    placeholder="Ej: • Tapa fisurada..."
-                                />
-                            </div>
-                        </div>
-
-                        <div className="btn-row">
-                            <button className="btn btn-ghost" onClick={() => setCurrentStep(4)}><ChevronLeft size={16} /> Volver</button>
-                            <button className="btn btn-green" onClick={() => {
-                                const totalH = Number(state.altura);
-                                if (!isNaN(totalH) && state.pipes.length > 0) {
-                                    const warnings: string[] = [];
-                                    for (const p of state.pipes) {
-                                        const z = parseFloat(p.cotaZ) || 0;
-                                        let d = parseFloat(p.diam) || 0;
-                                        if (p.unit === 'in') d = (d * 25.4);
-                                        const bateaVal = z + (d / 1000);
-                                        if (totalH < bateaVal) warnings.push(`⚠️ ${p.es}: Altura (${totalH}m) < Batea (${bateaVal.toFixed(3)}m)`);
-                                    }
-                                    if (warnings.length > 0) toast(warnings.join(' | '));
-                                }
-                                setCurrentStep(6);
-                            }}>Finalizar <Check size={16} /></button>
-                        </div>
-                    </div>
+                    <FotosSection
+                        pipes={state.pipes}
+                        sums={state.sums}
+                        pozo={state.pozo}
+                        municipio={state.municipio}
+                        fotoList={state.fotoList}
+                        obs={state.obs}
+                        altura={state.altura}
+                        estadoPozo={state.estadoPozo}
+                        updateState={updateState}
+                        setCurrentStep={setCurrentStep}
+                        toast={toast}
+                    />
                 )}
 
                 {/* ══════════════════════════════════════════
