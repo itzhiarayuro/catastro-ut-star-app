@@ -13,3 +13,4 @@ firebase-adminsdk.json
 *.json.secret
 firebase-debug.log
 firebase-debug.*.log
+clave.json
