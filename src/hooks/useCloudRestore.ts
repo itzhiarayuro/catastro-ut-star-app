@@ -114,7 +114,7 @@ export const useCloudRestore = ({ toast, safeSaveAllFichas }: UseCloudRestorePar
                     for (const key of Object.keys(m.fotos)) {
                         const f = m.fotos[key];
                         if (f && f.id && f.filename) {
-                            const blob = await fetchPhotoFromDrive(f.filename);
+                            const blob = await fetchPhotoFromDrive(f.filename, m.municipio || '');
                             if (blob) {
                                 await savePhotoToStorage({
                                     id: f.id,

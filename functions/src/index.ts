@@ -264,3 +264,6 @@ export { generateFicha } from "./generateFicha";
 export { firestoreProxy } from "./firestoreProxy";
 export { fixOrdenInExistingFichas } from "./maintenance";
 export { cleanDriveDuplicates, trashDriveFile } from "./driveDuplicateCleaner";
+export { bqGetPozos, bqGetMarcaciones, bqGetTuberias, bqGetSumideros } from "./bigqueryViewer";
+export { fetchDrivePhotoByIds } from "./fetchDrivePhotoByIds";
+export { syncDriveToFirestore } from "./syncDriveToFirestore";

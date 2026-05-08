@@ -18,12 +18,13 @@ interface PipeCardProps {
     onDeletePhoto: (id: string) => void;
     onPreviewPhoto: (photo: FotoRegistro) => void;
     pozoId: string;
+    municipio: string;
     isLocked: boolean;
 }
 
 const PipeCard: React.FC<PipeCardProps> = ({ 
     pipe, index, onUpdate, onDelete, numFocus, foto,
-    photos, allPipes, onAddPhoto, onDeletePhoto, onPreviewPhoto, pozoId, isLocked
+    photos, allPipes, onAddPhoto, onDeletePhoto, onPreviewPhoto, pozoId, municipio, isLocked
 }) => {
     const [isOpen, setIsOpen] = useState(false);
     
@@ -65,7 +66,7 @@ const PipeCard: React.FC<PipeCardProps> = ({
         <div className="pipe-card mb-3">
             <div className="pipe-card-header cursor-pointer p-3 bg-gray-900 flex justify-between items-center rounded-t-lg" onClick={() => setIsOpen(!isOpen)}>
                 <div className="pipe-card-label flex items-center gap-2">
-                    <ThumbnailImage foto={foto} alt={`Tubería ${typeOrder}`} />
+                    <ThumbnailImage foto={foto} alt={`Tubería ${typeOrder}`} municipio={municipio} />
                     <div className="flex flex-col">
                         <span className={`pipe-badge text-[8px] px-1 py-0.2 rounded font-bold w-fit ${pipe.es === 'ENTRADA' ? 'bg-blue-600 text-white' : 'bg-orange-600 text-white'}`}>{pipe.es}</span>
                         <span className="text-xs font-semibold">Tubería {typeOrder} {pipe.deA && `· ${pipe.deA}`}</span>
@@ -114,6 +115,7 @@ const PipeCard: React.FC<PipeCardProps> = ({
                         onDelete={onDeletePhoto}
                         onPreview={onPreviewPhoto}
                         isLocked={isLocked}
+                        municipio={municipio}
                     />
                 </div>
                 

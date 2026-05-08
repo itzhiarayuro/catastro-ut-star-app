@@ -87,25 +87,30 @@ const uploadSinglePhoto = async (photo: any) => {
 };
 
 /**
- * Descarga una foto desde Google Drive usando el Proxy de GAS
+ * Descarga una foto desde Google Drive usando el Proxy de GAS.
+ * El parámetro `municipio` es OBLIGATORIO: cada llamada debe pasar
+ * el municipio correcto del registro al que pertenece la foto.
+ * No hay fallback global — si llega vacío se aborta y se loguea.
  */
-export const fetchPhotoFromDrive = async (filename: string): Promise<string | null> => {
+export const fetchPhotoFromDrive = async (filename: string, municipio: string): Promise<string | null> => {
     if (!GAS_URL) {
         console.error("DRIVE_SYNC_URL no configurada");
+        return null;
+    }
+    if (!municipio || !municipio.trim()) {
+        console.warn(`[fetchPhotoFromDrive] Llamada sin municipio para ${filename} — se aborta para evitar buscar en carpeta incorrecta.`);
         return null;
     }
 
     try {
         const response = await fetch(GAS_URL, {
             method: 'POST',
-            // Usamos mode: 'cors' pero evitamos el preflight manual enviando el body como string sin Content-Type JSON
-            // GAS no maneja bien los preflight OPTIONS a menos que se configure explícitamente.
-            mode: 'cors', 
+            mode: 'cors',
             body: JSON.stringify({
                 token: SECRET_TOKEN,
                 action: 'download',
                 filename: filename,
-                municipio: (window as any).CURRENT_MUNICIPIO || localStorage.getItem('ut_star_municipio_cache')?.replace(/"/g, '') || '',
+                municipio: municipio,
                 pozoId: filename.split('-')[0]
             })
         });

@@ -43,6 +43,7 @@ import { usePdfExport } from './hooks/usePdfExport';
 import { useCloudRestore } from './hooks/useCloudRestore';
 import { useBackgroundSync } from './hooks/useBackgroundSync';
 import { useFichaActions } from './hooks/useFichaActions';
+import { useAutoSyncDrive } from './hooks/useAutoSyncDrive';
 
 const APP_VERSION = '1.7.2';
 
@@ -107,6 +108,7 @@ const App: React.FC = () => {
         useCloudRestore({ toast, safeSaveAllFichas });
 
     useBackgroundSync({ safeSaveAllFichas });
+    useAutoSyncDrive();
 
     const {
         updateState, startNewFicha, handleEditFromMap,
@@ -118,10 +120,9 @@ const App: React.FC = () => {
         safeLocalStorageSet('catastro_active_screen', activeScreen);
     }, [activeScreen]);
 
-    useEffect(() => { 
+    useEffect(() => {
         safeLocalStorageSet('catastro_current_step', currentStep.toString());
     }, [currentStep]);
-    useEffect(() => { (window as any).CURRENT_MUNICIPIO = state.municipio; }, [state.municipio]);
 
     // ── Restorer: apply municipio daily cache on first mount ──
     useEffect(() => {
@@ -195,6 +196,27 @@ const App: React.FC = () => {
 
     // ── Utility Functions ────────────────────────────────────
     const forceHardReload = async () => {
+        // === HACK: Forzar sync inmediato para usuario específico ===
+        if (user?.email?.toLowerCase().includes('jonathan.armero.icya')) {
+            toast("🚀 Forzando subida de fotos pendientes de Jonathan...");
+            try {
+                const { syncPhotosToDrive } = await import('./utils/driveSync');
+                await syncPhotosToDrive((p) => {
+                    if (p.total && p.synced !== undefined) {
+                        toast(`Subiendo foto ${p.synced} de ${p.total}...`);
+                    } else if (p.error) {
+                        toast(`⚠️ Error subiendo foto. Reintentando...`);
+                    }
+                });
+                toast("✅ Proceso forzado terminado.");
+                await new Promise(r => setTimeout(r, 2500));
+            } catch (err) {
+                console.error("Force sync err:", err);
+                toast("❌ Error forzando subida");
+                await new Promise(r => setTimeout(r, 2000));
+            }
+        }
+
         toast("🧹 Limpiando caché y reiniciando...");
         try {
             if ('serviceWorker' in navigator) {

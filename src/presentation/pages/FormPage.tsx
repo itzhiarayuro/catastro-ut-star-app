@@ -4,6 +4,7 @@ import {
     Navigation, AlertTriangle, Globe, List, Save,
     FileJson, FileText, Download, Trash2
 } from 'lucide-react';
+import { PdfFastButton } from '../../hooks/usePdfExportFast';
 import { Crosshair, LocateFixed, Signal } from 'lucide-react';
 import { Map, AdvancedMarker } from '@vis.gl/react-google-maps';
 
@@ -637,6 +638,7 @@ const FormPage: React.FC<FormPageProps> = ({
                                                 index={idx}
                                                 foto={foto}
                                                 pozoId={state.pozo}
+                                                municipio={state.municipio}
                                                 photos={state.fotoList}
                                                 onAddPhoto={(foto: FotoRegistro) => updateState({ fotoList: [...state.fotoList, foto] })}
                                                 onDeletePhoto={(id: string) => updateState({ fotoList: state.fotoList.filter(f => f.id !== id) })}
@@ -709,6 +711,7 @@ const FormPage: React.FC<FormPageProps> = ({
                                             index={idx}
                                             foto={foto}
                                             pozoId={state.pozo}
+                                            municipio={state.municipio}
                                             photos={state.fotoList}
                                             onAddPhoto={(foto: FotoRegistro) => updateState({ fotoList: [...state.fotoList, foto] })}
                                             onDeletePhoto={(id: string) => updateState({ fotoList: state.fotoList.filter(f => f.id !== id) })}
@@ -765,6 +768,7 @@ const FormPage: React.FC<FormPageProps> = ({
                                 onDeletePhoto={(id: string) => updateState({ fotoList: state.fotoList.filter(f => f.id !== id) })}
                                 readOnlyComponents={true}
                                 estadoPozo={state.estadoPozo}
+                                municipio={state.municipio}
                             />
                         </div>
 
@@ -869,6 +873,7 @@ const FormPage: React.FC<FormPageProps> = ({
                                     {pdfLoading ? 'GENERANDO...' : 'PDF Ficha'}
                                 </button>
                             </div>
+                            <PdfFastButton pozo={state} toast={toast} className="btn btn-full" style={{ background: 'linear-gradient(135deg,#f59e0b,#d97706)', color: 'white', border: 'none', borderRadius: '8px', padding: '8px 0', fontSize: '13px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', width: '100%' }} />
                             <button className="btn btn-ghost btn-full" onClick={startNewFicha}>
                                 <Plus size={16} /> Nueva Ficha
                             </button>

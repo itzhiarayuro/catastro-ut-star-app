@@ -16,6 +16,7 @@
     },
     "main": "lib/index.js",
     "dependencies": {
+        "@google-cloud/bigquery": "^7.9.4",
         "firebase-admin": "^11.11.1",
         "firebase-functions": "^4.9.0",
         "googleapis": "^144.0.0",

@@ -35,7 +35,7 @@ async function compressImageFileToDataUrl(file: File, maxSize = 1600, quality = 
 }
 
 // ─── Componente para mostrar imagen desde IDB si no tiene blobId ─────────────
-export const HydratedImage: React.FC<{ foto: any, alt: string, style?: any, fallback?: any }> = ({ foto, alt, style, fallback }) => {
+export const HydratedImage: React.FC<{ foto: any, alt: string, style?: any, fallback?: any, municipio: string }> = ({ foto, alt, style, fallback, municipio }) => {
     const [src, setSrc] = useState<string | null>(foto?.blobId || null);
     const [loading, setLoading] = useState(!foto?.blobId && !!foto?.id);
 
@@ -45,14 +45,14 @@ export const HydratedImage: React.FC<{ foto: any, alt: string, style?: any, fall
             getPhotoFromStorage(foto.id).then(async p => {
                 if (p) {
                     setSrc(p.blob);
-                } else if (foto.filename) {
-                    const driveBlob = await fetchPhotoFromDrive(foto.filename);
+                } else if (foto.filename && municipio) {
+                    const driveBlob = await fetchPhotoFromDrive(foto.filename, municipio);
                     if (driveBlob) {
                         setSrc(driveBlob);
                         savePhotoToStorage({
                             id: foto.id,
                             pozoId: foto.idPozo || '',
-                            municipio: (window as any).CURRENT_MUNICIPIO || '',
+                            municipio: municipio,
                             barrio: 'CATASTRO',
                             filename: foto.filename,
                             blob: driveBlob,
@@ -89,11 +89,12 @@ interface SinglePhotoCardProps {
     onPreview: (photo: FotoRegistro) => void;
     isLocked: boolean;
     accentColor: string;
+    municipio: string;
 }
 
 export const SinglePhotoCard: React.FC<SinglePhotoCardProps> = ({
     label, sublabel, filename, pozoId, categoria, existingPhoto,
-    onAdd, onDelete, onPreview, isLocked, accentColor
+    onAdd, onDelete, onPreview, isLocked, accentColor, municipio
 }) => {
     const handleCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (isLocked) { alert("⚠️ No hay espacio suficiente."); return; }
@@ -104,7 +105,6 @@ export const SinglePhotoCard: React.FC<SinglePhotoCardProps> = ({
             const newFoto = procesarFoto(filename, pozoId, blob);
             const userStr = safeLocalStorageGet('ut_star_user');
             const inspector = userStr ? userStr.name : 'Desconocido';
-            const municipio = (window as any).CURRENT_MUNICIPIO || 'SOPO';
             const md5 = calculateMD5(blob);
             await savePhotoToStorage({
                 id: newFoto.id, pozoId, municipio, barrio: 'CATASTRO', filename, blob, md5,
@@ -148,6 +148,7 @@ export const SinglePhotoCard: React.FC<SinglePhotoCardProps> = ({
                     categoria={categoria}
                     onSuccess={onAdd}
                     barrioFlag="CATASTRO"
+                    municipio={municipio}
                 />
             </div>
 
@@ -158,6 +159,7 @@ export const SinglePhotoCard: React.FC<SinglePhotoCardProps> = ({
                         foto={existingPhoto}
                         alt={filename}
                         style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        municipio={municipio}
                     />
                     <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.75)', padding: '6px 8px', fontSize: '8px', color: '#8b949e', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {existingPhoto.filename}
@@ -206,10 +208,11 @@ export interface PipePhotoGroupProps {
     onDelete: (id: string) => void;
     onPreview: (photo: FotoRegistro) => void;
     isLocked: boolean;
+    municipio: string;
 }
 
 export const PipePhotoGroup: React.FC<PipePhotoGroupProps> = ({
-    pozoId, label, tipo, diam, mat, isSumidero, photos, onAdd, onDelete, onPreview, isLocked
+    pozoId, label, tipo, diam, mat, isSumidero, photos, onAdd, onDelete, onPreview, isLocked, municipio
 }) => {
     const accentColors: Record<string, string> = {
         ENTRADA: '#1f6feb',
@@ -275,6 +278,7 @@ export const PipePhotoGroup: React.FC<PipePhotoGroupProps> = ({
                     onPreview={onPreview}
                     isLocked={isLocked}
                     accentColor={accent}
+                    municipio={municipio}
                 />
                 <SinglePhotoCard
                     label="📐 Cota Z"
@@ -288,6 +292,7 @@ export const PipePhotoGroup: React.FC<PipePhotoGroupProps> = ({
                     onPreview={onPreview}
                     isLocked={isLocked}
                     accentColor={accent}
+                    municipio={municipio}
                 />
                 <SinglePhotoCard
                     label="📏 Diámetro"
@@ -301,6 +306,7 @@ export const PipePhotoGroup: React.FC<PipePhotoGroupProps> = ({
                     onPreview={onPreview}
                     isLocked={isLocked}
                     accentColor={accent}
+                    municipio={municipio}
                 />
                 {isSumidero && (
                     <SinglePhotoCard
@@ -315,6 +321,7 @@ export const PipePhotoGroup: React.FC<PipePhotoGroupProps> = ({
                         onPreview={onPreview}
                         isLocked={isLocked}
                         accentColor="#e3b341"
+                        municipio={municipio}
                     />
                 )}
             </div>

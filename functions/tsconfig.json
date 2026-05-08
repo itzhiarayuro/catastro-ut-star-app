@@ -8,6 +8,7 @@
         "sourceMap": true,
         "target": "es2017",
         "skipLibCheck": true,
+        "noEmitOnError": false,
         "lib": [
             "es2017",
             "esnext.asynciterable",

@@ -8,8 +8,11 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Lectura pública para permitir acceso desde Excel/Power Query (REST API sin auth)
+    // Escritura sigue protegida con autenticación
     match /fichas/{id} {
-        allow read, write: if isAuthenticated();
+        allow read: if true;
+        allow write: if isAuthenticated();
     }
     
     match /historial_fichas/{id} {
@@ -17,7 +20,8 @@ service cloud.firestore {
     }
     
     match /marcaciones/{id} { 
-        allow read, write: if isAuthenticated();
+        allow read: if true;
+        allow write: if isAuthenticated();
     }
     
     match /historial_marcaciones/{id} {

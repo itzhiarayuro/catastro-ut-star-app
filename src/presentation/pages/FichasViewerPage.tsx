@@ -1,7 +1,8 @@
 import React from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { useAppStore } from '../../hooks/useAppStore';
-import FichasViewerComponent from '../../components/FichasViewer'; 
+import FichasViewerComponent from '../../components/FichasViewer';
+import { safeLocalStorageSet } from '../../utils/ui';
 
 interface FichasViewerPageProps {
     toast: (msg: string) => void;
@@ -10,7 +11,15 @@ interface FichasViewerPageProps {
 }
 
 const FichasViewerPage: React.FC<FichasViewerPageProps> = ({ toast, handlePDF, pdfLoading }) => {
-    const { activeScreen, setActiveScreen } = useAppStore();
+    const { activeScreen, setActiveScreen, setState, setCurrentStep } = useAppStore();
+
+    const handleEditFicha = (ficha: any) => {
+        setState(ficha);
+        safeLocalStorageSet('catastro_draft', JSON.stringify(ficha));
+        setActiveScreen('sForm');
+        setCurrentStep(1);
+        toast('✏️ Editando ficha (Modo Local)');
+    };
 
     return (
         <div id="sFichasViewer" className={`screen ${activeScreen === 'sFichasViewer' ? 'active' : ''}`}>
@@ -21,12 +30,17 @@ const FichasViewerPage: React.FC<FichasViewerPageProps> = ({ toast, handlePDF, p
                     </button>
                     <div className="header-titles">
                         <div className="header-title">Sistema de Fichas</div>
-                        <div className="header-sub">GESTIÓN &amp; EXPORTACIÓN PDF</div>
+                        <div className="header-sub">GESTIÓN & EXPORTACIÓN PDF</div>
                     </div>
                 </div>
             </div>
             <div className="content" style={{ padding: '12px' }}>
-                <FichasViewerComponent toast={toast} handlePDF={handlePDF} pdfLoading={pdfLoading} />
+                <FichasViewerComponent 
+                    toast={toast} 
+                    handlePDF={handlePDF} 
+                    pdfLoading={pdfLoading} 
+                    onEditFicha={handleEditFicha}
+                />
             </div>
         </div>
     );

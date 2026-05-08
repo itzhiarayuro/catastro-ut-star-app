@@ -175,7 +175,7 @@ const MarcacionScreen: React.FC<{
     onSync: () => void;
     onSuccess: (msg: string) => void;
 }> = ({ user, mode, onBack, onSync, onSuccess }) => {
-    const defaultMun = getMunicipioCached() || (window as any).CURRENT_MUNICIPIO || 'SOPO';
+    const defaultMun = getMunicipioCached() || 'SOPO';
     const [view, setView] = useState<'list' | 'form'>('list');
     const [form, setForm] = useState<FormState>(() => {
         const base = EMPTY_FORM(defaultMun);
@@ -685,6 +685,7 @@ const MarcacionScreen: React.FC<{
                                                 filename={form.codigo.trim() ? `${form.codigo.trim().toUpperCase()}${suffix}.JPG` : `MARC-${Date.now()}${suffix}.JPG`}
                                                 categoria={cat === 'panoramica' ? 'General' : 'Interior'}
                                                 onSuccess={(f) => handleAkasoSuccess(cat, f)}
+                                                municipio={form.municipio}
                                             />
                                         </div>
                                         <div className="photo-zone" style={{ height: '120px', position: 'relative' }}>
@@ -719,6 +720,7 @@ const MarcacionScreen: React.FC<{
                                                 categoria={mode === 'SUMIDERO' ? 'Sumidero' : 'General'}
                                                 onSuccess={(f) => handleAkasoSuccess(cat, f)}
                                                 barrioFlag="MARCACION"
+                                                municipio={form.municipio}
                                             />
                                         </div>
                                         <div className="photo-zone" style={{ height: '120px', position: 'relative' }}>

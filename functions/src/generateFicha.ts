@@ -524,14 +524,22 @@ function getFieldValue(pozo: ReturnType<typeof mapFirestoreToPozo>, fieldId: str
         };
 
         // Helper: ¿una foto coincide con el código base?
+        // Tolerante a variantes de separador, ausencia de guión final y extensiones mixtas.
         const matchesCode = (nombre: string, code: string) => {
-            const n = nombre.toUpperCase();
-            // Coincidencia exacta: -S1. o -S1- o _S1.
-            if (new RegExp(`[-_]${code}[-_.]`).test(n)) return true;
-            // Coincidencia al final: -S1.JPG
-            if (new RegExp(`[-_]${code}\\.[A-Z]+$`).test(n)) return true;
+            const n = nombre.toUpperCase().replace(/\s+/g, '');
+            const escaped = code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            // -S1. / -S1- / _S1. / _S1-
+            if (new RegExp(`[-_]${escaped}[-_.]`).test(n)) return true;
+            // -S1.JPG al final
+            if (new RegExp(`[-_]${escaped}\\.[A-Z0-9]+$`).test(n)) return true;
+            // Sin separador final: PZ53E1.JPG (tolerante a naming sin guión)
+            if (new RegExp(`${escaped}\\.[A-Z0-9]+$`).test(n)) return true;
+            // Código exacto al final del stem: …-E1Z → E1 antes de letra de sufijo
+            if (new RegExp(`[-_]${escaped}[A-Z]\\.[A-Z0-9]+$`).test(n)) return true;
             return false;
         };
+        // Helper: normalizar texto para comparación de subcategoría
+        const normSub = (s: string) => s.toUpperCase().replace(/\s+/g, '');
 
         // Caso especial foto_shape: buscar L, _ARGIS o ESQUEMA
         if (fieldId === 'foto_shape') {
@@ -545,10 +553,11 @@ function getFieldValue(pozo: ReturnType<typeof mapFirestoreToPozo>, fieldId: str
             return foto?.blobId ?? null;
         }
 
-        // Candidatos: todas las fotos que coinciden con el código base
+        // Candidatos: fotos que coinciden por nombre O por subcategoría normalizada
         const candidates = pozo.fotos.filter(f => {
             const n = (f.nombre ?? "").toUpperCase();
-            return matchesCode(n, baseCode);
+            const sub = normSub(f.subcategoria ?? f.categoria ?? f.tipo ?? '');
+            return matchesCode(n, baseCode) || sub === normSub(baseCode);
         });
 
         let foto: typeof pozo.fotos[0] | undefined;
@@ -558,11 +567,16 @@ function getFieldValue(pozo: ReturnType<typeof mapFirestoreToPozo>, fieldId: str
             const principal = candidates.find(f => !isZoom(f.nombre ?? ''));
             foto = principal ?? candidates[0]; // fallback al primer candidato si todos son zoom
         }
-        // Log diagnóstico
+        // Log diagnóstico con categorías estructuradas
         if (foto?.blobId) {
-            plog(`[PDF-PHOTO] ✅ Field: ${fieldId} | Match: ${baseCode} | File: ${foto.nombre ?? '?'}`);
+            plog(`[PDF-PHOTO] ✅ field=${fieldId} code=${baseCode} file=${foto.nombre ?? '?'}`);
+        } else if (candidates.length > 0) {
+            // Candidatos encontrados pero sin blobId → hidratación falló upstream
+            pwarn(`[MATCH_FAIL] field=${fieldId} code=${baseCode} candidates=${candidates.length} sin_blobId → fotos no hidratadas: ${candidates.map(f => f.nombre).join(', ')}`);
         } else {
-            pwarn(`[PDF-PHOTO] ❌ MISSING: ${fieldId} (Code: ${baseCode}) | candidates=${candidates.length} | fotos: ${pozo.fotos.map(f => f.nombre).join(', ')}`);
+            // Ningún candidato → naming mismatch o foto realmente ausente
+            const listaFotos = pozo.fotos.map(f => f.nombre).join(', ') || '(vacío)';
+            pwarn(`[MISSING_FILE] field=${fieldId} code=${baseCode} no_match | fotoList: ${listaFotos}`);
         }
         return foto?.blobId ?? null;
     }
@@ -880,18 +894,21 @@ function checkHasRealData(group: TechnicalGroup, pozo: ReturnType<typeof mapFire
         const photoNum = (group.kind === 'salida') ? (group.number - 7) : group.number;
         const code = (group.kind === 'entrada' ? 'E' : 'S') + photoNum;
         
+        const norm = (s: string) => String(s || '').toUpperCase().replace(/\s+/g, '');
+        const escaped = code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const hasPhoto = pozo.fotos.some((f: any) => {
-            const subcat = String(f.subcategoria || f.categoria || '').toUpperCase();
-            const filename = String(f.nombre || f.filename || '').toUpperCase();
-            const tipo = String(f.tipo || '').toUpperCase();
+            const subcat = norm(f.subcategoria || f.categoria || '');
+            const filename = norm(f.nombre || f.filename || '');
+            const tipo = norm(f.tipo || '');
 
-            return subcat === code ||
-                   subcat.includes(`-${code}`) ||
-                   filename.includes(`-${code}.`) ||
-                   filename.includes(`-${code}-`) ||
-                   filename.endsWith(`-${code}`) ||
-                   tipo === code ||
-                   new RegExp(`[-_]${code}([-_][A-Z]+)?\\.[A-Z]+$`).test(filename);
+            return subcat === norm(code) ||
+                   subcat.includes(norm(code)) ||
+                   filename.includes(`-${escaped}.`) ||
+                   filename.includes(`-${escaped}-`) ||
+                   filename.endsWith(`-${escaped}`) ||
+                   tipo === norm(code) ||
+                   new RegExp(`[-_]${escaped}([-_][A-Z]+)?\\.[A-Z0-9]+$`).test(filename) ||
+                   new RegExp(`${escaped}\\.[A-Z0-9]+$`).test(filename);
         });
 
         return hasTechnicalData || hasPhoto;
@@ -916,17 +933,22 @@ function checkHasRealData(group: TechnicalGroup, pozo: ReturnType<typeof mapFire
 
         const photoNum = group.realIdx + 1;
         const code = `SUM${photoNum}`;
+        const normS = (s: string) => String(s || '').toUpperCase().replace(/\s+/g, '');
+        const escapedCode = code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const hasPhoto = pozo.fotos.some((f: any) => {
-            const subcat = String(f.subcategoria || f.categoria || '').toUpperCase();
-            const filename = String(f.nombre || f.filename || '').toUpperCase();
-            const tipo = String(f.tipo || '').toUpperCase();
+            const subcat = normS(f.subcategoria || f.categoria || '');
+            const filename = normS(f.nombre || f.filename || '');
+            const tipo = normS(f.tipo || '');
+            const nc = normS(code);
 
-            return subcat === code ||
-                   subcat.includes(code) ||
-                   filename.includes(`-${code}.`) ||
-                   filename.includes(`-${code}-`) ||
-                   filename.endsWith(`-${code}`) ||
-                   tipo === code;
+            return subcat === nc ||
+                   subcat.includes(nc) ||
+                   filename.includes(`-${escapedCode}.`) ||
+                   filename.includes(`-${escapedCode}-`) ||
+                   filename.endsWith(`-${escapedCode}`) ||
+                   tipo === nc ||
+                   new RegExp(`[-_]${escapedCode}([-_][A-Z]+)?\\.[A-Z0-9]+$`).test(filename) ||
+                   new RegExp(`${escapedCode}\\.[A-Z0-9]+$`).test(filename);
         });
 
         const show = hasTechnicalData || hasPhoto;
@@ -1213,6 +1235,7 @@ async function renderField(doc: InstanceType<typeof jsPDF>, pl: Placement, pozo:
                 const yOffset = contentY + padding + (fitH - finalH) / 2;
 
                 const fmt = finalValue.includes("png") ? "PNG" : "JPEG";
+                plog(`[PDF-PHOTO] Adding ${pl.fieldId}: ${finalW.toFixed(1)}x${finalH.toFixed(1)}mm (Original: ${imgW}x${imgH})`);
                 doc.addImage(finalValue, fmt, xOffset, yOffset, finalW, finalH, undefined, "FAST");
             } catch (e) {
                 console.warn(`No se pudo añadir imagen ${pl.fieldId}:`, e);

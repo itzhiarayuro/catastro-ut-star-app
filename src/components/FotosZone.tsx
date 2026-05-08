@@ -46,6 +46,7 @@ interface FotosZoneProps {
     onDeletePhoto: (id: string) => void;
     readOnlyComponents?: boolean;
     estadoPozo?: string;
+    municipio: string;
 }
 
 // ─── Utilidad de compresión ───────────────────────────────────────────────────
@@ -77,7 +78,7 @@ async function compressImageFileToDataUrl(file: File, maxSize = 1600, quality = 
 }
 
 // ─── Componente para mostrar imagen desde IDB si no tiene blobId ─────────────
-const HydratedImage: React.FC<{ foto: any, alt: string, style?: any, fallback?: any }> = ({ foto, alt, style, fallback }) => {
+const HydratedImage: React.FC<{ foto: any, alt: string, style?: any, fallback?: any, municipio: string }> = ({ foto, alt, style, fallback, municipio }) => {
     const [src, setSrc] = useState<string | null>(foto?.blobId || null);
     const [loading, setLoading] = useState(!foto?.blobId && !!foto?.id);
 
@@ -87,17 +88,17 @@ const HydratedImage: React.FC<{ foto: any, alt: string, style?: any, fallback?: 
             getPhotoFromStorage(foto.id).then(async p => {
                 if (p) {
                     setSrc(p.blob);
-                } else if (foto.filename) {
+                } else if (foto.filename && municipio) {
                     // Fallback: Descargar de Drive si no está en storage local
-                    console.log(`Intentando descargar ${foto.filename} de Drive...`);
-                    const driveBlob = await fetchPhotoFromDrive(foto.filename);
+                    console.log(`[${municipio}] Intentando descargar ${foto.filename} de Drive...`);
+                    const driveBlob = await fetchPhotoFromDrive(foto.filename, municipio);
                     if (driveBlob) {
                         setSrc(driveBlob);
                         // Persistir localmente para no repetir descarga
                         savePhotoToStorage({
                             id: foto.id,
                             pozoId: foto.idPozo || '',
-                            municipio: (window as any).CURRENT_MUNICIPIO || '',
+                            municipio: municipio,
                             barrio: 'CATASTRO',
                             filename: foto.filename,
                             blob: driveBlob,
@@ -134,7 +135,8 @@ const GenericPhotoCard: React.FC<{
     onPreview: (photo: FotoRegistro) => void;
     isLocked: boolean;
     disabled?: boolean;
-}> = ({ label, description, filename, pozoId, tipo, photos, onAdd, onDelete, onPreview, isLocked, disabled }) => {
+    municipio: string;
+}> = ({ label, description, filename, pozoId, tipo, photos, onAdd, onDelete, onPreview, isLocked, disabled, municipio }) => {
     const last = photos[photos.length - 1];
     const done = photos.length > 0;
 
@@ -148,7 +150,6 @@ const GenericPhotoCard: React.FC<{
             const newFoto = procesarFoto(filename, pozoId, blob);
             const userStr = safeLocalStorageGet('ut_star_user');
             const inspector = userStr ? userStr.name : 'Desconocido';
-            const municipio = (window as any).CURRENT_MUNICIPIO || 'SOPO';
             const md5 = calculateMD5(blob);
             await savePhotoToStorage({
                 id: newFoto.id, pozoId, municipio, barrio: 'CATASTRO', filename, blob, md5,
@@ -181,7 +182,7 @@ const GenericPhotoCard: React.FC<{
                         {disabled ? '🚫 Deshabilitado por Estado de Pozo (Sellado)' : description}
                     </div>
                 </div>
-                {!disabled && <FotoAkasoAutomatica pozoId={pozoId} filename={filename} categoria="General" onSuccess={onAdd} barrioFlag="CATASTRO" />}
+                {!disabled && <FotoAkasoAutomatica pozoId={pozoId} filename={filename} categoria="General" onSuccess={onAdd} barrioFlag="CATASTRO" municipio={municipio} />}
             </div>
 
             {last ? (
@@ -191,6 +192,7 @@ const GenericPhotoCard: React.FC<{
                         foto={last}
                         alt={filename}
                         style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        municipio={municipio}
                     />
                     <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.75)', padding: '6px 8px', fontSize: '8px', color: '#8b949e', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {last.filename}
@@ -245,7 +247,7 @@ const GenericPhotoCard: React.FC<{
 };
 
 // ─── Componente Principal ─────────────────────────────────────────────────────
-export default function FotosZone({ pozoId, photos, pipes, sums, onAddPhoto, onDeletePhoto, readOnlyComponents = false, estadoPozo }: FotosZoneProps) {
+export default function FotosZone({ pozoId, photos, pipes, sums, onAddPhoto, onDeletePhoto, readOnlyComponents = false, estadoPozo, municipio }: FotosZoneProps) {
     const [storageInfo, setStorageInfo] = useState({ mode: 'FULL', info: '' });
     const [previewPhoto, setPreviewPhoto] = useState<FotoRegistro | null>(null);
 
@@ -312,14 +314,17 @@ export default function FotosZone({ pozoId, photos, pipes, sums, onAddPhoto, onD
                 </div>
                 <GenericPhotoCard label="📸 General / Panorámica" description="Entorno exterior del pozo"
                     filename={`${pozoUp}-P.JPG`} pozoId={pozoId} tipo="general"
-                    photos={generalPhotos} onAdd={onAddPhoto} onDelete={onDeletePhoto} onPreview={setPreviewPhoto} isLocked={isLocked} />
+                    photos={generalPhotos} onAdd={onAddPhoto} onDelete={onDeletePhoto} onPreview={setPreviewPhoto} isLocked={isLocked}
+                    municipio={municipio} />
                 <GenericPhotoCard label="🔲 Tapa Principal" description="Estado y tipo de tapa"
                     filename={`${pozoUp}-T.JPG`} pozoId={pozoId} tipo="tapa"
-                    photos={tapaPhotos} onAdd={onAddPhoto} onDelete={onDeletePhoto} onPreview={setPreviewPhoto} isLocked={isLocked} />
+                    photos={tapaPhotos} onAdd={onAddPhoto} onDelete={onDeletePhoto} onPreview={setPreviewPhoto} isLocked={isLocked}
+                    municipio={municipio} />
                 <GenericPhotoCard label="🔦 Vista Interior" description="Cuerpo y fondo del pozo"
                     filename={`${pozoUp}-I.JPG`} pozoId={pozoId} tipo="interior"
                     disabled={estadoPozo === 'Sellado'}
-                    photos={interiorPhotos} onAdd={onAddPhoto} onDelete={onDeletePhoto} onPreview={setPreviewPhoto} isLocked={isLocked} />
+                    photos={interiorPhotos} onAdd={onAddPhoto} onDelete={onDeletePhoto} onPreview={setPreviewPhoto} isLocked={isLocked}
+                    municipio={municipio} />
             </div>
 
             {/* ── Sección: Tuberías ── */}
@@ -359,6 +364,7 @@ export default function FotosZone({ pozoId, photos, pipes, sums, onAddPhoto, onD
                                 onDelete={onDeletePhoto}
                                 onPreview={setPreviewPhoto}
                                 isLocked={isLocked || readOnlyComponents}
+                                municipio={municipio}
                             />
                         ))}
 
@@ -377,6 +383,7 @@ export default function FotosZone({ pozoId, photos, pipes, sums, onAddPhoto, onD
                                 onDelete={onDeletePhoto}
                                 onPreview={setPreviewPhoto}
                                 isLocked={isLocked || readOnlyComponents}
+                                municipio={municipio}
                             />
                         ))}
 
@@ -402,6 +409,7 @@ export default function FotosZone({ pozoId, photos, pipes, sums, onAddPhoto, onD
                                     onDelete={onDeletePhoto}
                                     onPreview={setPreviewPhoto}
                                     isLocked={isLocked || readOnlyComponents}
+                                    municipio={municipio}
                                 />
                             );
                         })}

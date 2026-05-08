@@ -16,12 +16,13 @@ interface SumideroCardProps {
     onDeletePhoto: (id: string) => void;
     onPreviewPhoto: (photo: FotoRegistro) => void;
     pozoId: string;
+    municipio: string;
     isLocked: boolean;
 }
 
 const SumideroCard: React.FC<SumideroCardProps> = ({ 
     sum, index, onUpdate, onDelete, foto,
-    photos, onAddPhoto, onDeletePhoto, onPreviewPhoto, pozoId, isLocked 
+    photos, onAddPhoto, onDeletePhoto, onPreviewPhoto, pozoId, municipio, isLocked 
 }) => {
     const label = `SUM${index + 1}`;
 
@@ -34,7 +35,7 @@ const SumideroCard: React.FC<SumideroCardProps> = ({
                 <Trash2 size={16} />
             </button>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-                <ThumbnailImage foto={foto} alt={`Sumidero ${index + 1}`} />
+                <ThumbnailImage foto={foto} alt={`Sumidero ${index + 1}`} municipio={municipio} />
                 <div className="comp-section-title text-[10px] uppercase font-bold text-gray-400 tracking-wider">
                     Sumidero {index + 1} ({sum.codEsquema})
                 </div>
@@ -54,6 +55,7 @@ const SumideroCard: React.FC<SumideroCardProps> = ({
                     onDelete={onDeletePhoto}
                     onPreview={onPreviewPhoto}
                     isLocked={isLocked}
+                    municipio={municipio}
                 />
             </div>
 

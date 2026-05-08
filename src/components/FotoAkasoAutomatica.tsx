@@ -10,9 +10,10 @@ interface FotoAkasoAutomaticaProps {
     categoria: 'General' | 'Interior' | 'Tuberia' | 'Sumidero';
     onSuccess: (foto: any) => void;
     barrioFlag?: string;
+    municipio: string;
 }
 
-const FotoAkasoAutomatica: React.FC<FotoAkasoAutomaticaProps> = ({ pozoId, filename, categoria, onSuccess, barrioFlag }) => {
+const FotoAkasoAutomatica: React.FC<FotoAkasoAutomaticaProps> = ({ pozoId, filename, categoria, onSuccess, barrioFlag, municipio }) => {
     const [estado, setEstado] = useState<'lista' | 'abriendo' | 'detectando' | 'completado'>('lista');
     const [error, setError] = useState<string | null>(null);
 
@@ -54,7 +55,6 @@ const FotoAkasoAutomatica: React.FC<FotoAkasoAutomaticaProps> = ({ pozoId, filen
                     const newFoto = procesarFoto(filename, pozoId, base64);
                     const userStr = safeLocalStorageGet('ut_star_user');
                     const inspector = userStr ? userStr.name : 'Desconocido';
-                    const municipio = (window as any).CURRENT_MUNICIPIO || 'SOPO';
                     const md5 = calculateMD5(base64);
 
                     await savePhotoToStorage({
