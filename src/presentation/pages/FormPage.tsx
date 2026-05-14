@@ -5,7 +5,7 @@ import {
     FileJson, FileText, Download, Trash2
 } from 'lucide-react';
 import { PdfFastButton } from '../../hooks/usePdfExportFast';
-import { Crosshair, LocateFixed, Signal } from 'lucide-react';
+import { Crosshair, LocateFixed, Signal, AlertTriangle, Plus } from 'lucide-react';
 import { Map, AdvancedMarker } from '@vis.gl/react-google-maps';
 
 import { useAppStore } from '../../hooks/useAppStore';
@@ -272,7 +272,7 @@ const FormPage: React.FC<FormPageProps> = ({
                                 <label>Altura Total (H pozo) <span style={{ fontSize: '9px', color: '#64748b' }}>m</span></label>
                                 <input
                                     type="number" step="0.01" value={state.altura}
-                                    onFocus={numFocus}
+                                    onFocus={e => e.target.select()}
                                     onChange={e => updateState({ altura: parseFloat(e.target.value) || 0 })}
                                     onBlur={e => { if (!e.target.value) updateState({ altura: 2.0 }); }}
                                     placeholder="2.00 m"
@@ -386,7 +386,7 @@ const FormPage: React.FC<FormPageProps> = ({
                                     <label>Diámetro Cuerpo <span style={{ fontSize: '9px', color: '#64748b' }}>m</span></label>
                                     <input
                                         type="number" step="0.05" value={state.diam}
-                                        onFocus={numFocus}
+                                        onFocus={e => e.target.select()}
                                         onChange={e => updateState({ diam: parseFloat(e.target.value) || 0 })}
                                         onBlur={e => { if (!e.target.value) updateState({ diam: 0.9 }); }}
                                         placeholder="0.90 m"
@@ -396,7 +396,7 @@ const FormPage: React.FC<FormPageProps> = ({
                                     <label>Altura Total <span style={{ fontSize: '9px', color: '#64748b' }}>m</span></label>
                                     <input
                                         type="number" step="0.05" value={state.altura}
-                                        onFocus={numFocus}
+                                        onFocus={e => e.target.select()}
                                         onChange={e => updateState({ altura: parseFloat(e.target.value) || 0 })}
                                         onBlur={e => { if (!e.target.value) updateState({ altura: 1.2 }); }}
                                         placeholder="1.20 m"

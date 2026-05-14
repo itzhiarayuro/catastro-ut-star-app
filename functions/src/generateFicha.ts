@@ -82,11 +82,12 @@ interface FichaData {
     rasante?: string;
     diam?: string | number;
     sistema?: string;
-    tapa?: { existe?: string; material?: string; estado?: string };
-    cono?: { existe?: string; tipo?: string; material?: string; estado?: string };
-    cargue?: { existe?: string; material?: string; estado?: string };
-    canu?: { existe?: string; material?: string; estado?: string };
-    peld?: { existe?: string; material?: string; numero?: string; estado?: string };
+    tapa?: { existe?: string; material?: string; mat?: string; estado?: string };
+    cono?: { existe?: string; tipo?: string; material?: string; mat?: string; estado?: string };
+    cargue?: { existe?: string; material?: string; mat?: string; estado?: string };
+    cuerpo?: { existe?: string; material?: string; mat?: string; estado?: string };
+    canu?: { existe?: string; material?: string; mat?: string; estado?: string };
+    peld?: { existe?: string; material?: string; mat?: string; numero?: string; num?: string | number; estado?: string };
     pipes?: PipeData[];
     sums?: SumData[];
     fotoList?: FotoData[];
@@ -105,6 +106,8 @@ interface PipeData {
     orden?: number;
     estado?: string;
     unit?: string;
+    batea?: string | number;
+    bateaCalculada?: string | number;
 }
 
 interface SumData {
@@ -246,24 +249,24 @@ function mapFirestoreToPozo(data: FichaData) {
         },
         componentes: {
             estructuraPavimento: fv(data.rasante),
-            diametroCilindro: fv(data.diam),
+            diametroCilindro: fv(data.diametro ?? data.diam),
             sistema: fv(data.sistema),
             existeTapa: fv(data.tapa?.existe),
-            materialTapa: fv(data.tapa?.material),
+            materialTapa: fv(data.tapa?.material ?? data.tapa?.mat),
             estadoTapa: fv(data.tapa?.estado),
             existeCono: fv(data.cono?.existe),
             tipoCono: fv(data.cono?.tipo),
-            materialCono: fv(data.cono?.material),
+            materialCono: fv(data.cono?.material ?? data.cono?.mat),
             estadoCono: fv(data.cono?.estado),
-            existeCilindro: fv(data.cargue?.existe),
-            materialCilindro: fv(data.cargue?.material),
-            estadoCilindro: fv(data.cargue?.estado),
+            existeCilindro: fv(data.cargue?.existe ?? data.cuerpo?.existe),
+            materialCilindro: fv(data.cargue?.material ?? data.cargue?.mat ?? data.cuerpo?.material ?? data.cuerpo?.mat),
+            estadoCilindro: fv(data.cargue?.estado ?? data.cuerpo?.estado),
             existeCanuela: fv(data.canu?.existe),
-            materialCanuela: fv(data.canu?.material),
+            materialCanuela: fv(data.canu?.material ?? data.canu?.mat),
             estadoCanuela: fv(data.canu?.estado),
             existePeldanos: fv(data.peld?.existe),
-            materialPeldanos: fv(data.peld?.material),
-            numeroPeldanos: fv(data.peld?.numero),
+            materialPeldanos: fv(data.peld?.material ?? data.peld?.mat),
+            numeroPeldanos: fv(data.peld?.numero ?? data.peld?.num),
             estadoPeldanos: fv(data.peld?.estado),
             tipoCamara: fv((data as any).tipoCamara),
         },
@@ -283,11 +286,16 @@ function mapFirestoreToPozo(data: FichaData) {
             .map((p, i) => {
                 const diamNum = parseFloat(String(p.diam ?? 0)) || 0;
                 const cotaNum = parseFloat(String(p.cotaZ ?? 0)) || 0;
-                // Batea = cotaZ + (diámetro_en_mm / 1000)
-                // Si el diámetro está en pulgadas, convertir: 1 pulgada = 25.4mm
-                const isInches = !p.unit || p.unit === 'in';
-                const diamMM = isInches ? diamNum * 25.4 : diamNum;
-                const batea = cotaNum > 0 ? cotaNum + (diamMM / 1000) : 0;
+                let batea = 0;
+                if (p.batea && !isNaN(parseFloat(String(p.batea)))) {
+                    batea = parseFloat(String(p.batea));
+                } else if (p.bateaCalculada && !isNaN(parseFloat(String(p.bateaCalculada)))) {
+                    batea = parseFloat(String(p.bateaCalculada));
+                } else if (cotaNum > 0) {
+                    const isInches = !p.unit || p.unit === 'in';
+                    const diamMM = isInches ? diamNum * 25.4 : diamNum;
+                    batea = cotaNum + (diamMM / 1000);
+                }
                 return {
                     id: fv(p.deA ?? p.id ?? `T${i + 1}`),  // deA = pozo destino/origen (M035, etc)
                     tipo: (p.es ?? "").toLowerCase(),       // ENTRADA→entrada / SALIDA→salida
@@ -402,6 +410,7 @@ function getFieldValue(pozo: ReturnType<typeof mapFirestoreToPozo>, fieldId: str
         pozo_direccion: pozo.ubicacion.direccion,
         pozo_tipoCamara: pozo.componentes.tipoCamara,
         pozo_estructuraPavimento: pozo.componentes.estructuraPavimento,
+        pozo_materialRasante: pozo.componentes.estructuraPavimento,
         pozo_existeTapa: pozo.componentes.existeTapa,
         pozo_materialTapa: pozo.componentes.materialTapa,
         pozo_estadoTapa: pozo.componentes.estadoTapa,

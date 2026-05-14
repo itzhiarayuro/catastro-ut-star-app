@@ -133,12 +133,12 @@ const PipeCard: React.FC<PipeCardProps> = ({
                             <span className="unit-toggle flex bg-gray-900 rounded border border-gray-700 overflow-hidden">
                                 <button 
                                     type="button"
-                                    className={`px-2 text-[9px] uppercase font-bold ${(!pipe.unit || pipe.unit === 'mm') ? 'active' : ''}`} 
+                                    className={`px-2 text-[9px] uppercase font-bold ${pipe.unit === 'mm' ? 'active' : ''}`} 
                                     onClick={(e) => { e.preventDefault(); onUpdate({ unit: 'mm' }); }}
                                 >mm</button>
                                 <button 
                                     type="button"
-                                    className={`px-2 text-[9px] uppercase font-bold ${pipe.unit === 'in' ? 'active' : ''}`} 
+                                    className={`px-2 text-[9px] uppercase font-bold ${(!pipe.unit || pipe.unit === 'in') ? 'active' : ''}`} 
                                     onClick={(e) => { e.preventDefault(); onUpdate({ unit: 'in' }); }}
                                 >in</button>
                             </span>
@@ -249,7 +249,8 @@ const PipeCard: React.FC<PipeCardProps> = ({
                             value={(() => {
                                 const z = parseFloat(pipe.cotaZ) || 0;
                                 let d = parseFloat(pipe.diam) || 0;
-                                if (pipe.unit === 'in') d = (d * 25.4);
+                                const isMm = pipe.unit === 'mm';
+                                if (!isMm) d = (d * 25.4); // Default a in
                                 return (z + (d / 1000)).toFixed(3);
                             })()}
                         />
