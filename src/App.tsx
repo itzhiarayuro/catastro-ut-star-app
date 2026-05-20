@@ -13,7 +13,7 @@ import {
     saveFichaToStorage,
 } from './utils/storageManager';
 import { APIProvider } from '@vis.gl/react-google-maps';
-import { useRegisterSW } from 'virtual:pwa-register/react';
+// import { useRegisterSW } from 'virtual:pwa-register/react'; // PWA plugin not configured, disabled for now
 import { auth } from './lib/firebase'; // Added import for auth
 import { hydratePrebundledTiles } from './lib/mapUtils';
 
@@ -77,10 +77,9 @@ const App: React.FC = () => {
     // ── Core Hooks ───────────────────────────────────────────
     useFirebaseSync();
 
-    const {
-        needRefresh: [needRefresh],
-        updateServiceWorker,
-    } = useRegisterSW();
+    // PWA disabled: const { needRefresh: [needRefresh], updateServiceWorker } = useRegisterSW();
+    const needRefresh = false;
+    const updateServiceWorker = (flag?: boolean) => {};
 
     const toast = (msg: string) => {
         setToastMsg(msg);
