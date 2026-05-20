@@ -4,6 +4,25 @@ import { getPhotoFromStorage, savePhotoToStorage } from '../utils/storageManager
 import { fetchPhotoFromDrive } from '../utils/driveSync';
 import { convertirA9377 } from '../utils/coords';
 
+// Helper para reintentos con backoff exponencial
+async function callWithRetry(
+    generateFichaFn: any,
+    data: any,
+    maxAttempts = 3,
+    onRetry: (attempt: number, error: string) => void = () => {}
+): Promise<any> {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            return await generateFichaFn(data);
+        } catch (error: any) {
+            if (attempt === maxAttempts) throw error;
+            const backoffMs = Math.pow(2, attempt - 1) * 1000; // 1s, 2s, 4s...
+            onRetry(attempt, error.message || String(error));
+            await new Promise(resolve => setTimeout(resolve, backoffMs));
+        }
+    }
+}
+
 export const usePdfExport = (toast: (msg: string) => void) => {
     const [pdfLoading, setPdfLoading] = useState(false);
     const [pdfDebugLogs, setPdfDebugLogs] = useState<string[] | null>(null);
@@ -82,7 +101,15 @@ export const usePdfExport = (toast: (msg: string) => void) => {
                 }
             }
 
-            const result = await generateFichaFn({ pozo: hydratedPozo });
+            const result = await callWithRetry(
+                generateFichaFn,
+                { pozo: hydratedPozo },
+                3,
+                (attempt, error) => {
+                    toast(`⚠️ Intento ${attempt}: reconectando... (${error.split(':')[0]})`);
+                    console.warn(`[PDF Retry] Attempt ${attempt}/3 failed:`, error);
+                }
+            );
             const { pdfBase64, filename, downloadUrl, debugLogs } = result.data as any;
 
             if (debugLogs && debugLogs.length > 0) {

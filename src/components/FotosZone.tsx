@@ -49,8 +49,8 @@ interface FotosZoneProps {
     municipio: string;
 }
 
-// ─── Utilidad de compresión ───────────────────────────────────────────────────
-async function compressImageFileToDataUrl(file: File, maxSize = 1600, quality = 0.7): Promise<string> {
+// ─── Utilidad de compresión AGRESIVA (para reducir tamaño de blobs en Cloud Function) ───
+async function compressImageFileToDataUrl(file: File, maxSize = 800, quality = 0.45): Promise<string> {
     return new Promise((resolve, reject) => {
         const img = new Image();
         const objectUrl = URL.createObjectURL(file);
