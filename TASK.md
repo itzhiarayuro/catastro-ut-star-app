@@ -23,6 +23,7 @@ de eliminación ni mantenimiento administrativo.
 - Pasan tests, TypeScript, lint, build y comprobación visual del artefacto.
 - Se despliegan únicamente Hosting y las funciones de consulta global necesarias.
 - La subida de fotos no depende de configuración GAS en el navegador; usa una función Firebase autenticada y conserva cada pendiente hasta recibir su `driveId`.
+- La función normaliza el identificador raíz de Drive para tolerar espacios o saltos de línea accidentales en el secreto.
 
 ## Interfaces de prueba acordadas
 

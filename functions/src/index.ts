@@ -2,6 +2,7 @@ import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import { google } from "googleapis";
 import { Readable } from "stream";
+import { normalizeDriveFolderId } from "./driveConfig";
 
 admin.initializeApp();
 
@@ -81,24 +82,30 @@ export const uploadPendingPhoto = functions.runWith({
     const serviceAccount = JSON.parse(serviceAccountValue);
     const auth = new google.auth.JWT(serviceAccount.client_email, undefined, serviceAccount.private_key, ['https://www.googleapis.com/auth/drive.file']);
     const drive = google.drive({ version: 'v3', auth });
-    const rootId = process.env.DRIVE_ROOT_FOLDER_ID || DRIVE_ROOT_FOLDER_ID;
-    const municipioId = await getOrCreateFolder(drive, municipio, rootId);
-    const catastroId = await getOrCreateFolder(drive, 'CATASTRO', municipioId);
-    const pozoFolderId = await getOrCreateFolder(drive, pozoId, catastroId);
-    let driveId = await findDuplicateInDrive(drive, filename, pozoFolderId, buffer.length);
-    if (!driveId) {
-        const stream = new Readable();
-        stream.push(buffer);
-        stream.push(null);
-        const created = await drive.files.create({
-            requestBody: { name: filename, parents: [pozoFolderId] },
-            media: { mimeType: 'image/jpeg', body: stream },
-            fields: 'id',
-        });
-        driveId = created.data.id || null;
+    const rootId = normalizeDriveFolderId(process.env.DRIVE_ROOT_FOLDER_ID, DRIVE_ROOT_FOLDER_ID);
+    try {
+        const municipioId = await getOrCreateFolder(drive, municipio, rootId);
+        const catastroId = await getOrCreateFolder(drive, 'CATASTRO', municipioId);
+        const pozoFolderId = await getOrCreateFolder(drive, pozoId, catastroId);
+        let driveId = await findDuplicateInDrive(drive, filename, pozoFolderId, buffer.length);
+        if (!driveId) {
+            const stream = new Readable();
+            stream.push(buffer);
+            stream.push(null);
+            const created = await drive.files.create({
+                requestBody: { name: filename, parents: [pozoFolderId] },
+                media: { mimeType: 'image/jpeg', body: stream },
+                fields: 'id',
+            });
+            driveId = created.data.id || null;
+        }
+        if (!driveId) throw new Error('Drive no devolvió el archivo');
+        functions.logger.info('Photo upload completed', { filename, municipio, pozoId });
+        return { success: true, driveId };
+    } catch (error) {
+        functions.logger.error('Photo upload failed', { filename, municipio, pozoId, error });
+        throw new functions.https.HttpsError('unavailable', 'Drive no pudo guardar la foto; el pendiente se conserva');
     }
-    if (!driveId) throw new functions.https.HttpsError('internal', 'Drive no devolvió el archivo');
-    return { success: true, driveId };
 });
 
 // ─────────────────────────────────────────────────
@@ -123,7 +130,7 @@ export const syncPhotosToDrive = functions.runWith({
             ["https://www.googleapis.com/auth/drive.file"]
         );
         const drive = google.drive({ version: "v3", auth });
-        const driveRootId = process.env.DRIVE_ROOT_FOLDER_ID || DRIVE_ROOT_FOLDER_ID;
+        const driveRootId = normalizeDriveFolderId(process.env.DRIVE_ROOT_FOLDER_ID, DRIVE_ROOT_FOLDER_ID);
 
         const municipio = data.municipio || "SIN_MUNICIPIO";
         const barrio = data.barrio || "SIN_BARRIO";
@@ -224,7 +231,7 @@ export const syncMarcacionPhotosToDrive = functions.runWith({
             ["https://www.googleapis.com/auth/drive.file"]
         );
         const drive = google.drive({ version: "v3", auth });
-        const driveRootId = process.env.DRIVE_ROOT_FOLDER_ID || DRIVE_ROOT_FOLDER_ID;
+        const driveRootId = normalizeDriveFolderId(process.env.DRIVE_ROOT_FOLDER_ID, DRIVE_ROOT_FOLDER_ID);
 
         try {
             const municipio = data.municipio || "SIN_MUNICIPIO";

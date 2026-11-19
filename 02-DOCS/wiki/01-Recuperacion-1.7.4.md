@@ -38,5 +38,7 @@ La sincronización manual y nocturna usa la función autenticada `uploadPendingP
 
 Publicación correctiva del 2026-11-19: Hosting `7284c3d1fdb8dda2`, release `1795116200369000`; `uploadPendingPhoto` quedó ACTIVE en Node.js 22. El artefacto `/assets/index-B7bzJxmd.js` contiene la ruta Firebase y ya no contiene el error de subida `GAS_URL no configurada`.
 
+Una segunda validación encontró respuestas `INTERNAL`. Los registros demostraron que el secreto `DRIVE_ROOT_FOLDER_ID` incluía caracteres CR/LF al final; Drive recibía un identificador de carpeta distinto y respondía `File not found`. Todas las rutas de escritura normalizan ahora el identificador con `trim()`. La función registra éxito o fallo sin exponer credenciales y conserva la foto local cuando Drive rechaza la operación.
+
 La publicación queda limitada a Firebase Hosting y, si cambia la autorización
 del visor global, a las funciones BigQuery de solo consulta correspondientes.
