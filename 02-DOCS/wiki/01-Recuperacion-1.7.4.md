@@ -2,7 +2,7 @@
 id: okf/catastro-ut-star-app/01-recuperacion-174
 type: incident
 title: Recuperación funcional 1.7.4
-status: implementing
+status: deployed
 ---
 
 # Recuperación funcional 1.7.4
@@ -22,6 +22,15 @@ reemplaza una copia local cuando ya estaba sincronizada.
 
 Kelly tiene rol de edición global de fichas. Ese rol no concede eliminación,
 limpieza de Drive ni otras operaciones de mantenimiento.
+
+## Evidencia de publicación
+
+- Hosting activo: versión Firebase `8fe801763baca6bf`, release `1795104901815000`.
+- Artefacto servido: `/assets/index-Dqt1IruS.js`, con versión 1.7.4, coordenadas manuales y política de Kelly.
+- Funciones `bqGetPozos`, `bqGetMarcaciones`, `bqGetTuberias` y `bqGetSumideros`: estado ACTIVE, runtime Node.js 22.
+- Conteo posterior: 1.030 fichas totales y 1.024 activas, igual al respaldo previo.
+- `index.html`, raíz, service worker y manifiesto se sirven sin caché.
+- La validación autenticada final debe realizarla Kelly después de usar el correo oficial de establecimiento de contraseña; no se generaron ni conservaron credenciales.
 
 La publicación queda limitada a Firebase Hosting y, si cambia la autorización
 del visor global, a las funciones BigQuery de solo consulta correspondientes.
