@@ -56,6 +56,51 @@ async function findDuplicateInDrive(drive: any, filename: string, folderId: stri
     return null;
 }
 
+export const uploadPendingPhoto = functions.runWith({
+    timeoutSeconds: 120,
+    memory: '512MB',
+    secrets: ['DRIVE_SERVICE_ACCOUNT', 'DRIVE_ROOT_FOLDER_ID'],
+}).https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Debes iniciar sesión');
+    const municipio = String(data?.municipio || '').trim().toUpperCase();
+    const pozoId = String(data?.pozoId || '').trim().toUpperCase();
+    const filename = String(data?.filename || '').trim().toUpperCase();
+    const encoded = String(data?.base64 || '');
+    if (!municipio || !pozoId || !filename || !encoded) {
+        throw new functions.https.HttpsError('invalid-argument', 'Foto incompleta');
+    }
+    if (!/^[A-ZÁÉÍÓÚÜÑ0-9 _-]+$/.test(municipio) || !/^[A-Z0-9_-]+$/.test(pozoId) || !/^[A-Z0-9._-]+$/.test(filename)) {
+        throw new functions.https.HttpsError('invalid-argument', 'Nombre o ruta de foto inválidos');
+    }
+    const base64 = encoded.includes(',') ? encoded.split(',')[1] : encoded;
+    const buffer = Buffer.from(base64, 'base64');
+    if (!buffer.length) throw new functions.https.HttpsError('invalid-argument', 'Imagen vacía');
+
+    const serviceAccountValue = process.env.DRIVE_SERVICE_ACCOUNT || '';
+    if (!serviceAccountValue) throw new functions.https.HttpsError('failed-precondition', 'Drive no configurado');
+    const serviceAccount = JSON.parse(serviceAccountValue);
+    const auth = new google.auth.JWT(serviceAccount.client_email, undefined, serviceAccount.private_key, ['https://www.googleapis.com/auth/drive.file']);
+    const drive = google.drive({ version: 'v3', auth });
+    const rootId = process.env.DRIVE_ROOT_FOLDER_ID || DRIVE_ROOT_FOLDER_ID;
+    const municipioId = await getOrCreateFolder(drive, municipio, rootId);
+    const catastroId = await getOrCreateFolder(drive, 'CATASTRO', municipioId);
+    const pozoFolderId = await getOrCreateFolder(drive, pozoId, catastroId);
+    let driveId = await findDuplicateInDrive(drive, filename, pozoFolderId, buffer.length);
+    if (!driveId) {
+        const stream = new Readable();
+        stream.push(buffer);
+        stream.push(null);
+        const created = await drive.files.create({
+            requestBody: { name: filename, parents: [pozoFolderId] },
+            media: { mimeType: 'image/jpeg', body: stream },
+            fields: 'id',
+        });
+        driveId = created.data.id || null;
+    }
+    if (!driveId) throw new functions.https.HttpsError('internal', 'Drive no devolvió el archivo');
+    return { success: true, driveId };
+});
+
 // ─────────────────────────────────────────────────
 // SINCRONIZACIÓN DE FOTOS DE FICHAS (CATASTRO)
 // ─────────────────────────────────────────────────

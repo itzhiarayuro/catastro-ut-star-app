@@ -22,6 +22,7 @@ de eliminación ni mantenimiento administrativo.
 - El build falla si la configuración Firebase queda vacía.
 - Pasan tests, TypeScript, lint, build y comprobación visual del artefacto.
 - Se despliegan únicamente Hosting y las funciones de consulta global necesarias.
+- La subida de fotos no depende de configuración GAS en el navegador; usa una función Firebase autenticada y conserva cada pendiente hasta recibir su `driveId`.
 
 ## Interfaces de prueba acordadas
 

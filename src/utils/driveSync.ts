@@ -1,9 +1,10 @@
-import { getPendingPhotos, updatePhotoSyncStatus } from './storageManager';
-import { zipSync, strToU8 } from 'fflate';
+import { getPendingPhotos, updatePhotoSyncStatus, getAllFichasFromStorage, saveFichaToStorage } from './storageManager';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../lib/firebase';
+import { uploadPendingPhotoWithFirebase } from './photoUploadTransport';
 
 const GAS_URL = import.meta.env.VITE_GAS_DRIVE_SYNC_URL;
 const SECRET_TOKEN = import.meta.env.VITE_GAS_SECRET_TOKEN;
-const MAX_BATCH_SIZE = 12 * 1024 * 1024; // Lower batch size (12MB) for better stability in GAS / Mobile uploads
 
 interface SyncProgress {
     total: number;
@@ -52,36 +53,18 @@ export const syncPhotosToDrive = async (onProgress: (p: SyncProgress) => void) =
 };
 
 const uploadSinglePhoto = async (photo: any) => {
-    if (!GAS_URL) throw new Error("GAS_URL no configurada");
+    const invoke = httpsCallable(functions, 'uploadPendingPhoto');
+    const result = await uploadPendingPhotoWithFirebase(invoke as any, photo);
 
-    const payload = {
-        token: SECRET_TOKEN,
-        municipio: photo.municipio || 'SOPÓ',
-        pozoId: photo.pozoId,
-        barrio: photo.barrio || 'CATASTRO',
-        filename: photo.filename,
-        base64: photo.blob,
-        md5: photo.md5,
-        categoria: photo.categoria || 'General',
-        inspector: photo.inspector || 'Inspector'
-    };
-
-    const response = await fetch(GAS_URL, {
-        method: 'POST',
-        mode: 'cors', // Cambiamos a cors para poder leer la respuesta JSON si es posible
-        body: JSON.stringify(payload)
-    });
-
-    if (!response.ok) {
-        throw new Error(`Error HTTP: ${response.status}`);
+    const fichas = await getAllFichasFromStorage();
+    for (const ficha of Object.values(fichas)) {
+        const index = ficha.fotoList?.findIndex((item: any) => item.id === photo.id || item.filename === photo.filename) ?? -1;
+        if (index < 0) continue;
+        const fotoList = [...ficha.fotoList];
+        fotoList[index] = { ...fotoList[index], driveId: result.driveId, syncedAt: new Date().toISOString() };
+        await saveFichaToStorage({ ...ficha, fotoList });
     }
 
-    const result = await response.json();
-    if (!result.success) {
-        throw new Error(result.error || "Error desconocido en el servidor");
-    }
-
-    // Si tuvo éxito (ya sea subiendo o porque era duplicado), marcamos como sincronizada
     await updatePhotoSyncStatus(photo.id, true);
     return result;
 };
