@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { AppState } from '../types/catastro';
 import { ScreenName } from '../hooks/useAppStore';
+import { isGlobalFichaEditor } from '../utils/accessPolicy';
 
 interface BottomNavProps {
     activeScreen: ScreenName;
@@ -16,7 +17,7 @@ const BottomNav: React.FC<BottomNavProps> = ({
     activeScreen, setActiveScreen, fichas, userEmail
 }) => {
     const activeFichasCount = Object.values(fichas).filter(f => !f.deleted).length;
-    const isAdmin = userEmail?.includes('juanvegas003') || userEmail?.includes('juan.vega.icya');
+    const isAdmin = isGlobalFichaEditor(userEmail);
 
     return (
         <nav className="bottom-nav">

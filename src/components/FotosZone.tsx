@@ -6,6 +6,7 @@ import { fetchPhotoFromDrive } from '../utils/driveSync';
 import FotoAkasoAutomatica from './FotoAkasoAutomatica';
 import { safeLocalStorageGet } from '../utils/ui';
 import { PipePhotoGroup } from './forms/PipePhotoGroup';
+import { normalizePhotoType } from '../utils/photoTypes';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 interface Pipe {
@@ -281,9 +282,9 @@ export default function FotosZone({ pozoId, photos, pipes, sums, onAddPhoto, onD
     const pct = Math.min(100, Math.round((totalDone / Math.max(totalNeeded, 1)) * 100));
 
     // Fotos generales
-    const generalPhotos = photos.filter(p => (p.tipo === 'general' && (!p.categoria || p.categoria === 'PRINCIPAL')) || (p.filename.toUpperCase().includes('-P.') && !p.filename.match(/-(E|S|SUM)\d/i)));
-    const tapaPhotos = photos.filter(p => (p.tipo === 'tapa' && p.categoria === 'PRINCIPAL') || (p.filename.toUpperCase().endsWith('-T.JPG') && !p.filename.match(/-(E|S|SUM)\d/i)));
-    const interiorPhotos = photos.filter(p => p.tipo === 'interior' || p.filename.toUpperCase().endsWith('-I.JPG'));
+    const generalPhotos = photos.filter(p => (normalizePhotoType(p.tipo) === 'general' && (!p.categoria || p.categoria === 'PRINCIPAL')) || (p.filename.toUpperCase().includes('-P.') && !p.filename.match(/-(E|S|SUM)\d/i)));
+    const tapaPhotos = photos.filter(p => (normalizePhotoType(p.tipo) === 'tapa' && p.categoria === 'PRINCIPAL') || (p.filename.toUpperCase().endsWith('-T.JPG') && !p.filename.match(/-(E|S|SUM)\d/i)));
+    const interiorPhotos = photos.filter(p => normalizePhotoType(p.tipo) === 'interior' || p.filename.toUpperCase().endsWith('-I.JPG'));
 
     const pozoUp = pozoId?.toUpperCase() || 'PXXX';
 

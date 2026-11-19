@@ -5,10 +5,8 @@ import { fetchPhotoFromDrive } from '../utils/driveSync';
 import { savePhotoToStorage } from '../utils/storageManager';
 import { useAppStore } from './useAppStore';
 import { safeLocalStorageSet, safeLocalStorageGet } from '../utils/ui';
-
-/* ── Helper para normalizar texto (quitar tildes y pasar a mayúsculas) ── */
-const normalizeText = (text: string) => 
-    text ? text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase() : "";
+import { isGlobalFichaEditor } from '../utils/accessPolicy';
+import { mergeCloudFichas } from '../utils/cloudRestore';
 
 interface UseCloudRestoreParams {
     toast: (msg: string) => void;
@@ -24,37 +22,22 @@ export const useCloudRestore = ({ toast, safeSaveAllFichas }: UseCloudRestorePar
             toast("❌ Necesitas conexión para restaurar");
             return;
         }
-        if (!confirm("⚠️ Esto sobrescribirá tus fichas locales con las descargas de la nube (Investigación). ¿Continuar?")) return;
+        if (!confirm("Descargar fichas combinará la nube con este dispositivo y conservará los cambios locales pendientes. ¿Continuar?")) return;
 
         toast("🔄 Descargando desde la nube...");
         try {
-            // Fichas: Fetch ONLY for current user
             if (!user?.uid) throw new Error("No user UID found");
-            const q = query(collection(db, 'fichas'), where('createdBy', '==', user.uid)); 
+            const q = isGlobalFichaEditor(user.email)
+                ? query(collection(db, 'fichas'))
+                : query(collection(db, 'fichas'), where('createdBy', '==', user.uid));
             const snapshot = await getDocs(q);
             const currentFichas = useAppStore.getState().fichas;
-            const updatedFichas: Record<string, AppState> = { ...currentFichas };
-            const downloadedFichas: AppState[] = [];
-            let countRestored = 0;
-
-            snapshot.forEach(docSnap => {
-                const data = docSnap.data() as AppState;
-                if (!data || data.deleted) return;
-
-                // Use Firestore document ID as the canonical identifier
-                const firestoreDocId = docSnap.id;
-                // Prefer the internal id if present, otherwise use Firestore doc ID
-                const finalId = data.id || firestoreDocId;
-
-                // Simple ID-based dedup: if this ficha already exists locally by the same ID,
-                // the cloud version takes precedence (it's the synced version).
-                // If there's a matching Firestore doc ID that differs from the internal id,
-                // also map via the Firestore doc ID to prevent duplicates from old naming.
-                const fichaFinal = { ...data, id: finalId, synced: true };
-                updatedFichas[finalId] = fichaFinal;
-                downloadedFichas.push(fichaFinal);
-                countRestored++;
-            });
+            const remote = snapshot.docs.map(docSnap => ({
+                firestoreId: docSnap.id,
+                data: docSnap.data() as AppState,
+            }));
+            const updatedFichas = mergeCloudFichas(currentFichas, remote);
+            const countRestored = remote.filter(item => item.data && !item.data.deleted).length;
 
             if (countRestored === 0) {
                 toast("ℹ️ No se encontraron fichas en la nube");

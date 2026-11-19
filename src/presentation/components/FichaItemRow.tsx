@@ -6,7 +6,7 @@ import { checkPendingInList } from '../../utils/storageManager';
 interface FichaItemRowProps {
     f: AppState;
     onEdit: () => void;
-    onDelete: () => void;
+    onDelete?: () => void;
     onPDF: () => void;
     pdfLoading: boolean;
 }
@@ -66,12 +66,12 @@ const FichaItemRow: React.FC<FichaItemRowProps> = ({ f, onEdit, onDelete, onPDF,
                     {pdfLoading ? <div className="spinner-white" style={{ width: '12px', height: '12px', borderWidth: '1px' }}></div> : <FileText size={16} />}
                 </button>
 
-                <button
+                {onDelete && <button
                     onClick={(e) => { e.stopPropagation(); onDelete(); }}
                     className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
                 >
                     <Trash2 size={16} />
-                </button>
+                </button>}
             </div>
             {f.creatorEmail && (
                 <div className="mt-2 pt-2 border-t border-white/5 flex items-center gap-2">

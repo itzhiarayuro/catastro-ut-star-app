@@ -5,7 +5,7 @@ import {
     FileJson, FileText, Download, Trash2
 } from 'lucide-react';
 import { PdfFastButton } from '../../hooks/usePdfExportFast';
-import { Crosshair, LocateFixed, Signal, AlertTriangle, Plus } from 'lucide-react';
+import { Crosshair, LocateFixed, Signal, AlertTriangle, Plus, ClipboardPaste } from 'lucide-react';
 import { Map, AdvancedMarker } from '@vis.gl/react-google-maps';
 
 import { useAppStore } from '../../hooks/useAppStore';
@@ -21,6 +21,7 @@ import ComponentEditor from '../components/ComponentEditor';
 import { getHybridModeStatus } from '../../utils/storageManager';
 import { TuberiasSection } from '../components/TuberiasSection';
 import { FotosSection } from '../components/FotosSection';
+import { parseCoordinates } from '../../utils/coordinates';
 
 const POZO_PREFIX = 'PZ';
 
@@ -75,6 +76,8 @@ const FormPage: React.FC<FormPageProps> = ({
 
     const [previewPhoto, setPreviewPhoto] = useState<FotoRegistro | null>(null);
     const [storageInfo, setStorageInfo] = useState({ mode: 'FULL', info: '' });
+    const [showManualCoordinates, setShowManualCoordinates] = useState(false);
+    const [manualCoordinates, setManualCoordinates] = useState('');
 
     useEffect(() => {
         getHybridModeStatus(state.fotoList.length).then(setStorageInfo);
@@ -109,6 +112,17 @@ const FormPage: React.FC<FormPageProps> = ({
             },
             { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
         );
+    };
+
+    const applyManualCoordinates = () => {
+        try {
+            const coordinates = parseCoordinates(manualCoordinates);
+            updateState({ gps: { ...coordinates, precision: null } });
+            setShowManualCoordinates(false);
+            toast('✅ Coordenadas aplicadas al mapa y a la ficha');
+        } catch {
+            toast('❌ Coordenadas inválidas. Se conservó la ubicación anterior');
+        }
     };
 
     /* ── Step metadata ── */
@@ -298,14 +312,29 @@ const FormPage: React.FC<FormPageProps> = ({
                         <div className="card">
                             <div className="card-title">Ubicación GPS</div>
                             <div className="gps-wrap" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                <div style={{ display: 'flex', gap: '8px' }}>
-                                    <button className="btn btn-blue btn-full btn-sm" style={{ flex: 1 }} onClick={captureGPS}>
+                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                    <button type="button" className="btn btn-blue btn-full btn-sm" style={{ flex: '1 1 140px' }} onClick={captureGPS}>
                                         <Navigation size={14} /> Capturar GPS
                                     </button>
-                                    <button className="btn btn-blue btn-full btn-sm" style={{ flex: 1, backgroundColor: '#0066FF' }} onClick={() => setShowGeoTracker(true)}>
+                                    <button type="button" className="btn btn-blue btn-full btn-sm" style={{ flex: '1 1 140px' }} onClick={() => setShowManualCoordinates(value => !value)}>
+                                        <ClipboardPaste size={14} /> Pegar coordenadas
+                                    </button>
+                                    <button type="button" className="btn btn-blue btn-full btn-sm" style={{ flex: '1 1 140px', backgroundColor: '#0066FF' }} onClick={() => setShowGeoTracker(true)}>
                                         <Crosshair size={14} /> Punto Exacto
                                     </button>
                                 </div>
+                                {showManualCoordinates && (
+                                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                        <input
+                                            aria-label="Coordenadas manuales"
+                                            style={{ flex: '1 1 220px' }}
+                                            value={manualCoordinates}
+                                            onChange={event => setManualCoordinates(event.target.value)}
+                                            placeholder={`4°43'39.6"N, 74°26'52.5"W`}
+                                        />
+                                        <button type="button" className="btn btn-blue btn-sm" onClick={applyManualCoordinates}>Ubicar en el mapa</button>
+                                    </div>
+                                )}
                                 {state.gps.lat && (
                                     <>
                                         <div className="gps-result show" style={{ textAlign: 'left', padding: '12px' }}>
@@ -316,7 +345,7 @@ const FormPage: React.FC<FormPageProps> = ({
                                             <div className="gps-line" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
                                                 {state.gps.precision && state.gps.precision > 20 ? <AlertTriangle size={14} className="text-red-500" /> : <Signal size={14} className="text-green-500" />}
                                                 <span style={{ fontSize: '11px' }} className={state.gps.precision && state.gps.precision > 20 ? 'text-red-400 font-bold' : 'text-blue-400 opacity-80'}>
-                                                    Precisión: {state.gps.precision?.toFixed(1)} m
+                                                    {state.gps.precision == null ? 'Coordenadas manuales' : `Precisión: ${state.gps.precision.toFixed(1)} m`}
                                                 </span>
                                             </div>
                                         </div>
