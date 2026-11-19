@@ -40,5 +40,7 @@ Publicación correctiva del 2026-11-19: Hosting `7284c3d1fdb8dda2`, release `179
 
 Una segunda validación encontró respuestas `INTERNAL`. Los registros demostraron que el secreto `DRIVE_ROOT_FOLDER_ID` incluía caracteres CR/LF al final; Drive recibía un identificador de carpeta distinto y respondía `File not found`. Todas las rutas de escritura normalizan ahora el identificador con `trim()`. La función registra éxito o fallo sin exponer credenciales y conserva la foto local cuando Drive rechaza la operación.
 
+La prueba real posterior mostró que, aun normalizado, la cuenta de servicio de Firebase no tiene acceso a la unidad compartida histórica. `uploadPendingPhoto` mantiene la autenticación Firebase, pero envía la escritura desde servidor al Apps Script que ya posee autorización sobre esa unidad. La URL y el token se almacenan en Secret Manager y no forman parte del bundle web.
+
 La publicación queda limitada a Firebase Hosting y, si cambia la autorización
 del visor global, a las funciones BigQuery de solo consulta correspondientes.

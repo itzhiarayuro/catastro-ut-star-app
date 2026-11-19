@@ -24,6 +24,7 @@ de eliminación ni mantenimiento administrativo.
 - Se despliegan únicamente Hosting y las funciones de consulta global necesarias.
 - La subida de fotos no depende de configuración GAS en el navegador; usa una función Firebase autenticada y conserva cada pendiente hasta recibir su `driveId`.
 - La función normaliza el identificador raíz de Drive para tolerar espacios o saltos de línea accidentales en el secreto.
+- La escritura autenticada delega al Apps Script autorizado sobre la unidad compartida; su URL y token permanecen como secretos de Functions y nunca se envían al navegador.
 
 ## Interfaces de prueba acordadas
 

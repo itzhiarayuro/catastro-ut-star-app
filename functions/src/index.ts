@@ -3,6 +3,7 @@ import * as admin from "firebase-admin";
 import { google } from "googleapis";
 import { Readable } from "stream";
 import { normalizeDriveFolderId } from "./driveConfig";
+import { uploadPhotoViaGas } from "./gasDriveUpload";
 
 admin.initializeApp();
 
@@ -60,7 +61,7 @@ async function findDuplicateInDrive(drive: any, filename: string, folderId: stri
 export const uploadPendingPhoto = functions.runWith({
     timeoutSeconds: 120,
     memory: '512MB',
-    secrets: ['DRIVE_SERVICE_ACCOUNT', 'DRIVE_ROOT_FOLDER_ID'],
+    secrets: ['DRIVE_SERVICE_ACCOUNT', 'DRIVE_ROOT_FOLDER_ID', 'GAS_DRIVE_SYNC_URL', 'GAS_SECRET_TOKEN'],
 }).https.onCall(async (data, context) => {
     if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Debes iniciar sesión');
     const municipio = String(data?.municipio || '').trim().toUpperCase();
@@ -77,29 +78,16 @@ export const uploadPendingPhoto = functions.runWith({
     const buffer = Buffer.from(base64, 'base64');
     if (!buffer.length) throw new functions.https.HttpsError('invalid-argument', 'Imagen vacía');
 
-    const serviceAccountValue = process.env.DRIVE_SERVICE_ACCOUNT || '';
-    if (!serviceAccountValue) throw new functions.https.HttpsError('failed-precondition', 'Drive no configurado');
-    const serviceAccount = JSON.parse(serviceAccountValue);
-    const auth = new google.auth.JWT(serviceAccount.client_email, undefined, serviceAccount.private_key, ['https://www.googleapis.com/auth/drive.file']);
-    const drive = google.drive({ version: 'v3', auth });
-    const rootId = normalizeDriveFolderId(process.env.DRIVE_ROOT_FOLDER_ID, DRIVE_ROOT_FOLDER_ID);
+    const gasUrl = process.env.GAS_DRIVE_SYNC_URL || '';
+    const gasToken = process.env.GAS_SECRET_TOKEN || '';
+    if (!gasUrl || !gasToken) throw new functions.https.HttpsError('failed-precondition', 'Drive no configurado');
     try {
-        const municipioId = await getOrCreateFolder(drive, municipio, rootId);
-        const catastroId = await getOrCreateFolder(drive, 'CATASTRO', municipioId);
-        const pozoFolderId = await getOrCreateFolder(drive, pozoId, catastroId);
-        let driveId = await findDuplicateInDrive(drive, filename, pozoFolderId, buffer.length);
-        if (!driveId) {
-            const stream = new Readable();
-            stream.push(buffer);
-            stream.push(null);
-            const created = await drive.files.create({
-                requestBody: { name: filename, parents: [pozoFolderId] },
-                media: { mimeType: 'image/jpeg', body: stream },
-                fields: 'id',
-            });
-            driveId = created.data.id || null;
-        }
-        if (!driveId) throw new Error('Drive no devolvió el archivo');
+        const driveId = await uploadPhotoViaGas(gasUrl, gasToken, {
+            municipio,
+            pozoId,
+            filename,
+            base64: encoded,
+        });
         functions.logger.info('Photo upload completed', { filename, municipio, pozoId });
         return { success: true, driveId };
     } catch (error) {
