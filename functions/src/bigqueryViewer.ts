@@ -1,6 +1,7 @@
 import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import { BigQuery } from "@google-cloud/bigquery";
+import { isGlobalFichaEditor } from "./accessPolicy";
 
 const bq = new BigQuery({ projectId: "catastro-ut-star" });
 
@@ -52,8 +53,7 @@ export const bqGetPozos = functions.runWith({ timeoutSeconds: 30, memory: "256MB
         const estado    = (req.query.estado as string || "").toUpperCase().trim();
 
         // Filtro opcional de municipio (solo admin ve todo)
-        const ADMINS = ["juanvegas003@gmail.com", "juan.vega.icya@gmail.com"];
-        const isAdmin = ADMINS.includes(user.email);
+        const isAdmin = isGlobalFichaEditor(user.email);
 
         try {
             const conditions: string[] = ["TRUE"];
@@ -158,8 +158,7 @@ export const bqGetMarcaciones = functions.runWith({ timeoutSeconds: 30, memory: 
         const search    = (req.query.search as string || "").toUpperCase().trim();
         const tipo      = (req.query.tipo as string || "").toUpperCase().trim();
 
-        const ADMINS = ["juanvegas003@gmail.com", "juan.vega.icya@gmail.com"];
-        const isAdmin = ADMINS.includes(user.email);
+        const isAdmin = isGlobalFichaEditor(user.email);
 
         try {
             const conditions: string[] = ["TRUE"];
@@ -233,8 +232,7 @@ export const bqGetTuberias = functions.runWith({ timeoutSeconds: 30, memory: "25
         const municipio = (req.query.municipio as string || "").toUpperCase().trim();
         const search    = (req.query.search as string || "").toUpperCase().trim();
 
-        const ADMINS = ["juanvegas003@gmail.com", "juan.vega.icya@gmail.com"];
-        const isAdmin = ADMINS.includes(user.email);
+        const isAdmin = isGlobalFichaEditor(user.email);
 
         try {
             const conditions: string[] = [`UPPER(JSON_VALUE(data, '$.municipio')) <> 'MARINILLA'`];
@@ -317,8 +315,7 @@ export const bqGetSumideros = functions.runWith({ timeoutSeconds: 30, memory: "2
         const municipio = (req.query.municipio as string || "").toUpperCase().trim();
         const search    = (req.query.search as string || "").toUpperCase().trim();
 
-        const ADMINS = ["juanvegas003@gmail.com", "juan.vega.icya@gmail.com"];
-        const isAdmin = ADMINS.includes(user.email);
+        const isAdmin = isGlobalFichaEditor(user.email);
 
         try {
             const conditions: string[] = ["TRUE"];

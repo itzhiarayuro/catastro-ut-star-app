@@ -5,6 +5,8 @@ import FichaItemRow from '../components/FichaItemRow';
 import { AppState } from '../../types/catastro';
 import { saveFichaToStorage } from '../../utils/storageManager';
 import { safeLocalStorageSet } from '../../utils/ui';
+import { useAuth } from '../../lib/firebase';
+import { getFichaPermissions } from '../../utils/accessPolicy';
 
 interface FichasPageProps {
     handlePDF: (ficha: any) => void;
@@ -15,6 +17,8 @@ interface FichasPageProps {
 
 const FichasPage: React.FC<FichasPageProps> = ({ handlePDF, pdfLoading, toast, safeSaveAllFichas }) => {
     const { activeScreen, setActiveScreen, fichas, isOnline, setState, setCurrentStep } = useAppStore();
+    const { user } = useAuth();
+    const canDelete = getFichaPermissions(user?.email).deleteOwn;
     const [deleteId, setDeleteId] = useState<string | null>(null);
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
 
@@ -72,7 +76,7 @@ const FichasPage: React.FC<FichasPageProps> = ({ handlePDF, pdfLoading, toast, s
                                 setActiveScreen('sForm');
                                 setCurrentStep(1);
                             }}
-                            onDelete={() => handleDeleteClick(f.id!)}
+                            onDelete={canDelete ? () => handleDeleteClick(f.id!) : undefined}
                             onPDF={() => handlePDF(f)}
                             pdfLoading={pdfLoading}
                         />

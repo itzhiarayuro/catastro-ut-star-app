@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { CustomMapLayers } from './BingLayer';
 import OfflineMapManager from './OfflineMapManager';
+import { isGlobalFichaEditor } from '../utils/accessPolicy';
 
 // Estilo Premium Dark para Google Maps
 const MAP_ID = import.meta.env.VITE_GOOGLE_MAPS_ID; // ID de estilo personalizado (opcional)
@@ -63,7 +64,7 @@ const MapasScreen: React.FC<{
     useEffect(() => {
         if (!user?.uid) return; // Ensure user is logged in
 
-        const isAdmin = user?.email === 'juanvegas003@gmail.com' || user?.email === 'juan.vega.icya@gmail.com';
+        const isAdmin = isGlobalFichaEditor(user.email);
 
         // FICHAS: Filtrar por usuario si no es admin
         const qFichas = isAdmin

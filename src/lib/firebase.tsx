@@ -13,6 +13,7 @@ import React, { useState, useEffect, createContext, useContext } from 'react';
 
 import { stripBinaryData } from '../utils/fotoProcessor';
 import { safeLocalStorageSet } from '../utils/ui';
+import { buildFichaAudit } from '../utils/fichaAudit';
 
 // Helper para normalizar texto (quitar tildes y pasar a mayúsculas)
 const normalizeText = (text: string) => 
@@ -132,11 +133,7 @@ export const persistFicha = async (ficha: any) => {
     const historyPath = `historial_fichas/${mun}_${pozoId}_${timestamp}`;
 
     const currentUser = auth.currentUser;
-    const auditoria = currentUser ? {
-        createdBy: currentUser.uid,
-        creatorEmail: currentUser.email || '',
-        creatorDisplayName: currentUser.displayName || (currentUser.email ? currentUser.email.split('@')[0] : 'Desconocido')
-    } : {};
+    const auditoria = buildFichaAudit(cleanFicha, currentUser);
 
     const dataToSave = {
         ...cleanFicha, // Usamos la versión limpia sin binarios

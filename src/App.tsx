@@ -44,8 +44,9 @@ import { useCloudRestore } from './hooks/useCloudRestore';
 import { useBackgroundSync } from './hooks/useBackgroundSync';
 import { useFichaActions } from './hooks/useFichaActions';
 import { useAutoSyncDrive } from './hooks/useAutoSyncDrive';
+import { APP_VERSION } from './version';
+import { isGlobalFichaEditor } from './utils/accessPolicy';
 
-const APP_VERSION = '1.7.2';
 
 /* ═══════════════════════════════════════════════════════════
    MAIN COMPONENT
@@ -129,7 +130,6 @@ const App: React.FC = () => {
         if (cached && cached !== state.municipio) {
             setState({ municipio: cached });
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     useEffect(() => {
@@ -173,7 +173,7 @@ const App: React.FC = () => {
                 // If the ficha belongs to the current user OR it lacks a creator (legacy)
                 // IMPORTANT: Only filter if we actually have a user, otherwise keep them in memory
                 // until auth is resolved (handled by the if(authLoading) above).
-                if (!f.createdBy || f.createdBy === user?.uid) {
+                if (isGlobalFichaEditor(user?.email) || !f.createdBy || f.createdBy === user?.uid) {
                     filteredFichas[id] = f;
                 }
             });
@@ -191,7 +191,7 @@ const App: React.FC = () => {
         hydratePrebundledTiles();
 
         return () => { window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); };
-    }, [user?.uid, authLoading]);
+    }, [user?.uid, user?.email, authLoading]);
 
     // ── Utility Functions ────────────────────────────────────
     const forceHardReload = async () => {
