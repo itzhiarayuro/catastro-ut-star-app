@@ -36,5 +36,7 @@ limpieza de Drive ni otras operaciones de mantenimiento.
 
 La sincronización manual y nocturna usa la función autenticada `uploadPendingPhoto`, con secretos de Drive únicamente en Firebase Functions. El navegador ya no necesita `VITE_GAS_DRIVE_SYNC_URL` ni `VITE_GAS_SECRET_TOKEN` para subir fotos. Una foto se retira de IndexedDB solo después de que Firebase devuelve su `driveId`; los errores conservan el pendiente para reintento.
 
+Publicación correctiva del 2026-11-19: Hosting `7284c3d1fdb8dda2`, release `1795116200369000`; `uploadPendingPhoto` quedó ACTIVE en Node.js 22. El artefacto `/assets/index-B7bzJxmd.js` contiene la ruta Firebase y ya no contiene el error de subida `GAS_URL no configurada`.
+
 La publicación queda limitada a Firebase Hosting y, si cambia la autorización
 del visor global, a las funciones BigQuery de solo consulta correspondientes.
