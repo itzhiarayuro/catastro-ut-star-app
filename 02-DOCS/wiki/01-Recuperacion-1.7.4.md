@@ -9,6 +9,8 @@ status: implementing
 
 Las funciones específicas del visor usan Node.js 22 porque Firebase retiró el runtime 20 el 2026-10-30. El cambio de runtime no amplía el alcance del despliegue.
 
+`index.html`, `sw.js` y `manifest.webmanifest` tienen reglas exclusivas sin caché; la regla general de activos no incluye HTML para evitar que Firebase aplique una cabecera contradictoria.
+
 La versión 1.7.4 parte de la línea funcional 1.7.2 y añade coordenadas DMS sin
 degradar el almacenamiento local. Conserva IndexedDB v4, fichas locales,
 fotografías pendientes, catálogo de municipios, códigos PZ y captura fotográfica.

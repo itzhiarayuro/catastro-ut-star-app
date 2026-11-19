@@ -32,7 +32,7 @@
       ],
       "headers": [
         {
-          "source": "/**/*.{js,css,png,svg,json,woff2,html}",
+          "source": "/**/*.{js,css,png,svg,json,woff2}",
           "headers": [
             {
               "key": "Cache-Control",
