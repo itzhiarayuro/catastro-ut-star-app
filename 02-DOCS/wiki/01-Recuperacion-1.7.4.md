@@ -7,6 +7,8 @@ status: implementing
 
 # Recuperación funcional 1.7.4
 
+Las funciones específicas del visor usan Node.js 22 porque Firebase retiró el runtime 20 el 2026-10-30. El cambio de runtime no amplía el alcance del despliegue.
+
 La versión 1.7.4 parte de la línea funcional 1.7.2 y añade coordenadas DMS sin
 degradar el almacenamiento local. Conserva IndexedDB v4, fichas locales,
 fotografías pendientes, catálogo de municipios, códigos PZ y captura fotográfica.
