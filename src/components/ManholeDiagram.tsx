@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { PipeStateField } from "./forms/PipeStateField";
 
 const CX = 260, CY = 260;
 const MH_OUTER = 46, MH_INNER = 30;
@@ -17,7 +18,6 @@ const TYPE_CFG: Record<string, { label: string; color: string; arrow: string }> 
 
 const MATERIALS = ["—", "CONCRETO", "PVC CORRUGADO", "PVC LISO", "PLÁSTICO",
   "ASBESTO CEMENTO", "MAMPOSTERIA", "GRES", "GRP", "METAL", "OTRO"];
-const ESTADOS = ["—", "LIMPIO", "INUNDADO", "SEDIMENTADO", "COLMATADO", "CON BASURAS", "OTRO"];
 
 function deg2rad(d: number) { return (d * Math.PI) / 180; }
 const emptyPipe = () => ({
@@ -291,12 +291,7 @@ function PipeForm({ slotIndex, angle, pipe, pozoId, onSave, onCancel, onDelete }
       </div>
 
       <div className="field-row">
-        <div className="field">
-          <label>Estado Tub.</label>
-          <select value={d.estado} onChange={e => f("estado", e.target.value)}>
-            {ESTADOS.map(s => <option key={s} value={s === "—" ? "" : s}>{s}</option>)}
-          </select>
-        </div>
+        <PipeStateField value={d.estado} onChange={value => f("estado", value)} />
         <div className="field">
           <label>Emboquillado</label>
           <select value={d.emboquillado} onChange={e => f("emboquillado", e.target.value)}>

@@ -25,6 +25,7 @@ de eliminación ni mantenimiento administrativo.
 - La subida de fotos no depende de configuración GAS en el navegador; usa una función Firebase autenticada y conserva cada pendiente hasta recibir su `driveId`.
 - La función normaliza el identificador raíz de Drive para tolerar espacios o saltos de línea accidentales en el secreto.
 - La escritura autenticada delega al Apps Script autorizado sobre la unidad compartida; su URL y token permanecen como secretos de Functions y nunca se envían al navegador.
+- Al seleccionar `OTRO` en el estado de un ramal del paso 4 aparece un campo de texto; el valor personalizado se guarda en `pipe.estado` y vuelve a mostrarse al editar.
 
 ## Interfaces de prueba acordadas
 
@@ -32,6 +33,7 @@ de eliminación ni mantenimiento administrativo.
 2. Función pura de reconciliación de fichas locales y remotas.
 3. Política pública de roles para lectura global, edición y eliminación.
 4. Almacenamiento IndexedDB real en navegador, actualizado desde esquema v4.
+5. Formulario público de estado de ramales en el paso 4.
 
 ## Límites
 

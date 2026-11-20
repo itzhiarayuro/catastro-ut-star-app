@@ -42,5 +42,9 @@ Una segunda validación encontró respuestas `INTERNAL`. Los registros demostrar
 
 La prueba real posterior mostró que, aun normalizado, la cuenta de servicio de Firebase no tiene acceso a la unidad compartida histórica. `uploadPendingPhoto` mantiene la autenticación Firebase, pero envía la escritura desde servidor al Apps Script que ya posee autorización sobre esa unidad. La URL y el token se almacenan en Secret Manager y no forman parte del bundle web.
 
+## Estado personalizado de ramales
+
+El formulario activo de ramales del paso 4 conserva los estados normalizados y, al seleccionar `OTRO`, muestra `Especifique Estado...`. El texto se normaliza a mayúsculas y se guarda directamente en `pipe.estado`, por lo que las fichas existentes con valores personalizados también vuelven a mostrar el campo al editarse.
+
 La publicación queda limitada a Firebase Hosting y, si cambia la autorización
 del visor global, a las funciones BigQuery de solo consulta correspondientes.
