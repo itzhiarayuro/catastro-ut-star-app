@@ -46,5 +46,7 @@ La prueba real posterior mostró que, aun normalizado, la cuenta de servicio de 
 
 El formulario activo de ramales del paso 4 conserva los estados normalizados y, al seleccionar `OTRO`, muestra `Especifique Estado...`. El texto se normaliza a mayúsculas y se guarda directamente en `pipe.estado`, por lo que las fichas existentes con valores personalizados también vuelven a mostrar el campo al editarse.
 
+Publicación del 2026-11-20: Hosting `5e6c542564c8fa77`, release `1795195337873000`. El artefacto servido `/assets/index-C-U3jcLt.js` contiene el campo personalizado y conserva la versión 1.7.4.
+
 La publicación queda limitada a Firebase Hosting y, si cambia la autorización
 del visor global, a las funciones BigQuery de solo consulta correspondientes.
